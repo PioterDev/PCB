@@ -129,7 +129,63 @@
 
 
 //Section 1: The preprocessor shenanigans
-//Section 1.1: Identify the compiler used to compile this code
+//Section 1.1: Identify the target operating system
+
+//https://sourceforge.net/p/predef/wiki/OperatingSystems/
+#ifndef PCB_PLATFORM
+#if defined(_WIN32) || defined(WIN32) || defined(__WIN32__) || defined(__NT__)
+#define PCB_PLATFORM_WINDOWS 1
+#define PCB_PLATFORM_LINUX 0
+#define PCB_PLATFORM_BSD 0
+#define PCB_PLATFORM_MACOS 0
+#define PCB_PLATFORM_IOS 0
+#define PCB_PLATFORM "Windows"
+#elif defined(__linux__)
+#define PCB_PLATFORM_WINDOWS 0
+#define PCB_PLATFORM_LINUX 1
+#define PCB_PLATFORM_BSD 0
+#define PCB_PLATFORM_MACOS 0
+#define PCB_PLATFORM_IOS 0
+#define PCB_PLATFORM "Linux"
+#elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+#define PCB_PLATFORM_WINDOWS 0
+#define PCB_PLATFORM_LINUX 0
+#define PCB_PLATFORM_BSD 0
+#define PCB_PLATFORM_MACOS 0
+#define PCB_PLATFORM_IOS 1
+#define PCB_PLATFORM "iOS"
+#elif TARGET_OS_MAC
+#define PCB_PLATFORM_WINDOWS 0
+#define PCB_PLATFORM_LINUX 0
+#define PCB_PLATFORM_BSD 0
+#define PCB_PLATFORM_MACOS 1
+#define PCB_PLATFORM_IOS 0
+#define PCB_PLATFORM "Mac OS"
+#else
+#error PCB Error: Unsupported Apple platform
+#endif //Apple platforms
+#else
+#error PCB Error: Unsupported platform
+#endif //platform
+#endif //PCB_PLATFORM
+
+//This macro is used for certain #include's of system headers
+//and some function implementations.
+//POSIX-compliant platforms can safely share implementations.
+//Other platforms require dedicated implementations (*ekhem* Windows...).
+#ifndef PCB_PLATFORM_POSIX
+#if PCB_PLATFORM_WINDOWS
+#define PCB_PLATFORM_POSIX 0
+#elif PCB_PLATFORM_LINUX || PCB_PLATFORM_BSD || PCB_PLATFORM_MACOS || PCB_PLATFORM_IOS
+#define PCB_PLATFORM_POSIX 1
+#else
+#define PCB_PLATFORM_POSIX 0
+#endif //PCB_PLATFORM_POSIX
+
+
+//Section 1.2: Identify the compiler used to compile this code
 
 #ifndef PCB_COMPILER
 #if defined(__GNUC__)
@@ -152,13 +208,13 @@
 #define PCB_COMPILER_MSVC 1
 #define PCB_COMPILER "MSVC"
 #else
-#error "Unsupported compiler"
+#error PCB Error: Unsupported compiler
 #endif //compiler
 #endif //PCB_COMPILER
 
 
 
-//Section 1.2: Define useful, but often compiler-specific macros
+//Section 1.3: Define useful, but often compiler-specific macros
 #ifndef PCB_NoDiscard
 #ifdef __cplusplus
 #if __cplusplus >= 201703L
@@ -354,27 +410,6 @@ static void f()
 
 
 
-//Section 1.3: Identify the target operating system
-#ifndef PCB_PLATFORM
-#if defined(_WIN32) || defined(WIN32) || defined(__WIN32__) || defined(__NT__)
-#define PCB_PLATFORM_WINDOWS 1
-#define PCB_PLATFORM_LINUX 0
-#define PCB_PLATFORM_MACOS 0
-#define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM "Windows"
-#elif defined(__linux__)
-#define PCB_PLATFORM_WINDOWS 0
-#define PCB_PLATFORM_LINUX 1
-#define PCB_PLATFORM_MACOS 0
-#define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM "Linux"
-#else
-#error "Unsupported platform"
-#endif //platform
-#endif //PCB_PLATFORM
-
-
-
 //Section 1.4: Import the C standard library,
 //unless defined otherwise
 #ifndef PCB_USE_CSTDLIB
@@ -397,6 +432,7 @@ static void f()
 #include <stdarg.h>
 #include <stdbool.h>
 #include <string.h>
+#include <strings.h>
 #endif //PCB_USE_CSTDLIB != 0
 
 //Section 1.5: Define functions/macros that PCB uses
@@ -405,7 +441,7 @@ static void f()
 #ifdef PCB_HAS_STDLIB_H
 #define PCB_realloc realloc
 #else
-#error PCB requires PCB_realloc defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually.
+#error "PCB Error: PCB requires PCB_realloc defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #define PCB_realloc(oldPtr, newSize) NULL
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_realloc
@@ -414,7 +450,7 @@ static void f()
 #ifdef PCB_HAS_STDLIB_H
 #define PCB_free free
 #else
-#error PCB requires PCB_free defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually.
+#error "PCB Error: PCB requires PCB_free defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #define PCB_free(ptr)
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_free
@@ -609,15 +645,15 @@ while((index) < (vec)->length) {                             \
 //to limit the amount of stuff imported
 //for faster compilation
 #include <windows.h>
-#elif PCB_PLATFORM_LINUX
+#undef WIN32_LEAN_AND_MEAN
+#elif PCB_PLATFORM_POSIX
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #endif //platform-specific APIs
 
 
@@ -717,7 +753,7 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
 //Failure by "it already exists" is treated as success.
 //On Linux, permission field of the created directory is rw-r--r--.
 bool PCB_mkdir(const char* path) {
-#if PCB_PLATFORM_LINUX
+#if PCB_PLATFORM_POSIX
     if(mkdir(path, 0644) == -1) {
         switch(errno) {
             case EEXIST: //not an error if already exists
@@ -856,6 +892,22 @@ bool PCB_String_append_chars(PCB_String* this, const char c, const size_t howMan
     return true;
 }
 
+//Makes `c` the last character in `this`.
+//If `c` is not the last character, it appends it.
+//Otherwise does nothing.
+bool PCB_String_setSuffix_char(PCB_String* this, const char c) {
+    if(this->data == NULL) PCB_String_realloc(this, 1);
+    if(this->length == 0) {
+        this->data[0] = c; this->data[++this->length] = '\0';
+        return true;
+    }
+    if(this->data[this->length - 1] != 'c') {
+        this->data[this->length] = c;
+        this->data[++this->length] = '\0';
+    }
+    return true;
+}
+
 #undef PCB_String_realloc
 
 PCB_String PCB_String_clone(const PCB_String* this) {
@@ -888,7 +940,7 @@ int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
     if(a->data == NULL && b->data == NULL) return 0;
     else if(a->data == NULL) return 1;
     else if(b->data == NULL) return -1;
-    return strcasecmp(a->data, b->data);
+    return strncasecmp(a->data, b->data, a->length);
 }
 
 //Checks if `this` starts with `other`.
@@ -977,7 +1029,7 @@ PCB_String PCB_String_from_CStringVec(const PCB_CStringVec* cstr, const char* de
     totalLength += strlen(delimiter) * (cstr->length - 1) + 1;
     PCB_String str = {
         .data = PCB_realloc(NULL, totalLength),
-        .length = totalLength - 1, //+1 is for '\0' and we don't count it
+        .length = totalLength - 1, //we don't count the '\0'
         .capacity = totalLength,
     };
     if(str.data == NULL) return (PCB_String) {0};
@@ -998,7 +1050,7 @@ PCB_String PCB_String_from_CStringVec(const PCB_CStringVec* cstr, const char* de
 typedef struct {
 #if PCB_PLATFORM_WINDOWS
     HANDLE handle;
-#elif PCB_PLATFORM_LINUX
+#elif PCB_PLATFORM_POSIX
     pid_t handle;
 #endif //platform-dependent handles to processes
 } PCB_Process;
@@ -1007,7 +1059,7 @@ PCB_Process PCB_Process_self() {
     PCB_assert(false && "Not yet implemented");
 #if PCB_PLATFORM_WINDOWS
 
-#elif PCB_PLATFORM_LINUX
+#elif PCB_PLATFORM_POSIX
 
 #endif
 }
@@ -1015,7 +1067,7 @@ PCB_Process PCB_Process_self() {
 bool PCB_Process_isValid(PCB_Process process) {
 #if PCB_PLATFORM_WINDOWS
     return process.handle != INVALID_HANDLE_VALUE;
-#elif PCB_PLATFORM_LINUX
+#elif PCB_PLATFORM_POSIX
     return process.handle > (pid_t)0;
 #endif
 }
@@ -1023,7 +1075,7 @@ bool PCB_Process_isValid(PCB_Process process) {
 int PCB_Process_waitForExit(PCB_Process process) {
 #if PCB_PLATFORM_WINDOWS
     PCB_assert(false && "Not yet implemented");
-#elif PCB_PLATFORM_LINUX
+#elif PCB_PLATFORM_POSIX
     int exitCode;
     waitpid(process.handle, &exitCode, 0);
     return exitCode;
@@ -1033,7 +1085,7 @@ int PCB_Process_waitForExit(PCB_Process process) {
 PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
 #if PCB_PLATFORM_WINDOWS
     PCB_assert(false && "Not yet implemented");
-#elif PCB_PLATFORM_LINUX
+#elif PCB_PLATFORM_POSIX
     if(command->length < 1) {
         PCB_log(
             PCB_LOGLEVEL_ERROR,
@@ -1065,9 +1117,11 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
  * 
  * @param command command built with `PCB_ShellCommand_*` utilities.
  * @return exit code of the executed command or a negative value
- * outside the range of possible exit codes (a negative value on Linux,
- * a value < -2³² on Windows). For a full description, see Appendix 1
- * at the bottom.
+ * outside the range of possible exit codes (a negative value on
+ * POSIX-compliant systems, a value < -2³² on Windows).
+ * For a full description, see Appendix 1 at the bottom.
+ * 
+ * If you just want to check for any error simply check for a negative value.
  */
 ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
     if(command->length < 1) {
@@ -1077,7 +1131,7 @@ ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
         );
 #if PCB_PLATFORM_WINDOWS
         return (ssize_t)0x8000000000000000;
-#elif PCB_PLATFORM_LINUX
+#elif PCB_PLATFORM_POSIX
         return -1;
 #endif
     }
@@ -1086,7 +1140,7 @@ ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
     if(!PCB_Process_isValid(process))
 #if PCB_PLATFORM_WINDOWS
         return (ssize_t)0x8000000000000001;
-#elif PCB_PLATFORM_LINUX
+#elif PCB_PLATFORM_POSIX
         return -2;
 #endif
     return PCB_Process_waitForExit(process);
@@ -1105,7 +1159,7 @@ ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
 #define PCB_DEFAULT_COMPILER_FLAGS "/Wall"
 #endif //compilers
 #endif //PCB_DEFAULT_COMPILER_FLAGS
-
+#endif //PCB_BUILD_CAPABILITY
 
 
 //Section 3.2: Variables used for building.
@@ -1184,17 +1238,23 @@ static PCB_ShellCommand PCB_commandBuffer = {0};
 //Section 3.3: Functions used for building.
 
 
-void PCB_build_file(PCB_String* in, PCB_String* out) {
-    PCB_assert(false && "Not yet implemented");
+int PCB_build_file(PCB_String* in, PCB_String* out) {
+    // PCB_assert(false && "Not yet implemented");
     (void)in; (void)out;
+    PCB_log(PCB_LOGLEVEL_INFO, "In: %s, out: %s", in->data, out->data);
 
-    PCB_commandBuffer.length = 0;
-    PCB_ShellCommand_append_arg(&PCB_commandBuffer, PCB_compiler_path);
-
+    // PCB_commandBuffer.length = 0;
+    // PCB_ShellCommand_append_arg(&PCB_commandBuffer, PCB_compiler_path);
+    return 0;
 }
 
-void PCB_build_directory(PCB_String* from, PCB_String* to) {
-#if PCB_PLATFORM_LINUX
+//TODO: document return values
+//this function expects that `from` and `to` have *any* data allocated
+int PCB_build_directory(PCB_String* from, PCB_String* to) {
+#if PCB_PLATFORM_WINDOWS
+    PCB_assert(false && "Not yet implemented");
+#elif PCB_PLATFORM_POSIX
+#define PCB_err(err) { code = err; goto error; }
     DIR* cwd = opendir(from->data);
     if(cwd == NULL) {
         PCB_log(
@@ -1202,38 +1262,89 @@ void PCB_build_directory(PCB_String* from, PCB_String* to) {
             "Could not open directory %s: %s",
             from->data, strerror(errno)
         );
-        return;
+        return -1;
     }
+    int code = 0;
+#ifdef __STRICT_ANSI__
+    struct stat st;
+#endif
     for(struct dirent* entry = readdir(cwd); entry != NULL; entry = readdir(cwd)) {
-        //store current lengths
+        if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
         size_t oldFromLength = from->length;
         size_t oldToLength = to->length;
-        if(entry->d_type == DT_DIR) {
-            PCB_String_append_cstr(from, entry->d_name);
-            PCB_String_append_cstr(to, entry->d_name);
-            //recursively build the subdirectory
-            PCB_build_directory(from, to);
+#ifdef __STRICT_ANSI__
+        if(!PCB_String_append_cstr(from, entry->d_name)) PCB_err(ENOMEM)
+        if(stat(from->data, &st) == -1) {
+            switch(errno) {
+                case ELOOP:
+                case ENAMETOOLONG:
+                case ENOENT:
+                case EOVERFLOW:
+                    PCB_log(
+                        PCB_LOGLEVEL_WARN,
+                        "Skipping %s: %s",
+                        from->data, strerror(errno)
+                    );
+                    continue;
+                case ENOMEM:
+                    PCB_log(
+                        PCB_LOGLEVEL_FATAL,
+                        "The system has ran out of memory."
+                    );
+                    PCB_err(ENOMEM)
+                default: PCB_Unreachable;
+            }
         }
+        if(S_ISDIR(st.st_mode)) {
+#else
+        if(entry->d_type == DT_DIR) {
+            if(!PCB_String_append_cstr(from, entry->d_name)) {
+                code = ENOMEM;
+                goto error;
+            }
+#endif //pesky, but useful GNU extensions
+            if(!PCB_String_append_cstr(to, entry->d_name)) PCB_err(ENOMEM)
+            if(!PCB_String_append_chars(from, '/', 1)) PCB_err(ENOMEM)
+            if(!PCB_String_append_chars(to, '/', 1)) PCB_err(ENOMEM)
+            //recursively build the subdirectory
+            if((code = PCB_build_directory(from, to)) != 0) goto error;
+        }
+#ifdef __STRICT_ANSI__
+        else if(S_ISREG(st.st_mode)) {
+#else
         else if(entry->d_type == DT_REG) {
-            PCB_String_append_cstr(from, entry->d_name);
+            if(!PCB_String_append_cstr(from, entry->d_name)) {
+                code = ENOMEM;
+                goto error;
+            }
+#endif //pesky, but useful GNU extensions
             if(PCB_String_endsWith_cstr(from, ".c")) {
-                PCB_String_append_cstr(to, entry->d_name);
+                if(!PCB_String_append_cstr(to, entry->d_name)) PCB_err(ENOMEM)
                 to->data[to->length - 1] = 'o';
-                PCB_build_file(from, to);
+                if((code = PCB_build_file(from, to)) != 0) goto error;
             }
         }
         //restore old length in a LIFO fashion
-        from->length = oldFromLength;
-        to->length = oldToLength;
-        //and preserve the null terminator
-        from->data[oldFromLength] = '\0';
-        to->data[oldToLength] = '\0';
+        from->data[from->length = oldFromLength] = '\0';
+        to->data[to->length = oldToLength] = '\0';
+        continue;
+        error: {
+            from->data[from->length = oldFromLength] = '\0';
+            to->data[to->length = oldToLength] = '\0';
+            closedir(cwd);
+            return code;
+        }
     }
     closedir(cwd);
-#endif
+
+    return 0;
+#undef PCB_err
+#endif //platform-dependent implementation
 }
 
 int PCB_build(int argc, char** argv) {
+#define PCB_defer(v) { code = v; goto defer; }
+    int code = 0;
     PCB_assert(false && "Unfinished");
     (void)argc; (void)argv;
     (void)PCB_static_libs;
@@ -1241,21 +1352,27 @@ int PCB_build(int argc, char** argv) {
     (void)PCB_include_dirs;
     (void)PCB_compiler_path;
     (void)PCB_lang_version;
+    (void)PCB_commandBuffer;
 
+    PCB_String srcPath = {0};
     PCB_String buildPath = {0};
-    PCB_String_append_cstr(&buildPath, PCB_build_dir);
-
+    if(!PCB_String_append_cstr(&buildPath, PCB_build_dir)) PCB_defer(ENOMEM)
+    if(!PCB_String_setSuffix_char(&buildPath, '/')) PCB_defer(ENOMEM)
     //for now we won't distinguish debug and release
     //builds and keep both in the same build directory
     if(PCB_src_dirs.length > 1) {
-        
         for(size_t i = 0; i < PCB_src_dirs.length; i++) {
 
-        }
+        }       
     }
-    else {
+    for(size_t i = 0; i < PCB_src_dirs.length; i++) {
 
     }
+    defer:
+        PCB_free(srcPath.data);
+        PCB_free(buildPath.data);
+        return code;
+#undef PCB_defer
 }
 #endif //PCB_BUILD_CAPABILITY
 
@@ -1288,14 +1405,14 @@ int PCB_build(int argc, char** argv) {
 //Functions removed/unused/otherwise
 ssize_t PCB_ShellCommand_run_and_wait_old(PCB_ShellCommand* command) {
 #if PCB_PLATFORM_WINDOWS
-    if(command.length == 0) {
+    if(command->length == 0) {
         PCB_log(PCB_LOGLEVEL_ERROR, "Cannot run an empty command");
         return (ssize_t)0x8000000000000000;
     }
     STARTUPINFO startupinfo = { .cb = sizeof(startupinfo) };
     PROCESS_INFORMATION pInfo;
 
-    PCB_String s = PCB_String_from_CStringArray(command, " ");
+    PCB_String s = PCB_String_from_CStringVec(command, " ");
     PCB_log(PCB_LOGLEVEL_DEBUG, "\"%s\" %llu", s.data, s.length);
 
     if(!CreateProcess(
@@ -1368,4 +1485,20 @@ ssize_t PCB_ShellCommand_run_and_wait_old(PCB_ShellCommand* command) {
     }
 #endif
 }
+
+//Appendix 2: Changelog
+//Version 0.1.0:
+//- Moved platform identification to section 1.1
+//- Added support for some Apple platforms
+//- Added identification of POSIX-compliant platforms
+//- Moved compiler identification to section 1.2
+//- Moved compiler-specific macros to section 1.3
+//- Changed "#error" statement start with "PCB Error"
+//- Added strings.h header for case-insensitive C-strings
+//- Changed Linux-specific implementations to POSIX-specific
+//- Added PCB_String_setSuffix_char function
+//- Added a missing #endif at "#ifdef PCB_BUILD_CAPABILITY"
+//- Reinforced PCB_build_directory for errors, now returns a status code
+//Version 0.0.1: Initial version
+
 #endif //PCB_H

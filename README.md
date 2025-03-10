@@ -11,9 +11,9 @@ programming/scripting language just to get an executable.
 PCB contains functionality not only related to building a project, but also for use as a general library.
 
 Currently implemented features:
-- identification of the compiler used via PCB_COMPILER_* macros (see section 1.1)
-- nice-to-have-but-compiler-specific functionality like marking functions as deprecated, force inlining and others (see section 1.2)
-- identification of the target platform via PCB_PLATFORM_* macros (see section 1.3)
+- identification of the target platform via PCB_PLATFORM_* macros (see section 1.1)
+- identification of the compiler used via PCB_COMPILER_* macros (see section 1.2)
+- nice-to-have-but-compiler-specific functionality like marking functions as deprecated, force inlining and others (see section 1.3)
 - macros for dynamic arrays of any type via PCB_Vec_* (see section 1.6.1)
 - logging with <span style="color:red">c</span><span style="color:orange">o</span><span style="color:yellow">l</span><span style="color:green">o</span><span style="color:blue">r</span><span style="color:violet">s</span> (see section 2.1)
 - platform-independent mkdir (more filesystem functionalities sometime in the future) (see section 2.2)
