@@ -38,10 +38,10 @@
 //Section 0: The preamble.
 
 //TODO:
-//1. Provide macros for memcpy, memcmp, ...
-//for a situation where libc is unavailable.
-//2. Allow compilation of C files with a C compiler
+//1. Allow compilation of C files with a C compiler
 //even in a C++ project.
+//2. PCB_BuildContext structure for PCB_build() instead of globals
+//+ new function PCB_buildFromContext(PCB_BuildContext*)
 
 //PCB uses the following naming convention:
 //
@@ -429,11 +429,14 @@ static void f()
 #include <assert.h>
 #define PCB_HAS_ASSERT_H
 #endif //PCB_HAS_ASSERT_H
-#include <stdarg.h>
-#include <stdbool.h>
+#ifndef PCB_HAS_STRING_H
 #include <string.h>
 #include <strings.h>
-#endif //PCB_USE_CSTDLIB != 0
+#define PCB_HAS_STRING_H
+#endif //PCB_HAS_STRING_H
+#include <stdarg.h>
+#include <stdbool.h>
+#endif //PCB_USE_CSTDLIB?
 
 //Section 1.5: Define functions/macros that PCB uses
 //from the standard library
@@ -454,6 +457,65 @@ static void f()
 #define PCB_free(ptr)
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_free
+
+#ifndef PCB_memcpy
+#ifdef PCB_HAS_STRING_H
+#define PCB_memcpy memcpy
+#else
+void* PCB_memcpy(void* restrict dest, const void* src, size_t n) {
+    char* restrict d = (char*)dest;
+    const char* restrict s = (const char*)src;
+    while(n > 0) *d++ = *s++, --n;
+    return dest;
+}
+#define PCB_memcpy PCB_memcpy
+#endif //PCB_HAS_STRING_H
+#endif //PCB_memcpy
+
+#ifndef PCB_memmove
+#ifdef PCB_HAS_STRING_H
+#define PCB_memmove memmove
+#else
+void* PCB_memmove(void* dest, const void* src, size_t n) {
+    char* d = (char*)dest;
+    const char* s = (const char*)src;
+    if(s < d && d < s + n) { //overlap check?
+        s += n; d += n;
+        while(n-- > 0) *--d = *--s;
+    }
+    else while(n-- > 0) *d++ = *s++;
+    return dest;
+}
+#define PCB_memmove PCB_memmove
+#endif //PCB_HAS_STRING_H
+#endif //PCB_memmove
+
+#ifndef PCB_memset
+#ifdef PCB_HAS_STRING_H
+#define PCB_memset memset
+#else
+void* PCB_memset(void* s, int v, size_t n) {
+    char* p = (char*)s;
+    while(n-- > 0) *p++ = (char)v;
+    return s;
+}
+#define PCB_memset PCB_memset
+#endif //PCB_HAS_STRING_H
+#endif //PCB_memset
+
+#ifndef PCB_memcmp
+#ifdef PCB_HAS_STRING_H
+#define PCB_memcmp memcmp
+#else
+int PCB_memcmp(const void* p1, const void* p2, size_t n) {
+    const unsigned char* x1 = (const unsigned char*)p1;
+    const unsigned char* x2 = (const unsigned char*)p2;
+    while(*x1 == *x2 && n > 0) { ++x1; ++x2; --n; }
+    return (*x1 > *x2) - (*x1 < *x2);
+}
+#define PCB_memcmp PCB_memcmp
+#endif //PCB_HAS_STRING_H
+#endif //PCB_memcmp
 
 #ifndef PCB_assert
 #ifdef PCB_HAS_ASSERT_H
@@ -598,7 +660,7 @@ static void f()
 while((index) < (vec)->length) {                         \
     if((vec)->length == (vec)->capacity)                 \
         PCB_Vec_reserve(vec, 1);                         \
-    memmove(                                             \
+    PCB_memmove(                                             \
         (vec)->data + (index) + 1, (vec)->data + (index),\
         ((vec)->length - (index)) * sizeof(*(vec)->data) \
     ); (vec)->data[(index)] = (item);                    \
@@ -613,7 +675,7 @@ while((index) < (vec)->length) {                         \
 #ifndef PCB_Vec_erase
 #define PCB_Vec_erase(vec, index)                            \
 while((index) < (vec)->length) {                             \
-    memmove(                                                 \
+    PCB_memmove(                                                 \
         (vec)->data + (index), (vec)->data + (index) + 1,    \
         ((vec)->length - (index) - 1) * sizeof(*(vec)->data) \
     ); --(vec)->length; break;                               \
@@ -864,7 +926,7 @@ bool PCB_String_append(PCB_String* this, const PCB_String* other) {
         const size_t targetSize = this->length + other->length + 1;
         PCB_String_realloc(this, targetSize);
     }
-    memcpy(this->data + this->length, other->data, other->length + 1);
+    PCB_memcpy(this->data + this->length, other->data, other->length + 1);
     this->length += other->length;
     return true;
 }
@@ -875,7 +937,7 @@ bool PCB_String_append_cstr(PCB_String* this, const char* str) {
         const size_t targetSize = this->length + len + 1;
         PCB_String_realloc(this, targetSize);
     }
-    memcpy(this->data + this->length, str, len + 1);
+    PCB_memcpy(this->data + this->length, str, len + 1);
     this->length += len;
     return true;
 }
@@ -886,7 +948,7 @@ bool PCB_String_append_chars(PCB_String* this, const char c, const size_t howMan
         const size_t targetSize = this->length + howManyTimes + 1;
         PCB_String_realloc(this, targetSize);
     }
-    memset(this->data + this->length, c, howManyTimes);
+    PCB_memset(this->data + this->length, c, howManyTimes);
     this->length += howManyTimes;
     this->data[this->length] = '\0';
     return true;
@@ -922,7 +984,7 @@ PCB_String PCB_String_clone(const PCB_String* this) {
         s.length = s.capacity = 0;
         return s;
     }
-    memcpy(s.data, this->data, s.length + 1);
+    PCB_memcpy(s.data, this->data, s.length + 1);
     return s;
 }
 //Compares `a` and `b` lexicographically.
@@ -931,7 +993,7 @@ int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
     else if(a->data == NULL) return 1;
     else if(b->data == NULL) return -1;
     return a->length == b->length
-        ? memcmp(a->data, b->data, a->length)
+        ? PCB_memcmp(a->data, b->data, a->length)
         : (a->length > b->length) - (a->length < b->length);
 }
 
@@ -948,7 +1010,7 @@ int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
 bool PCB_String_startsWith(const PCB_String* this, const PCB_String* other) {
     if(this->data == NULL || other->data == NULL) return false;
     if(other->length > this->length) return false;
-    return !memcmp(this->data, other->data, other->length);
+    return !PCB_memcmp(this->data, other->data, other->length);
 }
 
 //Checks if `this` starts with `other`.
@@ -957,7 +1019,7 @@ bool PCB_String_startsWith_cstr(const PCB_String* this, const char* other) {
     if(this->data == NULL) return false;
     const size_t len = strlen(other);
     if(len > this->length) return false;
-    return !memcmp(this->data, other, len);
+    return !PCB_memcmp(this->data, other, len);
 }
 
 //Checks if `this` ends with `other`.
@@ -965,7 +1027,7 @@ bool PCB_String_startsWith_cstr(const PCB_String* this, const char* other) {
 bool PCB_String_endsWith(const PCB_String* this, const PCB_String* other) {
     if(this->data == NULL || other->data == NULL) return false;
     if(other->length > this->length) return false;
-    return !memcmp(
+    return !PCB_memcmp(
         this->data + this->length - other->length,
         other->data, other->length
     );
@@ -977,7 +1039,7 @@ bool PCB_String_endsWith_cstr(const PCB_String* this, const char* other) {
     if(this->data == NULL) return false;
     const size_t len = strlen(other);
     if(len > this->length) return false;
-    return !memcmp(this->data + this->length - len, other, len);
+    return !PCB_memcmp(this->data + this->length - len, other, len);
 }
 
 void PCB_String_toUpperCase(PCB_String* this) {
@@ -1298,10 +1360,7 @@ int PCB_build_directory(PCB_String* from, PCB_String* to) {
         if(S_ISDIR(st.st_mode)) {
 #else
         if(entry->d_type == DT_DIR) {
-            if(!PCB_String_append_cstr(from, entry->d_name)) {
-                code = ENOMEM;
-                goto error;
-            }
+            if(!PCB_String_append_cstr(from, entry->d_name)) PCB_err(ENOMEM)
 #endif //pesky, but useful GNU extensions
             if(!PCB_String_append_cstr(to, entry->d_name)) PCB_err(ENOMEM)
             if(!PCB_String_append_chars(from, '/', 1)) PCB_err(ENOMEM)
@@ -1313,10 +1372,7 @@ int PCB_build_directory(PCB_String* from, PCB_String* to) {
         else if(S_ISREG(st.st_mode)) {
 #else
         else if(entry->d_type == DT_REG) {
-            if(!PCB_String_append_cstr(from, entry->d_name)) {
-                code = ENOMEM;
-                goto error;
-            }
+            if(!PCB_String_append_cstr(from, entry->d_name)) PCB_err(ENOMEM)
 #endif //pesky, but useful GNU extensions
             if(PCB_String_endsWith_cstr(from, ".c")) {
                 if(!PCB_String_append_cstr(to, entry->d_name)) PCB_err(ENOMEM)
@@ -1487,6 +1543,13 @@ ssize_t PCB_ShellCommand_run_and_wait_old(PCB_ShellCommand* command) {
 }
 
 //Appendix 2: Changelog
+//Version 0.1.1:
+//- Added PCB_HAS_STRING_H macro for libc's string.h header detection
+//- Added PCB_memcpy, PCB_memmove, PCB_memset, PCB_memcmp macros
+//  which map to libc if available, otherwise they map to
+//  equivalent functions with the same name implemented within
+//  PCB itself; memcpy, memmove, memset, memcmp are therefore
+//  substituted with PCB_ versions
 //Version 0.1.0:
 //- Moved platform identification to section 1.1
 //- Added support for some Apple platforms
