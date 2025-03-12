@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 2
+#define PCB_VERSION_PATCH 3
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1208,89 +1208,61 @@ ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
 //Section 3: PCB's build capability
 
 #define PCB_BUILD_CAPABILITY //temporary for development
-//Section 3.1: Default compiler-dependent flags
 
 #ifdef PCB_BUILD_CAPABILITY
-#ifndef PCB_DEFAULT_COMPILER_FLAGS
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-#define PCB_DEFAULT_COMPILER_FLAGS "-Wall -Wextra"
-#elif PCB_COMPILER_MSVC
-#define PCB_DEFAULT_COMPILER_FLAGS "/Wall"
-#endif //compilers
-#endif //PCB_DEFAULT_COMPILER_FLAGS
-#endif //PCB_BUILD_CAPABILITY
+//Section 3.??? (not finalized)
+
+typedef struct {
+    //Path to the compiler executable to use.
+    ////Defaults to the compiler's name used to build this file.
+    const char* compilerPath;
+    //Path to the build directory. Defaults to "build/".
+    const char* buildPath;
+    //Vector of paths to source directories.
+    PCB_CStringVec sources;
+    //Vector of paths to include directories.
+    PCB_CStringVec includes;
+    //Vector of names of libraries to link dynamically.
+    PCB_CStringVec libs;
+    //Vector of names of libraries to link *statically*.    
+    PCB_CStringVec staticLibs;
+    //Vector of additional paths to pass to the compiler to
+    //search for specified libraries.
+    PCB_CStringVec librarySearchPaths;
+    //Vector of compiler optimization flags. Not a singular const char*
+    //since, for example in GCC, you can pass "-f" optimization flags
+    //on top of "-O" flags.
+    PCB_CStringVec optimizationFlags;
+    //Vector of debug flags. Put flags about sanitizers here.
+    PCB_CStringVec debugFlags;
+    //Vector of warning flags, as well as warning-as-error flags.
+    PCB_CStringVec warningFlags;
+    //Vector of other compiler flags not covered by the rest of this struct.
+    PCB_CStringVec otherFlags;
+    //Internal buffer used for enumerating source paths.
+    PCB_String currentSourcePath;
+    //Internal buffer used for enumerating build paths w.r.t. the source path.
+    PCB_String currentBuildPath;
+    //Internal buffer used for commands when building. Do not use.
+    PCB_ShellCommand commandBuffer;
+    //The language standard used to compile source files.
+    //Defaults to the standard used to build this file.
+    long standard;
+} PCB_BuildContext;
 
 
-//Section 3.2: Variables used for building.
-
-
-//Path to the compiler used.
-//Defaults to the compiler's name used to build this file.
-static const char* PCB_compiler_path =
-//this is ugly, but it has to be like that
-#if PCB_COMPILER_GCC
-#ifdef __cplusplus
-"g++"
-#else
-"gcc"
-#endif //C++
-#elif PCB_COMPILER_CLANG
-#ifdef __cplusplus
-"clang++"
-#else
-"clang"
-#endif //C++
-#elif PCB_COMPILER_MSVC
-"cl"
-#endif //default compiler paths
-;
-
-//The language version used to compile source files.
-//Defaults to the version used to build this file.
-static long PCB_lang_version =
-//same as above
-#ifdef __cplusplus
-__cplusplus
-#else
-__STDC_VERSION__
-#endif //C++
-;
-//Path to the build directory. Defaults to "build/".
 static const char* PCB_build_dir = "build/";
-//Vector of paths to source directories. Initially empty.
 static PCB_CStringVec PCB_src_dirs = {0};
-//Vector of paths to include directories. Initially empty.
+
 static PCB_CStringVec PCB_include_dirs = {0};
-//Vector of names of libraries to link dynamically. Initially empty.
+
 static PCB_CStringVec PCB_libs = {0};
-//Vector of names of libraries to link *statically*. Initially empty.
+
 static PCB_CStringVec PCB_static_libs = {0};
 
-//Internal buffer used for commands when building. Do not use.
+
 static PCB_ShellCommand PCB_commandBuffer = {0};
 
-//It doesn't really make sense to have multiple *main*
-//build directories, hence it's not a vector, unlike others.
-#ifndef PCB_Set_Build_Directory
-#define PCB_Set_Build_Directory(path) PCB_build_dir = path
-#endif //PCB_Set_Build_Directory
-
-
-#ifndef PCB_Add_Source_Directory
-#define PCB_Add_Source_Directory(path) PCB_Vec_append(&PCB_src_dirs, path)
-#endif //PCB_Add_Source_Directory
-
-#ifndef PCB_Add_Include_Directory
-#define PCB_Add_Include_Directory(path) PCB_Vec_append(&PCB_include_dirs, path)
-#endif //PCB_Add_Include_Directory
-
-#ifndef PCB_Add_Library
-#define PCB_Add_Library(name) PCB_Vec_append(&PCB_libs, name)
-#endif //PCB_Add_Library
-
-#ifndef PCB_Add_Static_Library
-#define PCB_Add_Static_Library(name) PCB_Vec_append(&PCB_static_libs, name)
-#endif //PCB_Add_Static_Library
 
 
 
@@ -1299,7 +1271,6 @@ static PCB_ShellCommand PCB_commandBuffer = {0};
 
 int PCB_build_file(PCB_String* in, PCB_String* out) {
     // PCB_assert(false && "Not yet implemented");
-    (void)in; (void)out;
     PCB_log(PCB_LOGLEVEL_INFO, "In: %s, out: %s", in->data, out->data);
 
     // PCB_commandBuffer.length = 0;
@@ -1395,6 +1366,117 @@ int PCB_build_directory(PCB_String* from, PCB_String* to) {
 #endif //platform-dependent implementation
 }
 
+typedef enum {
+    PCB_BUILDOPTION_NONE = 0,
+    //Emits debug symbols into object files.
+    PCB_BUILDOPTION_DEBUG = 1,
+    //Equivalent to -O3 or /O3. For more granularity modify
+    //the build context manually.
+    PCB_BUILDOPTION_OPTIMIZE = 1 << 1,
+    //Turns ASan on if the target supports it.
+    PCB_BUILDOPTION_ASAN = 1 << 2
+    //TODO: other sanitizers + more options
+} PCB_BuildOption;
+
+/**
+ * @brief Create a PCB_BuildContext struct.
+ * 
+ * @param flags PCB_BuildOptions OR'ed together
+ * @return a zeroed out struct if `flags == 0` or on error. 
+ * Otherwise returns a default-initialized build context based on flags passed.
+ * 
+ * See Appendix 1 for more details.
+ */
+PCB_BuildContext PCB_CreateBuildContext(int flags) {
+    if(flags == 0) return (PCB_BuildContext) {0};
+    PCB_BuildContext context = {
+        .buildPath = "build/",
+        .standard =
+#ifdef __cplusplus
+            __cplusplus,
+#else
+            __STDC_VERSION__,
+#endif //C++
+        .compilerPath =
+//this is ugly, but it has to be like that
+#if PCB_COMPILER_GCC
+#ifdef __cplusplus
+            "g++"
+#else
+            "gcc"
+#endif //C++
+#elif PCB_COMPILER_CLANG
+#ifdef __cplusplus
+            "clang++"
+#else
+            "clang"
+#endif //C++
+#elif PCB_COMPILER_MSVC
+            "cl"
+#endif //default compiler paths
+    };
+    PCB_Vec_append(&context.sources, "src/");
+    PCB_Vec_append(&context.includes, "include/");
+#if PCB_COMPILER_GCC //https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html
+    PCB_Vec_append_variadic(
+        &context.warningFlags, const char*,
+        "-Wall", "-Wextra", "-Wdouble-promotion",
+        "-Werror=stringop-overflow", "-Wformat=2",
+        "-Wnull-dereference", //-Winit-self
+        "-Werror=use-after-free=2",
+        "-Walloc-size", "-Walloc-zero",
+        "-Werror=array-bounds=1",
+        "-Wduplicated-branches", "-Wduplicated-cond",
+        "-Wshadow", "-Wfree-nonheap-object",
+        "-Wbad-function-cast", "-Wconversion"
+    );
+#elif PCB_COMPILER_CLANG //https://clang.llvm.org/docs/DiagnosticsReference.html
+    PCB_Vec_append_variadic(
+        &context.warningFlags, const char*,
+        "-Wall", "-Wextra", "-Warray-bounds-pointer-arithmetic",
+        "-Warray-parameter", "-Wassign-enum",
+        "-Wbad-function-cast", "-Wbool-operation",
+        "-Wcast-function-type", "-Wconversion",
+        "-Wdouble-promotion", "-Wfloat-conversion",
+        "-Widiomatic-parentheses", "-Winfinite-recursion",
+        "-Wmismatched-tags", "-Wmissing-variable-declarations",
+        "-Wshadow-all", "-Wsign-compare", "-Wshorten-64-to-32",
+        "-Wsign-conversion", "-Wsometimes-uninitialized",
+        "-Wthread-safety", "-Wunused",
+        //-Wpessimizing-move -Wself-move <-- for C++
+        //-Wsuggest-destructor-override -Wsuggest-override
+        //-Wuninitialized-const-reference
+    );
+#elif PCB_COMPILER_MSVC
+    PCB_Vec_append_variadic(
+        &context.warningFlags, const char*,
+        "/W4", "/w44062", "/w44388", "/w25219", "/w15247",
+        "/w45263", "/w34191"
+    );
+#endif //compiler-specific warnings
+    if(flags & PCB_BUILDOPTION_OPTIMIZE) {
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+        PCB_Vec_append(&context.optimizationFlags, "-O3");
+#elif PCB_COMPILER_MSVC
+        PCB_Vec_append(&context.optimizationFlags, "/O3");
+#endif
+    }
+    if(flags & PCB_BUILDOPTION_OPTIMIZE) {
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+        PCB_Vec_append(&context.debugFlags, "-g");
+#elif PCB_COMPILER_MSVC
+        // PCB_Vec_append(&context.debugFlags, "/O3");
+#error "Setting up debug flags for MSVC is a pain, will do it later"
+#endif
+    }
+
+}
+
+int PCB_buildFromContext(PCB_BuildContext* context) {
+    PCB_assert(false && "Unfinished");
+    
+}
+
 int PCB_build(int argc, char** argv) {
 #define PCB_defer(v) { code = v; goto defer; }
     int code = 0;
@@ -1403,8 +1485,6 @@ int PCB_build(int argc, char** argv) {
     (void)PCB_static_libs;
     (void)PCB_libs;
     (void)PCB_include_dirs;
-    (void)PCB_compiler_path;
-    (void)PCB_lang_version;
     (void)PCB_commandBuffer;
 
     PCB_String srcPath = {0};
@@ -1540,6 +1620,11 @@ ssize_t PCB_ShellCommand_run_and_wait_old(PCB_ShellCommand* command) {
 }
 
 //Appendix 2: Changelog
+//Version 0.1.3:
+//- Changed course on how to approach builds:
+//  Instead of a set of global variables and macros around them to add compiler flags,
+//  PCB will build from a "build context", which allows for multiple build types
+//  and more configurability.
 //Version 0.1.2:
 //- Fixed PCB_VERSION_* defines to set them to the actual version
 //- Fixed a missing #endif at "#ifndef PCB_PLATFORM_POSIX"
