@@ -17,13 +17,13 @@ Currently implemented features:
 - macros for dynamic arrays of any type via PCB_Vec_* (see section 1.6.1)
 - logging with <span style="color:red">c</span><span style="color:orange">o</span><span style="color:yellow">l</span><span style="color:green">o</span><span style="color:blue">r</span><span style="color:violet">s</span> (see section 2.1)
 - platform-independent mkdir (more filesystem functionalities sometime in the future) (see section 2.2)
-- dynamic strings (see section 2.3)
+- dynamic strings (for now only ASCII is supported, UTF-8 support is *planned*) (see section 2.3)
 - platform-independent running shell commands (not fully implemented) (see section 2.4)
 
 PCB's functionality for building a project is disabled by default. To enable it, simply
 `#define PCB_BUILD_CAPABILITY` before `#include`'ing it. This will enable certain macros, variables and functions. See sections:
-- 3.1 for default compiler flags,
-- 3.2 for variables used for building,
-- 3.3 for functions used for building.
+- actually don't, nothing is implemented yet
 
 Certain functions have extended documentation. See Appendix 1 for details.
+
+The changelog is present in Appendix 2.

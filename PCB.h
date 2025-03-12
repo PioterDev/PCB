@@ -24,11 +24,11 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 0
+#define PCB_VERSION_MINOR 1
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 2
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -182,6 +182,7 @@
 #define PCB_PLATFORM_POSIX 1
 #else
 #define PCB_PLATFORM_POSIX 0
+#endif //platform
 #endif //PCB_PLATFORM_POSIX
 
 
@@ -417,25 +418,31 @@ static void f()
 #endif //PCB_USE_CSTDLIB
 
 #if defined(PCB_USE_CSTDLIB) && PCB_USE_CSTDLIB
+
 #ifndef PCB_HAS_STDIO_H
 #include <stdio.h>
 #define PCB_HAS_STDIO_H
 #endif //PCB_HAS_STDIO_H
+
 #ifndef PCB_HAS_STDLIB_H
 #include <stdlib.h>
 #define PCB_HAS_STDLIB_H
 #endif //PCB_HAS_STDLIB_H
+
 #ifndef PCB_HAS_ASSERT_H
 #include <assert.h>
 #define PCB_HAS_ASSERT_H
 #endif //PCB_HAS_ASSERT_H
+
 #ifndef PCB_HAS_STRING_H
 #include <string.h>
 #include <strings.h>
 #define PCB_HAS_STRING_H
 #endif //PCB_HAS_STRING_H
+
 #include <stdarg.h>
 #include <stdbool.h>
+
 #endif //PCB_USE_CSTDLIB?
 
 //Section 1.5: Define functions/macros that PCB uses
@@ -591,21 +598,10 @@ int PCB_memcmp(const void* p1, const void* p2, size_t n) {
 //Appends `item` to `vec`. It does not handle
 //an erroneous reallocation and aborts instead.
 #ifndef PCB_Vec_append
-//The old version of PCB_Vec_append
-/* #define PCB_Vec_append(vec, item) do {                      \
- if((vec)->length == (vec)->capacity) {                     \
-    size_t newCapacity = (vec)->capacity == 0               \
-        ? PCB_VEC_INITIAL_CAPACITY : (vec)->capacity * 2;   \
-    (vec)->data = PCB_realloc(                              \
-        (vec)->data, sizeof(*(vec)->data) * newCapacity     \
-    ); PCB_assert((vec)->data && "Yikes.");                 \
-    (vec)->capacity = newCapacity;                          \
- } (vec)->data[(vec)->length++] = (item);                   \
-} while(0) */
-#define PCB_Vec_append(vec, item) do {      \
-    if((vec)->length == (vec)->capacity) {  \
-       PCB_Vec_reserve(vec, 1);             \
-    } (vec)->data[(vec)->length++] = (item);\
+#define PCB_Vec_append(vec, item) do {       \
+    if((vec)->length == (vec)->capacity) {   \
+       PCB_Vec_reserve(vec, 1);              \
+    } (vec)->data[(vec)->length++] = (item); \
 } while(0)
 #endif //PCB_Vec_append
 
@@ -615,7 +611,7 @@ int PCB_memcmp(const void* p1, const void* p2, size_t n) {
 //or less. There is also `PCB_Vec_append_variadic`,
 //which is more convenient in use, but requires specifying
 //the type of arguments provided since C doesn't have type inference
-//before C23 and `typeof` is a GNU extension that is not portable.
+//before C23 and `typeof` is a GNU extension, so it's not portable.
 #ifndef PCB_Vec_append_multiple
 #define PCB_Vec_append_multiple(vec, items, howMany) do {   \
     if((vec)->length + howMany > (vec)->capacity) {         \
@@ -1155,6 +1151,7 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
         );
         return (PCB_Process){ .handle = -1 };
     }
+    PCB_ShellCommand_append_arg(command, NULL);
     PCB_Process child = { .handle = fork() };
     if(child.handle == -1) {
         PCB_log(
@@ -1195,7 +1192,7 @@ ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
         return (ssize_t)0x8000000000000000;
 #elif PCB_PLATFORM_POSIX
         return -1;
-#endif
+#endif //platform-dependent return code
     }
 
     PCB_Process process = PCB_ShellCommand_runBg(command);
@@ -1204,7 +1201,7 @@ ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
         return (ssize_t)0x8000000000000001;
 #elif PCB_PLATFORM_POSIX
         return -2;
-#endif
+#endif //platform-dependent return code
     return PCB_Process_waitForExit(process);
 }
 
@@ -1543,6 +1540,12 @@ ssize_t PCB_ShellCommand_run_and_wait_old(PCB_ShellCommand* command) {
 }
 
 //Appendix 2: Changelog
+//Version 0.1.2:
+//- Fixed PCB_VERSION_* defines to set them to the actual version
+//- Fixed a missing #endif at "#ifndef PCB_PLATFORM_POSIX"
+//- Fixed the lack of NULL-termination in PCB_ShellCommand_runBg/POSIX
+//- Removed old PCB_Vec_append
+//- Added comments for some #endif's, added whitespace in some places for readability
 //Version 0.1.1:
 //- Added PCB_HAS_STRING_H macro for libc's string.h header detection
 //- Added PCB_memcpy, PCB_memmove, PCB_memset, PCB_memcmp macros
