@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 6
+#define PCB_VERSION_PATCH 7
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -189,25 +189,50 @@
 //Section 1.2: Identify the compiler used to compile this code
 
 #ifndef PCB_COMPILER
-#if defined(__GNUC__)
+#if defined(__GNUC__) && !defined(__llvm__) && !defined(__INTEL_COMPILER)
 #define PCB_COMPILER_GCC 1
 #define PCB_COMPILER_CLANG 0
 #define PCB_COMPILER_MSVC 0
 #if PCB_PLATFORM_WINDOWS
 #define PCB_COMPILER "MinGW"
+#ifdef __cplusplus
+#define PCB_COMPILER_PATH "g++"
+#else
+#define PCB_COMPILER_PATH "gcc"
+#endif //C++?
+#else
+#ifdef __MINGW32__
+#define PCB_COMPILER "MinGW"
+#ifdef __cplusplus
+#define PCB_COMPILER_PATH "x86_64-w64-mingw32-g++"
+#else
+#define PCB_COMPILER_PATH "x86_64-w64-mingw32-gcc"
+#endif //C++?
 #else
 #define PCB_COMPILER "GCC"
+#ifdef __cplusplus
+#define PCB_COMPILER_PATH "g++"
+#else
+#define PCB_COMPILER_PATH "gcc"
+#endif //C++?
 #endif //MinGW check
+#endif //platform
 #elif defined(__clang__)
 #define PCB_COMPILER_GCC 0
 #define PCB_COMPILER_CLANG 1
 #define PCB_COMPILER_MSVC 0
 #define PCB_COMPILER "Clang"
-#elif defined(_MSC_VER)
+#ifdef __cplusplus
+#define PCB_COMPILER_PATH "clang++"
+#else
+#define PCB_COMPILER_PATH "clang"
+#endif //C++?
+#elif defined(_MSC_VER) && !defined(__clang__)
 #define PCB_COMPILER_GCC 0
 #define PCB_COMPILER_CLANG 0
 #define PCB_COMPILER_MSVC 1
 #define PCB_COMPILER "MSVC"
+#define PCB_COMPILER_PATH "cl"
 #else
 #error PCB Error: Unsupported compiler
 #endif //compiler
@@ -342,11 +367,13 @@
 #endif //Compilers
 #endif //C++11
 #else //C
-#if __STDC_VERSION >= 202311L
+#if __STDC_VERSION__ >= 202311L
 #define PCB_NoReturn [[noreturn]]
 #else
 #if PCB_COMPILER_GCC
 #define PCB_NoReturn __attribute__((noreturn))
+#elif PCB_COMPILER_CLANG
+#define PCB_NoReturn _Noreturn
 #elif PCB_COMPILER_MSVC
 #define PCB_NoReturn __declspec(noreturn)
 #else
