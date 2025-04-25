@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 4
+#define PCB_VERSION_PATCH 5
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -563,134 +563,173 @@ int PCB_memcmp(const void* p1, const void* p2, size_t n) {
 
 //Section 1.6.1: template<*> struct vector in C let's goooo
 
-//Declares a struct which can be used in `PCB_Vec_*`
-//macros for dynamic array functionalities.
-#ifndef PCB_DECLARE_Vec
-#define PCB_DECLARE_Vec(T) typedef struct { \
-    T* data; \
-    size_t length; \
-    size_t capacity; \
-} Vec_##T
-#endif //PCB_DECLARE_Vec
-
 #ifndef PCB_VEC_INITIAL_CAPACITY
 #define PCB_VEC_INITIAL_CAPACITY 64
 #endif //PCB_VEC_INITIAL_CAPACITY
 
 #ifndef PCB_Vec_reserve
-#define PCB_Vec_reserve(vec, howMany) do {              \
-    size_t newCapacity = (vec)->capacity;               \
-    if(newCapacity == 0)                                \
-        newCapacity = PCB_VEC_INITIAL_CAPACITY;         \
-    while((vec)->capacity + (howMany) > newCapacity)    \
-        newCapacity *= 2;                               \
-    (vec)->data = PCB_realloc(                          \
-        (vec)->data, newCapacity * sizeof(*(vec)->data) \
-    ); PCB_assert((vec)->data && "Yikes.");             \
-    (vec)->capacity = newCapacity;                      \
+/**
+ * @brief Reserves `howMany` additional slots in `vec`.
+ *
+ * If reallocation fails, `vec`'s capacity remains unchanged.
+ */
+#define PCB_Vec_reserve(vec, howMany) do {                  \
+    size_t new__capacity__ = (vec)->capacity;               \
+    if(new__capacity__ == 0)                                \
+        new__capacity__ = PCB_VEC_INITIAL_CAPACITY;         \
+    while((vec)->capacity + (howMany) > new__capacity__) {  \
+        new__capacity__ *= 2;                               \
+    } void* new__data__ = PCB_realloc(                      \
+        (vec)->data, new__capacity__ * sizeof(*(vec)->data) \
+    ); if(new__data__ == NULL) break;                       \
+    (vec)->data = new__data__;                              \
+    (vec)->capacity = new__capacity__;                      \
 } while(0)
 #endif //PCB_Vec_reserve
 
 #ifndef PCB_Vec_free
-#define PCB_Vec_free(vec) (PCB_free((vec)->data))
+#define PCB_Vec_free(vec) PCB_free((vec)->data)
 #endif //PCB_Vec_free
 
-//Appends `item` to `vec`. It does not handle
-//an erroneous reallocation and aborts instead.
+#ifndef PCB_Vec_destroy
+/**
+ * @brief Destroys `vec`, i.e. frees its buffer and resets fields
+ * to their default values (0 and NULL).
+ */
+#define PCB_Vec_destroy(vec) do {           \
+    PCB_Vec_free(vec); (vec)->data = NULL;  \
+    (vec)->length = (vec)->capacity = 0;    \
+} while(0)
+#endif //PCB_Vec_destroy
+
 #ifndef PCB_Vec_append
+/**
+ * @brief Appends `item` to `vec`.
+ *
+ * If reallocation fails, `vec`'s capacity remains unchanged.
+ */
 #define PCB_Vec_append(vec, item) do {       \
+    const size_t cu__P__ = (vec)->capacity;  \
     if((vec)->length == (vec)->capacity) {   \
-       PCB_Vec_reserve(vec, 1);              \
+        PCB_Vec_reserve(vec, 1);             \
+        if((vec)->capacity == cu__P__) break;\
     } (vec)->data[(vec)->length++] = (item); \
 } while(0)
 #endif //PCB_Vec_append
 
-//Appends `howMany` `items` to `vec`. The `items` argument
-//must be an array which size is known at compile time with
-//sizeof, while `howMany` is the number of elements in `items`
-//or less. There is also `PCB_Vec_append_variadic`,
-//which is more convenient in use, but requires specifying
-//the type of arguments provided since C doesn't have type inference
-//before C23 and `typeof` is a GNU extension, so it's not portable.
 #ifndef PCB_Vec_append_multiple
-#define PCB_Vec_append_multiple(vec, items, howMany) do {   \
-    if((vec)->length + howMany > (vec)->capacity) {         \
-        PCB_Vec_reserve(vec, howMany);                      \
-    } for(size_t i = 0; i < howMany; i++) {                 \
-        (vec)->data[i + (vec)->length] = (items)[i];        \
-    } (vec)->length += (howMany);                           \
+/**
+ * @brief Appends `howMany` `items` to `vec`.
+ *
+ * There is also `PCB_Vec_append_variadic`, which is more convenient in use,
+ * but requires specifying the type of arguments provided since C doesn't have
+ * type inference before C23 and `typeof` is a GNU extension, so it's not portable.
+ */
+#define PCB_Vec_append_multiple(vec, items, howMany) do {           \
+    if((vec)->length + howMany > (vec)->capacity) {                 \
+        PCB_Vec_reserve(vec, howMany);                              \
+    } for(size_t IiindeX__ = 0; IiindeX__ < howMany; IiindeX__++) { \
+        (vec)->data[IiindeX__ + (vec)->length] = (items)[IiindeX__];\
+    } (vec)->length += (howMany);                                   \
 } while(0)
 #endif //PCB_Vec_append_multiple
 
-//Appends a variadic number of elements to `vec`.
-//The `type` of a variadic argument is needed since
-//C doesn't have type inference before C23 and `typeof`
-//is a GNU extension that is not portable.
 #ifndef PCB_Vec_append_variadic
-#define PCB_Vec_append_variadic(vec, type, ...) do {        \
-    type _items[] = { __VA_ARGS__ };                        \
-    size_t _howMany = sizeof(_items) / sizeof(_items[0]);   \
-    PCB_Vec_append_multiple(vec, _items, _howMany);         \
+/**
+ * @brief Appends a variadic number of elements to `vec`.
+ *
+ * The `type` of a variadic argument is needed since C doesn't have
+ * type inference before C23 and `typeof` is a GNU
+ * extension that is not portable.
+ */
+#define PCB_Vec_append_variadic(vec, type, ...) do {          \
+    type itEMs__[] = { __VA_ARGS__ };                         \
+    size_t hOw_mAnY__ = sizeof(itEMs__) / sizeof(itEMs__[0]); \
+    PCB_Vec_append_multiple(vec, itEMs__, hOw_mAnY__);        \
 } while(0)
 #endif //PCB_Vec_append_variadic
 
-//Pops the last element from `vec`.
-//If the length of `vec` is zero, the behavior
-//is dependent on whether PCB_assert is defined as an aborting assert.
-//If so, aborts. Otherwise the behavior is undefined.
 #ifndef PCB_Vec_pop
+/**
+ * @brief Pops the last element from `vec`.
+ *
+ * If the length of `vec` is zero, the behavior is dependent on whether
+ * `PCB_assert` is defined as an aborting assertion. 
+ * If so, aborts. Otherwise the behavior is undefined.
+ */
 #define PCB_Vec_pop(vec) \
     (PCB_assert((vec)->length > 0), (vec)->data[--(vec)->length])
 #endif //PCB_Vec_pop
 
-//Clears `vec`...which literally only reset its length.
-//Do not use if elements hold data that needs to be destroyed.
+#ifndef PCB_Vec_last
+/**
+ * @brief Returns a pointer to the last element of `vec`.
+ */
+#define PCB_Vec_last(vec) \
+    (PCB_assert((vec)->length > 0), &((vec)->data[(vec)->length - 1]))
+#endif //PCB_Vec_last
+
 #ifndef PCB_Vec_clear
+/**
+ * @brief Clears `vec`...which literally only reset its length.
+ * Do not use if elements hold data that needs to be destroyed.
+ */
 #define PCB_Vec_clear(vec) ((vec)->length = 0)
 #endif //PCB_Vec_clear
 
-//Inserts `item` into `vec` at position `index`.
-//If `index` >= current length of `vec`, nothing happens.
 #ifndef PCB_Vec_insert
-#define PCB_Vec_insert(vec, item, index)                 \
-while((index) < (vec)->length) {                         \
-    if((vec)->length == (vec)->capacity)                 \
-        PCB_Vec_reserve(vec, 1);                         \
+/**
+ * @brief Inserts `item` into `vec` at position `index`.
+ *
+ * If `index` >= current length of `vec`, nothing happens.
+ */
+#define PCB_Vec_insert(vec, item, index)                     \
+while((index) < (vec)->length) {                             \
+    if((vec)->length == (vec)->capacity)                     \
+        PCB_Vec_reserve(vec, 1);                             \
     PCB_memmove(                                             \
-        (vec)->data + (index) + 1, (vec)->data + (index),\
-        ((vec)->length - (index)) * sizeof(*(vec)->data) \
-    ); (vec)->data[(index)] = (item);                    \
-    ++(vec)->length; break;                              \
+        (vec)->data + (index) + 1, (vec)->data + (index),    \
+        ((vec)->length - (index)) * sizeof(*(vec)->data)     \
+    ); (vec)->data[(index)] = (item); ++(vec)->length; break;\
 }
 #endif //PCB_Vec_insert
 
-//Erases the element at index `index` from `vec`.
-//If the element holds any important value, it needs to be
-//copied beforehand.
-//If `index` >= current length of `vec`, nothing happens.
 #ifndef PCB_Vec_erase
-#define PCB_Vec_erase(vec, index)                            \
-while((index) < (vec)->length) {                             \
-    PCB_memmove(                                                 \
-        (vec)->data + (index), (vec)->data + (index) + 1,    \
-        ((vec)->length - (index) - 1) * sizeof(*(vec)->data) \
-    ); --(vec)->length; break;                               \
+/**
+ * @brief Erases the element at index `index` from `vec`.
+ *
+ * If the element holds any important value, it needs to be copied beforehand.
+ * If `index` >= current length of `vec`, nothing happens.
+ */
+#define PCB_Vec_erase(vec, index)                           \
+while((index) < (vec)->length) {                            \
+    PCB_memmove(                                            \
+        (vec)->data + (index), (vec)->data + (index) + 1,   \
+        ((vec)->length - (index) - 1) * sizeof(*(vec)->data)\
+    ); --(vec)->length; break;                              \
 }
 #endif //PCB_Vec_erase
 
-//Executes an expression on every element of `vec`.
-//`_expr` can be a function receiving a pointer to the element
-//or a macro for inline expressions.
-//An example usage with a macro is as follows:
-//PCB_DECLARE_Vec(int) v;
-//...
-//#define EXPR(x) printf("%d ", *x)
-//PCB_Vec_forEach(&v, EXPR);
-//#undef EXPR
-//...
 #ifndef PCB_Vec_forEach
-#define PCB_Vec_forEach(vec, _expr) \
-    for(size_t i = 0; i < (vec)->length; i++) { _expr(&(vec)->data[i]); }
+/**
+ * @brief Executes an expression on every element of `vec`.
+ *
+ * `expr` can be a function receiving a pointer to the element
+ * or a macro for inline expressions.
+ * An example usage with a macro is as follows:
+ * ```c
+ * //struct with `data`, `length` and `capacity` fields
+ * Vec_int v = {0};
+ * ...
+ * #define EXPR(ptr) printf("%d ", *ptr)
+ * PCB_Vec_forEach(&v, EXPR);
+ * #undef EXPR
+ * ...
+ * ```
+ */
+#define PCB_Vec_forEach(vec, expr) \
+    for(size_t iINDex__ = 0; iINDex__ < (vec)->length; iINDex__++) \
+        { expr(&(vec)->data[iINDex__]); }
 #endif //PCB_Vec_forEach
 
 //Section 1.6.2: Other macros
