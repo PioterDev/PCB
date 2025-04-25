@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 8
+#define PCB_VERSION_PATCH 9
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -966,6 +966,23 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
             break;
     }
 }
+
+#ifndef PCB_logTrace
+#ifdef PCB_DEBUG
+#define PCB_logTrace(...) PCB_log(PCB_LOGLEVEL_TRACE, __VA_ARGS__)
+#else
+#define PCB_logTrace(...)
+#endif //PCB_DEBUG
+#endif //PCB_logTrace
+
+#ifndef PCB_logDebug
+#ifdef PCB_DEBUG
+#define PCB_logDebug(...) PCB_log(PCB_LOGLEVEL_DEBUG, __VA_ARGS__)
+#else
+#define PCB_logDebug(...)
+#endif //PCB_DEBUG
+#endif //PCB_logDebug
+
 
 //Section 2.2: Platform-independent (sort of) filesystem functions
 
