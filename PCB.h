@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 7
+#define PCB_VERSION_PATCH 8
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -849,14 +849,18 @@ while((index) < (vec)->length) {                            \
 extern "C" {
 #endif //C++
 
-//Section 2.1: Logging
+
+//Section 2.1: Logging, messages, error handling
+
 typedef enum {
-    PCB_LOGLEVEL_TRACE,
-    PCB_LOGLEVEL_DEBUG,
-    PCB_LOGLEVEL_INFO,
-    PCB_LOGLEVEL_WARN,
-    PCB_LOGLEVEL_ERROR,
-    PCB_LOGLEVEL_FATAL
+    PCB_LOGLEVEL_NONE,	PCB_LOGLEVEL_NONE_NL,  //without the prefix
+    PCB_LOGLEVEL_TRACE,	PCB_LOGLEVEL_TRACE_NL,
+    PCB_LOGLEVEL_DEBUG,	PCB_LOGLEVEL_DEBUG_NL,
+    PCB_LOGLEVEL_INFO,	PCB_LOGLEVEL_INFO_NL,
+    PCB_LOGLEVEL_WARN,	PCB_LOGLEVEL_WARN_NL,
+    PCB_LOGLEVEL_ERROR,	PCB_LOGLEVEL_ERROR_NL,
+    PCB_LOGLEVEL_FATAL,	PCB_LOGLEVEL_FATAL_NL
+    //With '\n'         Without '\n'
 } PCB_LogLevel;
 
 void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
@@ -864,7 +868,7 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
 #if PCB_PLATFORM_WINDOWS
     //TODO: ANSI escape sequences are supported since Windows 10,
     //but have to be enabled with SetConsoleMode.
-    typedef enum { ANSI_OFF, ANSI_ON, ANSI_ERR } ansi_esc_seq_avail;
+    enum { ANSI_OFF, ANSI_ON, ANSI_ERR };
     static char ansiEscapeSequenceAvailable = ANSI_OFF;
     if(ansiEscapeSequenceAvailable == ANSI_OFF) {} //enable it
     else if(ansiEscapeSequenceAvailable == ANSI_ERR) {} //fallback to SetConsoleTextAttribute
@@ -874,37 +878,45 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
     if(hStderr == INVALID_HANDLE_VALUE) return;
 #endif
     switch(level) {
+        case PCB_LOGLEVEL_NONE:
+        case PCB_LOGLEVEL_NONE_NL:
+            break;
         case PCB_LOGLEVEL_TRACE:
+        case PCB_LOGLEVEL_TRACE_NL:
 #if PCB_PLATFORM_WINDOWS
-            fprintf(stderr, "[");
-            SetConsoleTextAttribute(hStderr, 8); fprintf(stderr, "Trace");
-            SetConsoleTextAttribute(hStderr, 0xf); fprintf(stderr, "]\t");
+            fprintf(stdout, "[");
+            SetConsoleTextAttribute(hStderr, 8); fprintf(stdout, "Trace");
+            SetConsoleTextAttribute(hStderr, 0xf); fprintf(stdout, "]\t");
 #else
-            fprintf(stderr, "[\033[38;5;238mTrace\033[0m]\t");
+            fprintf(stdout, "[\033[38;5;238mTrace\033[0m]\t");
 #endif
             break;
         case PCB_LOGLEVEL_DEBUG:
+        case PCB_LOGLEVEL_DEBUG_NL:
 #if PCB_PLATFORM_WINDOWS
-        fprintf(stderr, "[");
-        SetConsoleTextAttribute(hStderr, 0xb); fprintf(stderr, "Debug");
-        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stderr, "]\t");
+        fprintf(stdout, "[");
+        SetConsoleTextAttribute(hStderr, 0xb); fprintf(stdout, "Debug");
+        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stdout, "]\t");
 #else
-        fprintf(stderr, "[\033[38;5;51mDebug\033[0m]\t");
+        fprintf(stdout, "[\033[38;5;51mDebug\033[0m]\t");
 #endif
         break;
     case PCB_LOGLEVEL_INFO:
-        fprintf(stderr, "[Info]\t");
+    case PCB_LOGLEVEL_INFO_NL:
+        fprintf(stdout, "[Info]\t");
         break;
     case PCB_LOGLEVEL_WARN:
+    case PCB_LOGLEVEL_WARN_NL:
 #if PCB_PLATFORM_WINDOWS
-        fprintf(stderr, "[");
-        SetConsoleTextAttribute(hStderr, 6); fprintf(stderr, "Warn");
-        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stderr, "]\t");
+        fprintf(stdout, "[");
+        SetConsoleTextAttribute(hStderr, 6); fprintf(stdout, "Warn");
+        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stdout, "]\t");
 #else
-        fprintf(stderr, "[\033[38;5;214mWarn\033[0m]\t");
+        fprintf(stdout, "[\033[38;5;214mWarn\033[0m]\t");
 #endif
         break;
     case PCB_LOGLEVEL_ERROR:
+    case PCB_LOGLEVEL_ERROR_NL:
 #if PCB_PLATFORM_WINDOWS
         fprintf(stderr, "[");
         SetConsoleTextAttribute(hStderr, 0xc); fprintf(stderr, "Error");
@@ -914,6 +926,7 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
 #endif
         break;
     case PCB_LOGLEVEL_FATAL:
+    case PCB_LOGLEVEL_FATAL_NL:
 #if PCB_PLATFORM_WINDOWS
         fprintf(stderr, "[");
         SetConsoleTextAttribute(hStderr, 4); fprintf(stderr, "Fatal");
@@ -922,15 +935,36 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
         fprintf(stderr, "[\033[1m\033[38;5;1mFatal\033[0m]\t");
 #endif
         break;
-    default:
-        fprintf(stderr, "[Unknown] ");
-        break;
     }
     va_list args;
     va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
+    //Yes, dear reader. This switch-case shouldn't be written like this.
+    //However, I hate excessive whitespace.
+    switch(level) {
+        case PCB_LOGLEVEL_NONE:  case PCB_LOGLEVEL_NONE_NL:
+        case PCB_LOGLEVEL_TRACE: case PCB_LOGLEVEL_TRACE_NL:
+        case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_DEBUG_NL:
+        case PCB_LOGLEVEL_INFO:  case PCB_LOGLEVEL_INFO_NL:
+        case PCB_LOGLEVEL_WARN:  case PCB_LOGLEVEL_WARN_NL:
+            vfprintf(stdout, fmt, args); break;
+        case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_ERROR_NL:
+        case PCB_LOGLEVEL_FATAL: case PCB_LOGLEVEL_FATAL_NL:
+            vfprintf(stderr, fmt, args); break;
+    }
     va_end(args);
-    fprintf(stderr, "\n");
+    switch(level) {
+        case PCB_LOGLEVEL_NONE:  case PCB_LOGLEVEL_TRACE:
+        case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_INFO:
+        case PCB_LOGLEVEL_WARN:
+            fprintf(stdout, "\n"); break;
+        case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_FATAL:
+            fprintf(stderr, "\n"); break;
+        case PCB_LOGLEVEL_NONE_NL:  case PCB_LOGLEVEL_TRACE_NL:
+        case PCB_LOGLEVEL_DEBUG_NL: case PCB_LOGLEVEL_INFO_NL:
+        case PCB_LOGLEVEL_WARN_NL:  case PCB_LOGLEVEL_ERROR_NL:
+        case PCB_LOGLEVEL_FATAL_NL:
+            break;
+    }
 }
 
 //Section 2.2: Platform-independent (sort of) filesystem functions
