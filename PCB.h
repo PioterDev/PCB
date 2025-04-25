@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 9
+#define PCB_VERSION_PATCH 10
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -984,6 +984,57 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
 #endif //PCB_logDebug
 
 
+int PCB_GetError(void) {
+#if PCB_PLATFORM_WINDOWS
+    return (int)GetLastError();
+#elif PCB_PLATFORM_POSIX
+    return errno;
+#endif //platform
+}
+
+int PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize) {
+#if PCB_PLATFORM_WINDOWS
+    DWORD l = FormatMessageA(
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, errnum, 0, buf, (DWORD)bufSize, NULL
+    );
+    if(l == 0) return (int)GetLastError();
+    return 0;
+#elif PCB_PLATFORM_POSIX
+//this code right here is a very good example of xkcd 927
+#ifdef _GNU_SOURCE
+    char* errStr = strerror_r(errnum, buf, bufSize);
+    if(buf != errStr) snprintf(buf, bufSize, "%s", errStr);
+    return 0;
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+    int code = strerror_r(errnum, buf, bufSize);
+    if(code >= 0) return code; //glibc >= 2.13
+    return errno; //glibc < 2.13
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && defined(__STDC_LIB_EXT1__)
+#error test
+    return strerror_s(buf, bufSize, errnum);
+#else
+    snprintf(buf, bufSize, "%s", strerror(errnum));
+    return 0;
+#endif //this is really annoying...
+#endif //platform
+}
+
+//Log the latest error obtained from PCB_GetError() to stderr.
+//Otherwise functions similarly to `printf`.
+void PCB_logLatestError(const char* fmt, ...) {
+    char buf[256] = {0};
+    if(PCB_GetErrorMessage(
+        PCB_GetError(), buf, sizeof(buf))
+    ) return;
+    PCB_log(PCB_LOGLEVEL_ERROR_NL, ""); //quick'n'dirty hack
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    fprintf(stderr, ": %s\n", buf);
+}
+
 //Section 2.2: Platform-independent (sort of) filesystem functions
 
 //Creates a directory in the given `path`.
@@ -997,10 +1048,7 @@ bool PCB_mkdir(const char* path) {
             case EEXIST: //not an error if already exists
                 return true;
             default:
-                PCB_log(
-                    PCB_LOGLEVEL_ERROR,
-                    "Failed to create directory: %s", strerror(errno)
-                );
+                PCB_logLatestError("Failed to create directory \"%s\"", path);
                 return false;
         }
     }
@@ -1009,10 +1057,7 @@ bool PCB_mkdir(const char* path) {
     if(!CreateDirectory(path, NULL)) {
         DWORD err = GetLastError();
         if(err == ERROR_ALREADY_EXISTS) return true;
-        PCB_log(
-            PCB_LOGLEVEL_ERROR,
-            "Failed to create directory with error code %d", err
-        );
+        PCB_logLatestError("Failed to create directory \"%s\"", path);
         return false;
     }
     return true;
