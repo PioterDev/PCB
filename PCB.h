@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 5
+#define PCB_VERSION_PATCH 6
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -411,13 +411,16 @@ static void f()
 
 
 
-//Section 1.4: Import the C standard library,
-//unless defined otherwise
+//Section 1.4: Import libc, unless this macro is defined as 0
 #ifndef PCB_USE_CSTDLIB
 #define PCB_USE_CSTDLIB 1
 #endif //PCB_USE_CSTDLIB
 
 #if defined(PCB_USE_CSTDLIB) && PCB_USE_CSTDLIB
+//for "_s" functions
+#ifndef __STDC_WANT_LIB_EXT1__
+#define __STDC_WANT_LIB_EXT1__ 1
+#endif //__STDC_WANT_LIB_EXT1__
 
 #ifndef PCB_HAS_STDIO_H
 #include <stdio.h>
@@ -442,6 +445,26 @@ static void f()
 
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+//A useful command to list errno info: errno -l | sort -k2 -n
+#include <errno.h>
+#else
+//fallback for no booleans
+#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ < 202311L
+#ifndef PCB_BOOL_LOCALLY_DEFINED
+#define PCB_BOOL_LOCALLY_DEFINED
+#ifndef bool
+#define bool _Bool
+#endif //bool
+#ifndef true
+#define true 1
+#endif //true
+#ifndef false
+#define false 0
+#endif //false
+#endif //PCB_BOOL_LOCALLY_DEFINED
+#endif //bool
 
 #endif //PCB_USE_CSTDLIB?
 
@@ -458,7 +481,7 @@ static void f()
 
 #ifndef PCB_free
 #ifdef PCB_HAS_STDLIB_H
-#define PCB_free free
+#define PCB_free(ptr) free(ptr)
 #else
 #error "PCB Error: PCB requires PCB_free defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #define PCB_free(ptr)
@@ -523,6 +546,46 @@ int PCB_memcmp(const void* p1, const void* p2, size_t n) {
 #define PCB_memcmp PCB_memcmp
 #endif //PCB_HAS_STRING_H
 #endif //PCB_memcmp
+
+#ifndef PCB_strcmp
+#ifdef PCB_HAS_STRING_H
+#define PCB_strcmp strcmp
+#else
+int PCB_strcmp(const char* s1, const char* s2) {
+    const unsigned char* x1 = (const unsigned char*)s1;
+    const unsigned char* x2 = (const unsigned char*)s2;
+    while(*x1 && *x1 == *x2) { ++x1; ++x2; }
+    return (*x1 > *x2) - (*x1 < *x2);
+}
+#define PCB_strcmp PCB_strcmp
+#endif //PCB_HAS_STRING_H
+#endif //PCB_strcmp
+
+#ifndef PCB_strncmp
+#ifdef PCB_HAS_STRING_H
+#define PCB_strncmp strncmp
+#else
+int PCB_strncmp(const char* s1, const char* s2, size_t n) {
+    const unsigned char* x1 = (const unsigned char*)s1;
+    const unsigned char* x2 = (const unsigned char*)s2;
+    while(n > 0 && *x1 && *x1 == *x2) { ++x1; ++x2; --n; }
+    return n == 0 ? 0 : ((*x1 > *x2) - (*x1 < *x2));
+}
+#define PCB_strncmp PCB_strncmp
+#endif //PCB_HAS_STRING_H
+#endif //PCB_strncmp
+
+#ifndef PCB_strlen
+#ifdef PCB_HAS_STRING_H
+#define PCB_strlen strlen
+#else
+size_t PCB_strlen(const char* s) {
+    const char* cursor = s; while(*cursor++);
+    return (size_t)(cursor - s);
+}
+#define PCB_strlen PCB_strlen
+#endif ////PCB_HAS_STRING_H
+#endif //PCB_strlen
 
 #ifndef PCB_assert
 #ifdef PCB_HAS_ASSERT_H
@@ -967,7 +1030,7 @@ bool PCB_String_append(PCB_String* this, const PCB_String* other) {
 }
 
 bool PCB_String_append_cstr(PCB_String* this, const char* str) {
-    size_t len = strlen(str);
+    size_t len = PCB_strlen(str);
     if(this->length + len >= this->capacity) {
         const size_t targetSize = this->length + len + 1;
         PCB_String_realloc(this, targetSize);
@@ -1052,7 +1115,7 @@ bool PCB_String_startsWith(const PCB_String* this, const PCB_String* other) {
 //If `this` is empty (i.e. `data == NULL`), returns false.
 bool PCB_String_startsWith_cstr(const PCB_String* this, const char* other) {
     if(this->data == NULL) return false;
-    const size_t len = strlen(other);
+    const size_t len = PCB_strlen(other);
     if(len > this->length) return false;
     return !PCB_memcmp(this->data, other, len);
 }
@@ -1072,7 +1135,7 @@ bool PCB_String_endsWith(const PCB_String* this, const PCB_String* other) {
 //If `this` is empty (i.e. `data == NULL`), returns false.
 bool PCB_String_endsWith_cstr(const PCB_String* this, const char* other) {
     if(this->data == NULL) return false;
-    const size_t len = strlen(other);
+    const size_t len = PCB_strlen(other);
     if(len > this->length) return false;
     return !PCB_memcmp(this->data + this->length - len, other, len);
 }
@@ -1121,9 +1184,9 @@ PCB_String PCB_String_from_CStringVec(const PCB_CStringVec* cstr, const char* de
     if(cstr->data == NULL || cstr->length == 0)
         return (PCB_String){0};
     size_t totalLength = 0;
-    for(size_t i = 0; i < cstr->length; totalLength += strlen(cstr->data[i++]));
+    for(size_t i = 0; i < cstr->length; totalLength += PCB_strlen(cstr->data[i++]));
     //delimiter isn't placed at the end              v    '\0'
-    totalLength += strlen(delimiter) * (cstr->length - 1) + 1;
+    totalLength += PCB_strlen(delimiter) * (cstr->length - 1) + 1;
     PCB_String str = {
         .data = PCB_realloc(NULL, totalLength),
         .length = totalLength - 1, //we don't count the '\0'
@@ -1338,7 +1401,7 @@ int PCB_build_directory(PCB_String* from, PCB_String* to) {
     struct stat st;
 #endif
     for(struct dirent* entry = readdir(cwd); entry != NULL; entry = readdir(cwd)) {
-        if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        if(!PCB_strcmp(entry->d_name, ".") || !PCB_strcmp(entry->d_name, "..")) continue;
         size_t oldFromLength = from->length;
         size_t oldToLength = to->length;
 #ifdef __STRICT_ANSI__
@@ -1551,6 +1614,14 @@ int PCB_build(int argc, char** argv) {
 #ifdef __cplusplus
 }
 #endif //C++
+
+//Remove all locally defined, potentially conflicting macros
+
+#ifdef PCB_BOOL_LOCALLY_DEFINED
+#undef bool
+#undef true
+#undef false
+#endif //PCB_BOOL_LOCALLY_DEFINED
 
 //Appendix 1: Extended documentation of certain functions
 
