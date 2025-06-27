@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 11
+#define PCB_VERSION_PATCH 12
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -632,32 +632,19 @@ size_t PCB_strlen(const char* s) {
 #endif //PCB_assert
 
 //Section 1.6: Define other useful macros
+#ifndef PCB_TODO
+#define PCB_TODO(msg) PCB_assert(0 && msg " not yet implemented")
+#endif //PCB_TODO
 
-//Rounds `in` up to the nearest power of 2 - the 64-bit version.
-#ifndef PCB_roundUpToPowerOf2_64
-#define PCB_roundUpToPowerOf2_64(in) do { \
-    (in)--;                                 \
-    (in) |= (in) >> 1; (in) |= (in) >> 2;   \
-    (in) |= (in) >> 4; (in) |= (in) >> 8;   \
-    (in) |= (in) >> 16;(in) |= (in) >> 32;  \
-    (in)++;                                 \
-} while(0)
-#endif //PCB_roundUpToPowerOf2_64
+#ifndef PCB_ARRAY_LEN
+#define PCB_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif //PCB_ARRAY_LEN
 
-//Rounds `in` up to the nearest power of 2 - the 32-bit version.
-#ifndef PCB_roundUpToPowerOf2_32
-#define PCB_roundUpToPowerOf2_32(in) do {   \
-    (in)--;                                 \
-    (in) |= (in) >> 1; (in) |= (in) >> 2;   \
-    (in) |= (in) >> 4; (in) |= (in) >> 8;   \
-    (in) |= (in) >> 16; (in)++;             \
-} while(0)
-#endif //PCB_roundUpToPowerOf2_32
+#ifndef PCB_SHIFT
+#define PCB_SHIFT(xs, xs_sz) (PCB_assert((xs) > 0), --(xs), *(xs_sz)++)
+#endif //PCB_SHIFT
 
-//Rounds `in` up to the nearest power of 2. Assumes that `in` is 64-bit wide.
-#ifndef PCB_roundUpToPowerOf2
-#define PCB_roundUpToPowerOf2(in) PCB_roundUpToPowerOf2_64(in)
-#endif //PCB_roundUpToPowerOf2
+
 
 //Section 1.6.1: template<*> struct vector in C let's goooo
 
