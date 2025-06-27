@@ -839,6 +839,38 @@ while((index) < (vec)->length) {                            \
 #endif //platform-specific APIs
 
 
+#ifdef PCB_BUILD_DYN
+#ifndef PCB_DYN
+#define PCB_DYN
+#endif //PCB_DYN
+#endif //PCB_BUILD_DYN implies PCB_DYN
+
+#ifndef PCBAPI
+#if PCB_PLATFORM_WINDOWS
+#ifdef PCB_BUILD_DYN //we are building a DLL
+#define PCBAPI __declspec(dllexport)
+#elif defined(PCB_DYN) //we are *using* a DLL
+#define PCBAPI __declspec(dllimport)
+#endif //DLL-related options
+#else
+#ifdef PCB_BUILD_DYN
+#define PCBAPI __attribute__((visibility("default")))
+#endif //override visibility on non-Windows platforms
+#endif //platform
+#endif //PCBAPI
+
+#ifndef PCBAPI
+#define PCBAPI
+#endif //PCBAPI
+
+#ifndef PCBCALL
+#if PCB_PLATFORM_WINDOWS
+#define PCBCALL __cdecl
+#else
+#define PCBCALL
+#endif //use C calling convention on Windows
+#endif //PCBCALL, by default the C calling convention
+
 //Section 2: Implementation of various functions
 
 
