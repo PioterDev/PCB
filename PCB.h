@@ -28,7 +28,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 12
+#define PCB_VERSION_PATCH 13
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1116,9 +1116,9 @@ typedef struct {
     const char** data;
     size_t length;
     size_t capacity;
-} PCB_CStringVec;
+} PCB_CStrings;
 
-typedef PCB_CStringVec PCB_ShellCommand;
+typedef PCB_CStrings PCB_ShellCommand;
 
 #ifndef PCB_ShellCommand_append_arg
 #define PCB_ShellCommand_append_arg(cmd, str) PCB_Vec_append(cmd, str)
@@ -1347,7 +1347,7 @@ size_t PCB_String_pop(PCB_String* this, const PCB_String* other) {
     return this->length;
 }
 
-PCB_String PCB_String_from_CStringVec(const PCB_CStringVec* cstr, const char* delimiter) {
+PCB_String PCB_String_from_CStrings(const PCB_CStrings* cstr, const char* delimiter) {
     if(cstr->data == NULL || cstr->length == 0)
         return (PCB_String){0};
     size_t totalLength = 0;
@@ -1488,26 +1488,26 @@ typedef struct {
     //Path to the build directory. Defaults to "build/".
     const char* buildPath;
     //Vector of paths to source directories.
-    PCB_CStringVec sources;
+    PCB_CStrings sources;
     //Vector of paths to include directories.
-    PCB_CStringVec includes;
+    PCB_CStrings includes;
     //Vector of names of libraries to link dynamically.
-    PCB_CStringVec libs;
+    PCB_CStrings libs;
     //Vector of names of libraries to link *statically*.    
-    PCB_CStringVec staticLibs;
+    PCB_CStrings staticLibs;
     //Vector of additional paths to pass to the compiler to
     //search for specified libraries.
-    PCB_CStringVec librarySearchPaths;
+    PCB_CStrings librarySearchPaths;
     //Vector of compiler optimization flags. Not a singular const char*
     //since, for example in GCC, you can pass "-f" optimization flags
     //on top of "-O" flags.
-    PCB_CStringVec optimizationFlags;
+    PCB_CStrings optimizationFlags;
     //Vector of debug flags. Put flags about sanitizers here.
-    PCB_CStringVec debugFlags;
+    PCB_CStrings debugFlags;
     //Vector of warning flags, as well as warning-as-error flags.
-    PCB_CStringVec warningFlags;
+    PCB_CStrings warningFlags;
     //Vector of other compiler flags not covered by the rest of this struct.
-    PCB_CStringVec otherFlags;
+    PCB_CStrings otherFlags;
     //Internal buffer used for enumerating source paths.
     PCB_String currentSourcePath;
     //Internal buffer used for enumerating build paths w.r.t. the source path.
@@ -1521,13 +1521,13 @@ typedef struct {
 
 
 static const char* PCB_build_dir = "build/";
-static PCB_CStringVec PCB_src_dirs = {0};
+static PCB_CStrings PCB_src_dirs = {0};
 
-static PCB_CStringVec PCB_include_dirs = {0};
+static PCB_CStrings PCB_include_dirs = {0};
 
-static PCB_CStringVec PCB_libs = {0};
+static PCB_CStrings PCB_libs = {0};
 
-static PCB_CStringVec PCB_static_libs = {0};
+static PCB_CStrings PCB_static_libs = {0};
 
 
 static PCB_ShellCommand PCB_commandBuffer = {0};
@@ -1812,89 +1812,6 @@ int PCB_build(int argc, char** argv) {
 //On Windows:
 //TODO: not finished
 
-//Functions removed/unused/otherwise
-ssize_t PCB_ShellCommand_run_and_wait_old(PCB_ShellCommand* command) {
-#if PCB_PLATFORM_WINDOWS
-    if(command->length == 0) {
-        PCB_log(PCB_LOGLEVEL_ERROR, "Cannot run an empty command");
-        return (ssize_t)0x8000000000000000;
-    }
-    STARTUPINFO startupinfo = { .cb = sizeof(startupinfo) };
-    PROCESS_INFORMATION pInfo;
-
-    PCB_String s = PCB_String_from_CStringVec(command, " ");
-    PCB_log(PCB_LOGLEVEL_DEBUG, "\"%s\" %llu", s.data, s.length);
-
-    if(!CreateProcess(
-        NULL, s.data,
-        NULL, NULL, true, 0,
-        NULL, NULL, &startupinfo,
-        &pInfo
-    )) {
-        PCB_log(
-            PCB_LOGLEVEL_ERROR,
-            "Failed to create a child process with error code %d",
-            GetLastError()
-        );
-        return (ssize_t)0x8000000000000001;
-    }
-    if(WaitForSingleObject(pInfo.hProcess, INFINITE) != WAIT_OBJECT_0)
-        PCB_Unreachable; //surely...
-    DWORD exitCode;
-    if(GetExitCodeProcess(pInfo.hProcess, &exitCode))
-        PCB_Unreachable; //...right?
-    PCB_free(s.data);
-    return exitCode;
-#elif PCB_PLATFORM_LINUX
-    if(command->length < 1) {
-        PCB_log(PCB_LOGLEVEL_ERROR, "Cannot run an empty command");
-        return -1;
-    }
-    PCB_Vec_append(command, NULL);
-
-    //For better debugging, we'll use a pipe to distinguish between
-    //an error in the shell command and an error in attempting
-    //to run the shell command.
-    int p[2];
-    if(pipe(p) == -1) {
-        PCB_log(PCB_LOGLEVEL_ERROR, "Failed to create a pipe: %s", strerror(errno));
-        return -2;
-    }
-    pid_t child = fork();
-    if(child == -1) {
-        PCB_log(
-            PCB_LOGLEVEL_ERROR,
-            "Failed to create a child process: %s",
-            strerror(errno)
-        );
-        return -3;
-    }
-    else if(child == 0) {
-        close(p[0]);
-        execvp(command->data[0], (char* const*)command->data);
-        //The following code will not be executed if execvp succeeds.
-        //If it fails, we need to send a message to the parent
-        //via a pipe - anything will suffice
-        write(p[1], "", 1);
-        close(p[1]);
-        exit(1);
-    }
-    close(p[1]);
-    int status;
-    waitpid(child, &status, 0);
-    char c;
-    switch(read(p[0], &c, 1)) {
-        case -1: //can't actually fail...or can it?
-            PCB_Unreachable;
-        case 0: //nothing was written to the pipe = no error
-            close(p[0]);
-            return WEXITSTATUS(status);
-        default: //something was written to the pipe = execvp failed
-            close(p[0]);
-            return -4;
-    }
-#endif
-}
 
 //Appendix 2: Changelog
 //Version 0.1.3:
