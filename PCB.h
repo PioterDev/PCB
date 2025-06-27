@@ -28,12 +28,20 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 10
+#define PCB_VERSION_PATCH 11
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
 #define PCB_VERSION (PCB_VERSION_MAJOR * 1000000 + PCB_VERSION_MINOR * 1000 + PCB_VERSION_PATCH)
 #endif //PCB_VERSION
+
+#if !defined(__STDC_VERSION__) && !defined(__cplusplus)
+#error "PCB Error: C89 is not supported"
+#endif //C89/90?
+
+#ifdef __cplusplus
+extern "C" {
+#endif //C++
 
 //Section 0: The preamble.
 
@@ -845,9 +853,6 @@ while((index) < (vec)->length) {                            \
 
 
 //Section 2: Implementation of various functions
-#ifdef __cplusplus
-extern "C" {
-#endif //C++
 
 
 //Section 2.1: Logging, messages, error handling
