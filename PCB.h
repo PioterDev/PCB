@@ -444,6 +444,26 @@ static void f()
 #endif //Compilers
 #endif //PCB_Unreachable
 
+#ifndef PCB_Printf_Format
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB_Printf_Format(fmtIndex, rest) __attribute__((format(printf, fmtIndex, rest)))
+#else
+#define PCB_Printf_Format(fmtIndex, rest)
+#endif //compilers
+#endif //PCB_Printf_Format
+
+#ifndef PCB_Cleanup
+#ifdef PCB_WANT_CLEANUP
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB_Cleanup(f) __attribute__((cleanup(f)))
+#else
+#error "Cleanup attribute is unavailable with the current compiler or the compiler is not supported."
+#define PCB_Cleanup(f)
+#endif //Compilers
+#endif //PCB_WANT_CLEANUP
+#endif //PCB_Cleanup
+
+
 
 
 //Section 1.4: Import libc, unless this macro is defined as 0
