@@ -1222,6 +1222,38 @@ PCB_FileType PCB_FS_GetType(const char* path) {
 #endif //platform
 }
 
+uint64_t PCB_FS_GetModificationTime(const char* path) {
+    errno = 0;
+#if PCB_PLATFORM_WINDOWS
+    HANDLE hFile = CreateFileA(
+        path, GENERIC_READ, FILE_SHARE_READ, NULL,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+    );
+    if(hFile == INVALID_HANDLE_VALUE)
+        return (uint64_t)(GetLastError() == ERROR_FILE_NOT_FOUND);
+
+    BY_HANDLE_FILE_INFORMATION fileinfo = {0};
+    BOOL b = GetFileInformationByHandle(hFile, &fileinfo);
+    CloseHandle(hFile);
+    if(!b) return 0;
+
+    SetLastError(0);
+    uint64_t modTime = fileinfo.ftLastWriteTime.dwLowDateTime;
+    modTime += (uint64_t)(fileinfo.ftLastWriteTime.dwHighDateTime) << 32;
+    return modTime;
+#elif PCB_PLATFORM_POSIX
+    struct stat fileinfo = {0};
+    if(stat(path, &fileinfo) == -1) return (uint64_t)(errno == ENOENT);
+    uint64_t modTime;
+#ifdef __STRICT_ANSI__
+    modTime = (uint64_t)fileinfo.st_ctime       * 1000000000; //forward compat
+#else
+    modTime = (uint64_t)fileinfo.st_ctim.tv_sec * 1000000000 + (uint64_t)fileinfo.st_ctim.tv_nsec;
+#endif //pesky, but useful GNU extensions
+    return modTime;
+#endif //platform
+}
+
 
 //Section 2.3: Strings, string views, vectors of strings...
 //Section 2.3.1: A vector of const char*, a shell command
