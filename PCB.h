@@ -701,7 +701,8 @@ size_t PCB_strlen(const char* s) {
         new__capacity__ = PCB_VEC_INITIAL_CAPACITY;         \
     while((vec)->capacity + (howMany) > new__capacity__) {  \
         new__capacity__ *= 2;                               \
-    } void* new__data__ = PCB_realloc(                      \
+    } if(new__capacity__ == (vec)->capacity) break;         \
+    void* new__data__ = PCB_realloc(                        \
         (vec)->data, new__capacity__ * sizeof(*(vec)->data) \
     ); if(new__data__ == NULL) break;                       \
     (vec)->data = new__data__;                              \
