@@ -193,6 +193,23 @@ extern "C" {
 #endif //platform
 #endif //PCB_PLATFORM_POSIX
 
+#if PCB_PLATFORM_POSIX
+#ifdef __cplusplus
+#if __cplusplus >= 201103L
+#define _XOPEN_SOURCE 700
+#else
+#define _XOPEN_SOURCE 500
+#endif //C++11
+#else //C
+#if __STDC_VERSION__ >= 201112L
+#define _XOPEN_SOURCE 700
+#elif __STDC_VERSION__ >= 199901L
+#define _XOPEN_SOURCE 600
+#else
+#define _XOPEN_SOURCE 500
+#endif //C versions
+#endif //C++?
+#endif //POSIX sources required locally
 
 //Section 1.2: Identify the compiler used to compile this code
 
