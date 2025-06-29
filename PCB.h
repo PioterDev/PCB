@@ -1922,36 +1922,77 @@ int PCB_buildFromContext(PCB_BuildContext* context) {
 
 
 //Appendix 2: Changelog
-//Version 0.1.3:
-//- Changed course on how to approach builds:
-//  Instead of a set of global variables and macros around them to add compiler flags,
-//  PCB will build from a "build context", which allows for multiple build types
-//  and more configurability.
-//Version 0.1.2:
-//- Fixed PCB_VERSION_* defines to set them to the actual version
-//- Fixed a missing #endif at "#ifndef PCB_PLATFORM_POSIX"
-//- Fixed the lack of NULL-termination in PCB_ShellCommand_runBg/POSIX
-//- Removed old PCB_Vec_append
-//- Added comments for some #endif's, added whitespace in some places for readability
-//Version 0.1.1:
-//- Added PCB_HAS_STRING_H macro for libc's string.h header detection
-//- Added PCB_memcpy, PCB_memmove, PCB_memset, PCB_memcmp macros
-//  which map to libc if available, otherwise they map to
-//  equivalent functions with the same name implemented within
-//  PCB itself; memcpy, memmove, memset, memcmp are therefore
-//  substituted with PCB_ versions
-//Version 0.1.0:
-//- Moved platform identification to section 1.1
-//- Added support for some Apple platforms
-//- Added identification of POSIX-compliant platforms
-//- Moved compiler identification to section 1.2
-//- Moved compiler-specific macros to section 1.3
-//- Changed "#error" statement start with "PCB Error"
-//- Added strings.h header for case-insensitive C-strings
-//- Changed Linux-specific implementations to POSIX-specific
-//- Added PCB_String_setSuffix_char function
-//- Added a missing #endif at "#ifdef PCB_BUILD_CAPABILITY"
-//- Reinforced PCB_build_directory for errors, now returns a status code
-//Version 0.0.1: Initial version
+/**
+ * Version 0.2.0:
+ * - Removed PCB_* global variables and PCB_build function,
+ * - Renamed PCB_build_* to PCB__build_*, PCB__ will mark functions not intended
+ *   for public use
+ * Version 0.1.13:
+ * - Added PCBAPI macro for future use in dynamic linking of PCB, PCBCALL macro
+ *   for declaring the calling convention, PCB_BUILD_DYN for setting appropiate
+ *   things for symbol export,
+ * - Added PCB_Printf_Format macro for printf-like functions (only works with GCC/Clang),
+ * - Added PCB_Cleanup macro for use in C as an explicit C++ destructor; only
+ *   available if PCB_WANT_CLEANUP is declared since it's not supported everywhere and
+ *   its use fundamentally changes the code,
+ * - Renamed PCB_CStringVec to PCB_CStrings,
+ * - Removed PCB_ShellCommand_run_and_wait_old function,
+ * - Added PCB_FileType enum & PCB_FS_GetType function,
+ * - Added PCB_FS_GetModificationTime function,
+ * - Added PCB_FS_Exists function,
+ * Version 0.1.12:
+ * - Removed PCB_roundUpToPowerOf2_32/64 macros, added PCB_TODO, PCB_ARRAY_LEN,
+ *   PCB_SHIFT macros
+ * Version 0.1.11:
+ * - Added explicit notice that C89 is not supported.
+ * Version 0.1.10:
+ * - Added platform-agnostic way of error handling.
+ * Version 0.1.9:
+ * - Added `PCB_logDebug` and `PCB_logTrace` for debugging the library.
+ * Version 0.1.8:
+ * - Added `PCB_LOGLEVEL_*_NL` so that "\n" may be omitted in `PCB_log`,
+ *   non-error log levels are directed to stdout instead of stderr.
+ * Version 0.1.7:
+ * - Fixed detection of MinGW, Clang, MSVC and C23 in `PCB_NoReturn`,
+ *   added `PCB_NoReturn` for Clang.
+ * Version 0.1.6:
+ * - Added fallbacks for `bool`, `true`, `false`, `strcmp`, `strncmp` and `strlen`.
+ * Version 0.1.5:
+ * - Made `PCB_Vec_reserve` realloc-safe, i.e. it won't crash on insufficient memory.
+ *   This is a double-edged sword, however; consider overriding it with feature macros.
+ * Version 0.1.4:
+ * - Changed `PCB_VERSION` to accomodate 1000 minor & patch versions instead of 10.
+ * Version 0.1.3:
+ * - Changed course on how to approach builds:
+ *   Instead of a set of global variables and macros around them to add compiler flags,
+ *   PCB will build from a "build context", which allows for multiple build types
+ *   and more configurability.
+ * Version 0.1.2:
+ * - Fixed PCB_VERSION_* defines to set them to the actual version
+ * - Fixed a missing #endif at "#ifndef PCB_PLATFORM_POSIX"
+ * - Fixed the lack of NULL-termination in PCB_ShellCommand_runBg/POSIX
+ * - Removed old PCB_Vec_append
+ * - Added comments for some #endif's, added whitespace in some places for readability
+ * Version 0.1.1:
+ * - Added PCB_HAS_STRING_H macro for libc's string.h header detection
+ * - Added PCB_memcpy, PCB_memmove, PCB_memset, PCB_memcmp macros
+ *   which map to libc if available, otherwise they map to
+ *   equivalent functions with the same name implemented within
+ *   PCB itself; memcpy, memmove, memset, memcmp are therefore
+ *   substituted with PCB_ versions
+ * Version 0.1.0:
+ * - Moved platform identification to section 1.1
+ * - Added support for some Apple platforms
+ * - Added identification of POSIX-compliant platforms
+ * - Moved compiler identification to section 1.2
+ * - Moved compiler-specific macros to section 1.3
+ * - Changed "#error" statement start with "PCB Error"
+ * - Added strings.h header for case-insensitive C-strings
+ * - Changed Linux-specific implementations to POSIX-specific
+ * - Added PCB_String_setSuffix_char function
+ * - Added a missing #endif at "#ifdef PCB_BUILD_CAPABILITY"
+ * - Reinforced PCB_build_directory for errors, now returns a status code
+ * Version 0.0.1: Initial version
+ */
 
 #endif //PCB_H
