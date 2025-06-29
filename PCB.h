@@ -24,11 +24,11 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 1
+#define PCB_VERSION_MINOR 2
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 13
+#define PCB_VERSION_PATCH 0
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1670,119 +1670,107 @@ typedef struct {
 } PCB_BuildContext;
 
 
-static const char* PCB_build_dir = "build/";
-static PCB_CStrings PCB_src_dirs = {0};
-
-static PCB_CStrings PCB_include_dirs = {0};
-
-static PCB_CStrings PCB_libs = {0};
-
-static PCB_CStrings PCB_static_libs = {0};
-
-
-static PCB_ShellCommand PCB_commandBuffer = {0};
-
 
 
 
 //Section 3.3: Functions used for building.
 
 
-int PCB_build_file(PCB_String* in, PCB_String* out) {
-    // PCB_assert(false && "Not yet implemented");
-    PCB_log(PCB_LOGLEVEL_INFO, "In: %s, out: %s", in->data, out->data);
+int PCB__build_file(PCB_BuildContext* context) {
+    PCB_log(
+        PCB_LOGLEVEL_INFO,
+        "In: %s, out: %s",
+        context->currentSourcePath.data, context->currentBuildPath.data
+    );
 
-    // PCB_commandBuffer.length = 0;
-    // PCB_ShellCommand_append_arg(&PCB_commandBuffer, PCB_compiler_path);
     return 0;
 }
 
 //TODO: document return values
-//this function expects that `from` and `to` have *any* data allocated
-int PCB_build_directory(PCB_String* from, PCB_String* to) {
+int PCB__build_directory(PCB_BuildContext* context) {
 #if PCB_PLATFORM_WINDOWS
-    PCB_assert(false && "Not yet implemented");
+    (void)context;
+    PCB_TODO("PCB__build_directory");
 #elif PCB_PLATFORM_POSIX
-#define PCB_err(err) { code = err; goto error; }
-    DIR* cwd = opendir(from->data);
-    if(cwd == NULL) {
-        PCB_log(
-            PCB_LOGLEVEL_ERROR,
-            "Could not open directory %s: %s",
-            from->data, strerror(errno)
-        );
-        return -1;
-    }
+#define PCB_err(err) { code = -err; goto error; }
     int code = 0;
-#ifdef __STRICT_ANSI__
+    switch(PCB_FS_Exists(context->currentBuildPath.data)) {
+        case true: break;
+        case false: {
+            if(!PCB_mkdir(context->currentBuildPath.data)) return -errno;
+            break;
+        }
+        default:
+            code = -errno;
+            PCB_logLatestError(
+                "Cannot check whether %s exists",
+                context->currentBuildPath.data
+            ); return code;
+    }
+    DIR* cwd = opendir(context->currentSourcePath.data);
+    if(cwd == NULL) {
+        code = -errno;
+        PCB_logLatestError(
+            "Could not open directory %s",
+            context->currentSourcePath.data
+        ); return code;
+    }
+//convenience macros
+#define PCB_from (&context->currentSourcePath)
+#define PCB_to (&context->currentBuildPath)
     struct stat st;
-#endif
     for(struct dirent* entry = readdir(cwd); entry != NULL; entry = readdir(cwd)) {
         if(!PCB_strcmp(entry->d_name, ".") || !PCB_strcmp(entry->d_name, "..")) continue;
-        size_t oldFromLength = from->length;
-        size_t oldToLength = to->length;
-#ifdef __STRICT_ANSI__
-        if(!PCB_String_append_cstr(from, entry->d_name)) PCB_err(ENOMEM)
-        if(stat(from->data, &st) == -1) {
+        size_t oldFromLength = PCB_from->length;
+        size_t oldToLength = PCB_to->length;
+        if(!PCB_String_append_cstr(PCB_from, entry->d_name)) PCB_err(ENOMEM)
+        if(stat(PCB_from->data, &st) == -1) {
             switch(errno) {
-                case ELOOP:
-                case ENAMETOOLONG:
-                case ENOENT:
-                case EOVERFLOW:
+                case ELOOP:  case ENAMETOOLONG:
+                case ENOENT: case EOVERFLOW:
                     PCB_log(
                         PCB_LOGLEVEL_WARN,
                         "Skipping %s: %s",
-                        from->data, strerror(errno)
-                    );
-                    continue;
+                        PCB_from->data, strerror(errno)
+                    ); continue;
                 case ENOMEM:
-                    PCB_log(
-                        PCB_LOGLEVEL_FATAL,
-                        "The system has ran out of memory."
-                    );
+                    PCB_log(PCB_LOGLEVEL_FATAL, "The system has ran out of memory.");
                     PCB_err(ENOMEM)
                 default: PCB_Unreachable;
             }
         }
         if(S_ISDIR(st.st_mode)) {
-#else
-        if(entry->d_type == DT_DIR) {
-            if(!PCB_String_append_cstr(from, entry->d_name)) PCB_err(ENOMEM)
-#endif //pesky, but useful GNU extensions
-            if(!PCB_String_append_cstr(to, entry->d_name)) PCB_err(ENOMEM)
-            if(!PCB_String_append_chars(from, '/', 1)) PCB_err(ENOMEM)
-            if(!PCB_String_append_chars(to, '/', 1)) PCB_err(ENOMEM)
+            if(!PCB_String_append_cstr(PCB_to, entry->d_name)) PCB_err(ENOMEM)
+            if(!PCB_String_append_chars(PCB_from, '/', 1)) PCB_err(ENOMEM)
+            if(!PCB_String_append_chars(PCB_to, '/', 1)) PCB_err(ENOMEM)
             //recursively build the subdirectory
-            if((code = PCB_build_directory(from, to)) != 0) goto error;
+            if((code = PCB__build_directory(context)) != 0) goto error;
         }
-#ifdef __STRICT_ANSI__
         else if(S_ISREG(st.st_mode)) {
-#else
-        else if(entry->d_type == DT_REG) {
-            if(!PCB_String_append_cstr(from, entry->d_name)) PCB_err(ENOMEM)
-#endif //pesky, but useful GNU extensions
-            if(PCB_String_endsWith_cstr(from, ".c")) {
-                if(!PCB_String_append_cstr(to, entry->d_name)) PCB_err(ENOMEM)
-                to->data[to->length - 1] = 'o';
-                if((code = PCB_build_file(from, to)) != 0) goto error;
+            if(PCB_String_endsWith_cstr(PCB_from, ".c")) {
+                if(!PCB_String_append_cstr(PCB_to, entry->d_name)) PCB_err(ENOMEM)
+                PCB_to->data[PCB_to->length - 1] = 'o';
+                if((code = PCB__build_file(context)) != 0) goto error;
             }
         }
         //restore old length in a LIFO fashion
-        from->data[from->length = oldFromLength] = '\0';
-        to->data[to->length = oldToLength] = '\0';
+        PCB_from->data[PCB_from->length = oldFromLength] = '\0';
+        PCB_to->data[PCB_to->length = oldToLength] = '\0';
         continue;
         error: {
-            from->data[from->length = oldFromLength] = '\0';
-            to->data[to->length = oldToLength] = '\0';
+            PCB_from->data[PCB_from->length = oldFromLength] = '\0';
+            PCB_to->data[PCB_to->length = oldToLength] = '\0';
             closedir(cwd);
             return code;
         }
     }
+#undef PCB_to
+#undef PCB_from
+#undef PCB_err
     closedir(cwd);
 
     return 0;
-#undef PCB_err
-#endif //platform-dependent implementation
+#endif //platform-dependent directory enumeration
 }
 
 typedef enum {
@@ -1896,36 +1884,6 @@ int PCB_buildFromContext(PCB_BuildContext* context) {
     
 }
 
-int PCB_build(int argc, char** argv) {
-#define PCB_defer(v) { code = v; goto defer; }
-    int code = 0;
-    PCB_assert(false && "Unfinished");
-    (void)argc; (void)argv;
-    (void)PCB_static_libs;
-    (void)PCB_libs;
-    (void)PCB_include_dirs;
-    (void)PCB_commandBuffer;
-
-    PCB_String srcPath = {0};
-    PCB_String buildPath = {0};
-    if(!PCB_String_append_cstr(&buildPath, PCB_build_dir)) PCB_defer(ENOMEM)
-    if(!PCB_String_setSuffix_char(&buildPath, '/')) PCB_defer(ENOMEM)
-    //for now we won't distinguish debug and release
-    //builds and keep both in the same build directory
-    if(PCB_src_dirs.length > 1) {
-        for(size_t i = 0; i < PCB_src_dirs.length; i++) {
-
-        }       
-    }
-    for(size_t i = 0; i < PCB_src_dirs.length; i++) {
-
-    }
-    defer:
-        PCB_free(srcPath.data);
-        PCB_free(buildPath.data);
-        return code;
-#undef PCB_defer
-}
 #endif //PCB_BUILD_CAPABILITY
 
 #ifdef __cplusplus
