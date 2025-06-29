@@ -24,7 +24,7 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 2
+#define PCB_VERSION_MINOR 3
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
@@ -563,99 +563,42 @@ static void f()
 #ifndef PCB_memcpy
 #ifdef PCB_HAS_STRING_H
 #define PCB_memcpy memcpy
-#else
-void* PCB_memcpy(void* restrict dest, const void* src, size_t n) {
-    char* restrict d = (char*)dest;
-    const char* restrict s = (const char*)src;
-    while(n > 0) *d++ = *s++, --n;
-    return dest;
-}
-#define PCB_memcpy PCB_memcpy
 #endif //PCB_HAS_STRING_H
 #endif //PCB_memcpy
 
 #ifndef PCB_memmove
 #ifdef PCB_HAS_STRING_H
 #define PCB_memmove memmove
-#else
-void* PCB_memmove(void* dest, const void* src, size_t n) {
-    char* d = (char*)dest;
-    const char* s = (const char*)src;
-    if(s < d && d < s + n) { //overlap check?
-        s += n; d += n;
-        while(n-- > 0) *--d = *--s;
-    }
-    else while(n-- > 0) *d++ = *s++;
-    return dest;
-}
-#define PCB_memmove PCB_memmove
 #endif //PCB_HAS_STRING_H
 #endif //PCB_memmove
 
 #ifndef PCB_memset
 #ifdef PCB_HAS_STRING_H
 #define PCB_memset memset
-#else
-void* PCB_memset(void* s, int v, size_t n) {
-    char* p = (char*)s;
-    while(n-- > 0) *p++ = (char)v;
-    return s;
-}
-#define PCB_memset PCB_memset
 #endif //PCB_HAS_STRING_H
 #endif //PCB_memset
 
 #ifndef PCB_memcmp
 #ifdef PCB_HAS_STRING_H
 #define PCB_memcmp memcmp
-#else
-int PCB_memcmp(const void* p1, const void* p2, size_t n) {
-    const unsigned char* x1 = (const unsigned char*)p1;
-    const unsigned char* x2 = (const unsigned char*)p2;
-    while(*x1 == *x2 && n > 0) { ++x1; ++x2; --n; }
-    return (*x1 > *x2) - (*x1 < *x2);
-}
-#define PCB_memcmp PCB_memcmp
 #endif //PCB_HAS_STRING_H
 #endif //PCB_memcmp
 
 #ifndef PCB_strcmp
 #ifdef PCB_HAS_STRING_H
 #define PCB_strcmp strcmp
-#else
-int PCB_strcmp(const char* s1, const char* s2) {
-    const unsigned char* x1 = (const unsigned char*)s1;
-    const unsigned char* x2 = (const unsigned char*)s2;
-    while(*x1 && *x1 == *x2) { ++x1; ++x2; }
-    return (*x1 > *x2) - (*x1 < *x2);
-}
-#define PCB_strcmp PCB_strcmp
 #endif //PCB_HAS_STRING_H
 #endif //PCB_strcmp
 
 #ifndef PCB_strncmp
 #ifdef PCB_HAS_STRING_H
 #define PCB_strncmp strncmp
-#else
-int PCB_strncmp(const char* s1, const char* s2, size_t n) {
-    const unsigned char* x1 = (const unsigned char*)s1;
-    const unsigned char* x2 = (const unsigned char*)s2;
-    while(n > 0 && *x1 && *x1 == *x2) { ++x1; ++x2; --n; }
-    return n == 0 ? 0 : ((*x1 > *x2) - (*x1 < *x2));
-}
-#define PCB_strncmp PCB_strncmp
 #endif //PCB_HAS_STRING_H
 #endif //PCB_strncmp
 
 #ifndef PCB_strlen
 #ifdef PCB_HAS_STRING_H
 #define PCB_strlen strlen
-#else
-size_t PCB_strlen(const char* s) {
-    const char* cursor = s; while(*cursor++);
-    return (size_t)(cursor - s);
-}
-#define PCB_strlen PCB_strlen
 #endif ////PCB_HAS_STRING_H
 #endif //PCB_strlen
 
@@ -877,6 +820,8 @@ while((index) < (vec)->length) {                            \
 #endif //platform-specific APIs
 
 
+
+//Section 1.8: declarations of all library functions
 #ifdef PCB_BUILD_DYN
 #ifndef PCB_DYN
 #define PCB_DYN
@@ -909,11 +854,10 @@ while((index) < (vec)->length) {                            \
 #endif //use C calling convention on Windows
 #endif //PCBCALL, by default the C calling convention
 
-//Section 2: Implementation of various functions
 
-
-//Section 2.1: Logging, messages, error handling
-
+//The user may not need declarations, for example if only macros are used.
+//This macro allows for a slight preprocessor optimization by omitting declarations.
+#ifndef PCB_NO_DECLARATIONS
 typedef enum {
     PCB_LOGLEVEL_NONE,	PCB_LOGLEVEL_NONE_NL,  //without the prefix
     PCB_LOGLEVEL_TRACE,	PCB_LOGLEVEL_TRACE_NL,
@@ -925,6 +869,394 @@ typedef enum {
     //With '\n'         Without '\n'
 } PCB_LogLevel;
 
+
+typedef enum {
+    //Unknown/unsupported file type.
+    PCB_FILETYPE_UNKNOWN = 0x1,
+    //Regular file.
+    PCB_FILETYPE_REG = 0x2,
+    //Directory.
+    PCB_FILETYPE_DIR = 0x3,
+    //Pipe, socket, etc. Further checks are platform-specific unfortunately.
+    PCB_FILETYPE_STREAM = 0x4,
+    //Character device, for example a console or some USB device.
+    PCB_FILETYPE_CHAR = 0x5,
+    //Block device, for example a hard drive.
+    PCB_FILETYPE_BLK = 0x6,
+    //Non-existent filesystem entry.
+    PCB_FILETYPE_NONE = 0x10,
+    //Symbolic link, always returned alongside another filetype.
+    PCB_FILETYPE_SYMLINK = 0x20,
+
+    //Unknown/unsupported file type that is pointed to via a symlink.
+    PCB_FILETYPE_UNKNOWN_SYM = PCB_FILETYPE_UNKNOWN | PCB_FILETYPE_SYMLINK,
+    //Regular file that is pointed to via a symlink.
+    PCB_FILETYPE_REG_SYM = PCB_FILETYPE_REG | PCB_FILETYPE_SYMLINK,
+    //Directory that is pointed to via a symlink.
+    PCB_FILETYPE_DIR_SYM = PCB_FILETYPE_DIR | PCB_FILETYPE_SYMLINK,
+    //Pipe, socket, etc. that is pointed to via a symlink.
+    PCB_FILETYPE_STREAM_SYM = PCB_FILETYPE_STREAM | PCB_FILETYPE_SYMLINK,
+    //Character device that is pointed to via a symlink.
+    PCB_FILETYPE_CHAR_SYM = PCB_FILETYPE_CHAR | PCB_FILETYPE_SYMLINK,
+    //Block device that is pointed to via a symlink.
+    PCB_FILETYPE_BLK_SYM = PCB_FILETYPE_BLK | PCB_FILETYPE_SYMLINK,
+    //Symlink that points to a non-existent filesystem entry.
+    PCB_FILETYPE_NONE_SYM = PCB_FILETYPE_NONE | PCB_FILETYPE_SYMLINK,
+
+    //An error occured while checking the type; to get the error code
+    //call `PCB_GetError()`.
+    PCB_FILETYPE_ERROR = 0,
+    //A convenience value to strip away the symlink bit if one doesn't care.
+    PCB_FILETYPE_SYMLINK_IGN = ~PCB_FILETYPE_SYMLINK
+} PCB_FileType;
+
+
+//A dynamic array of characters with a
+//trailing zero at the end - a string.
+//Unlike other dynamic arrays has a concrete implementation.
+//The trailing zero is not included in its length.
+typedef struct {
+    char* data;
+    size_t length;
+    size_t capacity;
+} PCB_String;
+
+//A non-owning view at a portion of some string.
+//Likely does not end with a zero, keep that in mind
+//when passing `data` to a function expecting a C string.
+typedef struct {
+    const char* data;
+    size_t length;
+} PCB_StringView;
+
+typedef struct {
+    const char** data;
+    size_t length;
+    size_t capacity;
+} PCB_CStrings;
+
+typedef PCB_CStrings PCB_ShellCommand;
+
+#ifndef PCB_ShellCommand_append_arg
+#define PCB_ShellCommand_append_arg(cmd, str) PCB_Vec_append(cmd, str)
+#endif //PCB_ShellCommand_append_arg
+
+#ifndef PCB_ShellCommand_append_args
+#define PCB_ShellCommand_append_args(cmd, ...) \
+    PCB_Vec_append_multiple( \
+        cmd, \
+        ((const char*[]) {__VA_ARGS__}), \
+        (sizeof((const char*[]){ __VA_ARGS__ }) / sizeof(const char*)) \
+    )
+#endif //PCB_ShellCommand_append_args
+
+
+typedef struct {
+#if PCB_PLATFORM_WINDOWS
+    HANDLE handle;
+#elif PCB_PLATFORM_POSIX
+    pid_t handle;
+#endif //platform-dependent handles to processes
+} PCB_Process;
+
+
+typedef struct {
+    //Path to the compiler executable to use.
+    ////Defaults to the compiler's name used to build this file.
+    const char* compilerPath;
+    //Path to the build directory. Defaults to "build/".
+    const char* buildPath;
+    //Vector of paths to source directories.
+    PCB_CStrings sources;
+    //Vector of paths to include directories.
+    PCB_CStrings includes;
+    //Vector of names of libraries to link dynamically.
+    PCB_CStrings libs;
+    //Vector of names of libraries to link *statically*.    
+    PCB_CStrings staticLibs;
+    //Vector of additional paths to pass to the compiler to
+    //search for specified libraries.
+    PCB_CStrings librarySearchPaths;
+    //Vector of compiler optimization flags. Not a singular const char*
+    //since, for example in GCC, you can pass "-f" optimization flags
+    //on top of "-O" flags.
+    PCB_CStrings optimizationFlags;
+    //Vector of debug flags. Put flags about sanitizers here.
+    PCB_CStrings debugFlags;
+    //Vector of warning flags, as well as warning-as-error flags.
+    PCB_CStrings warningFlags;
+    //Vector of other compiler flags not covered by the rest of this struct.
+    PCB_CStrings otherFlags;
+    //Internal buffer used for enumerating source paths.
+    PCB_String currentSourcePath;
+    //Internal buffer used for enumerating build paths w.r.t. the source path.
+    PCB_String currentBuildPath;
+    //Internal buffer used for commands when building. Do not use.
+    PCB_ShellCommand commandBuffer;
+    //The language standard used to compile source files.
+    //Defaults to the standard used to build this file.
+    long standard;
+} PCB_BuildContext;
+
+typedef enum {
+    PCB_BUILDOPTION_NONE = 0,
+    //Emits debug symbols into object files.
+    PCB_BUILDOPTION_DEBUG = 1,
+    //Equivalent to -O3 or /O3. For more granularity modify
+    //the build context manually.
+    PCB_BUILDOPTION_OPTIMIZE = 1 << 1,
+    //Turns ASan on if the target supports it.
+    PCB_BUILDOPTION_ASAN = 1 << 2
+    //TODO: other sanitizers + more options
+} PCB_BuildOption;
+
+
+
+PCBAPI void PCBCALL PCB_log(PCB_LogLevel level, const char* fmt, ...);
+
+#ifndef PCB_logTrace
+#ifdef PCB_DEBUG
+#define PCB_logTrace(...) PCB_log(PCB_LOGLEVEL_TRACE, __VA_ARGS__)
+#else
+#define PCB_logTrace(...)
+#endif //PCB_DEBUG
+#endif //PCB_logTrace
+
+#ifndef PCB_logDebug
+#ifdef PCB_DEBUG
+#define PCB_logDebug(...) PCB_log(PCB_LOGLEVEL_DEBUG, __VA_ARGS__)
+#else
+#define PCB_logDebug(...)
+#endif //PCB_DEBUG
+#endif //PCB_logDebug
+
+
+
+PCBAPI int PCBCALL PCB_GetError(void);
+PCBAPI int PCBCALL PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize);
+//Log the latest error obtained from PCB_GetError() to stderr.
+//Otherwise functions similarly to `printf`.
+PCBAPI void PCBCALL PCB_logLatestError(const char* fmt, ...);
+
+
+//Creates a directory in the given `path`.
+//Returns whether the operation succeeded.
+//Failure by "it already exists" is treated as success.
+//On Linux, permission field of the created directory is rw-r--r--.
+PCBAPI bool PCBCALL PCB_mkdir(const char* path);
+PCBAPI int PCBCALL PCB_FS_Exists(const char* path);
+PCBAPI PCB_FileType PCBCALL PCB_FS_GetType(const char* path);
+PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path);
+
+
+
+PCBAPI bool PCBCALL PCB_String_reserve(PCB_String* this, const size_t howMany);
+//Resizes `this` to fit a string of `targetLength` length.
+//Truncates the string to `targetLength` if `targetLength < this->length`.
+//Does nothing if `targetLength == this->length`.
+//Behaves identically to `PCB_String_reserve` otherwise.
+PCBAPI bool PCBCALL PCB_String_resize(PCB_String* this, const size_t targetLength);
+PCBAPI bool PCBCALL PCB_String_append(PCB_String* this, const PCB_String* other);
+PCBAPI bool PCBCALL PCB_String_append_cstr(PCB_String* this, const char* str);
+//Appends `c` to `this` `howManyTimes` times.
+PCBAPI bool PCBCALL PCB_String_append_chars(
+    PCB_String* this, const char c, const size_t howManyTimes
+);
+//Makes `c` the last character in `this`.
+//If `c` is not the last character, it appends it.
+//Otherwise does nothing.
+PCBAPI bool PCBCALL PCB_String_setSuffix_char(PCB_String* this, const char c);
+PCBAPI PCB_String PCBCALL PCB_String_clone(const PCB_String* this);
+//Compares `a` and `b` lexicographically.
+PCBAPI int PCBCALL PCB_String_compare(const PCB_String* a, const PCB_String* b);
+//Compares `a` and `b`, case insensitive version.
+PCBAPI int PCBCALL PCB_String_compare_ci(const PCB_String* a, const PCB_String* b);
+//Checks if `this` starts with `other`.
+//If any of them is empty (i.e. `data == NULL`), returns false.
+PCBAPI bool PCBCALL PCB_String_startsWith(
+    const PCB_String* this, const PCB_String* other
+);
+//Checks if `this` starts with `other`.
+//If `this` is empty (i.e. `data == NULL`), returns false.
+PCBAPI bool PCBCALL PCB_String_startsWith_cstr(
+    const PCB_String* this, const char* other
+);
+//Checks if `this` ends with `other`.
+//If any of them is empty (i.e. `data == NULL`), returns false.
+PCBAPI bool PCBCALL PCB_String_endsWith(
+    const PCB_String* this, const PCB_String* other
+);
+//Checks if `this` ends with `other`.
+//If `this` is empty (i.e. `data == NULL`), returns false.
+PCBAPI bool PCBCALL PCB_String_endsWith_cstr(
+    const PCB_String* this, const char* other
+);
+PCBAPI void PCBCALL PCB_String_toUpperCase(PCB_String* this);
+PCBAPI void PCBCALL PCB_String_toLowerCase(PCB_String* this);
+PCBAPI PCB_String PCBCALL PCB_String_toUpperCase_copy(const PCB_String* this);
+PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(const PCB_String* this);
+//Pops the `other->length` characters from `this` if they match.
+//Returns the new length.
+PCBAPI size_t PCBCALL PCB_String_pop(PCB_String* this, const PCB_String* other);
+PCBAPI PCB_String PCBCALL PCB_String_from_CStrings(
+    const PCB_CStrings* cstr, const char* delimiter
+);
+
+
+
+PCBAPI PCB_Process PCBCALL PCB_Process_self();
+PCBAPI bool PCBCALL PCB_Process_isValid(PCB_Process process);
+PCBAPI int PCBCALL PCB_Process_waitForExit(PCB_Process process);
+
+
+PCBAPI PCB_Process PCBCALL PCB_ShellCommand_runBg(PCB_ShellCommand* command);
+/**
+ * @brief Runs a shell command and waits for it to exit.
+ * 
+ * @param command command built with `PCB_ShellCommand_*` utilities.
+ * @return exit code of the executed command or a negative value
+ * outside the range of possible exit codes (a negative value on
+ * POSIX-compliant systems, a value < -2³² on Windows).
+ * For a full description, see Appendix 1 at the bottom.
+ * 
+ * If you just want to check for any error simply check for a negative value.
+ */
+PCBAPI ssize_t PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
+
+
+
+/**
+ * @brief Create a PCB_BuildContext struct.
+ * 
+ * @param flags PCB_BuildOptions OR'ed together
+ * @return a zeroed out struct if `flags == 0` or on error. 
+ * Otherwise returns a default-initialized build context based on flags passed.
+ * 
+ * See Appendix 1 for more details.
+ */
+PCBAPI PCB_BuildContext PCBCALL PCB_CreateBuildContext(int flags);
+PCBAPI int PCBCALL PCB_buildFromContext(PCB_BuildContext* context);
+
+#endif //PCB_NO_DECLARATIONS
+
+#ifdef PCB_IMPLEMENTATION
+
+#ifndef PCB_IMPLEMENTATION_LOG
+#define PCB_IMPLEMENTATION_LOG
+#endif //PCB_IMPLEMENTATION_LOG
+
+#ifndef PCB_IMPLEMENTATION_ERR
+#define PCB_IMPLEMENTATION_ERR
+#endif //PCB_IMPLEMENTATION_ERR
+
+#ifndef PCB_IMPLEMENTATION_FS
+#define PCB_IMPLEMENTATION_FS
+#endif //PCB_IMPLEMENTATION_FS
+
+#ifndef PCB_IMPLEMENTATION_STRING
+#define PCB_IMPLEMENTATION_STRING
+#endif //PCB_IMPLEMENTATION_STRING
+
+#ifndef PCB_IMPLEMENTATION_PROCESS
+#define PCB_IMPLEMENTATION_PROCESS
+#endif //PCB_IMPLEMENTATION_PROCESS
+
+#ifndef PCB_IMPLEMENTATION_BUILD
+#define PCB_IMPLEMENTATION_BUILD
+#endif //PCB_IMPLEMENTATION_BUILD
+
+#endif //PCB_IMPLEMENTATION
+
+//Section 2: Implementation of various functions
+
+//these functions should be moved somewhere else, for now they're here
+#ifdef PCB_IMPLEMENTATION
+
+#ifndef PCB_strcmp
+int PCB_strcmp(const char* s1, const char* s2) {
+    const unsigned char* x1 = (const unsigned char*)s1;
+    const unsigned char* x2 = (const unsigned char*)s2;
+    while(*x1 && *x1 == *x2) { ++x1; ++x2; }
+    return (*x1 > *x2) - (*x1 < *x2);
+}
+#define PCB_strcmp PCB_strcmp
+#endif //PCB_strcmp
+
+#ifndef PCB_strncmp
+int PCB_strncmp(const char* s1, const char* s2, size_t n) {
+    const unsigned char* x1 = (const unsigned char*)s1;
+    const unsigned char* x2 = (const unsigned char*)s2;
+    while(n > 0 && *x1 && *x1 == *x2) { ++x1; ++x2; --n; }
+    return n == 0 ? 0 : ((*x1 > *x2) - (*x1 < *x2));
+}
+#define PCB_strncmp PCB_strncmp
+#endif //PCB_strncmp
+
+#ifndef PCB_strlen
+size_t PCB_strlen(const char* s) {
+    const char* cursor = s; while(*cursor++);
+    return (size_t)(cursor - s);
+}
+#define PCB_strlen PCB_strlen
+#endif //PCB_strlen
+
+#ifndef PCB_strnlen
+size_t PCB_strnlen(const char* s, size_t n) {
+    const char* cursor = s;
+    while(n > 0 && *cursor) { ++cursor; --n; }
+    return (size_t)(cursor - s);
+}
+#define PCB_strnlen PCB_strnlen
+#endif //PCB_strnlen
+
+#ifndef PCB_memcpy
+void* PCB_memcpy(void* restrict dest, const void* src, size_t n) {
+    char* restrict d = (char*)dest;
+    const char* restrict s = (const char*)src;
+    while(n > 0) *d++ = *s++, --n;
+    return dest;
+}
+#define PCB_memcpy PCB_memcpy
+#endif //PCB_memcpy
+
+#ifndef PCB_memmove
+void* PCB_memmove(void* dest, const void* src, size_t n) {
+    char* d = (char*)dest;
+    const char* s = (const char*)src;
+    if(s < d && d < s + n) { //overlap check?
+        s += n; d += n;
+        while(n-- > 0) *--d = *--s;
+    }
+    else while(n-- > 0) *d++ = *s++;
+    return dest;
+}
+#define PCB_memmove PCB_memmove
+#endif //PCB_memmove
+
+#ifndef PCB_memset
+void* PCB_memset(void* s, int v, size_t n) {
+    char* p = (char*)s;
+    while(n-- > 0) *p++ = (char)v;
+    return s;
+}
+#define PCB_memset PCB_memset
+#endif //PCB_memset
+
+#ifndef PCB_memcmp
+int PCB_memcmp(const void* p1, const void* p2, size_t n) {
+    const unsigned char* x1 = (const unsigned char*)p1;
+    const unsigned char* x2 = (const unsigned char*)p2;
+    while(*x1 == *x2 && n > 0) { ++x1; ++x2; --n; }
+    return (*x1 > *x2) - (*x1 < *x2);
+}
+#define PCB_memcmp PCB_memcmp
+#endif //PCB_memcmp
+
+#endif //PCB_IMPLEMENTATION
+
+
+//Section 2.1: Logging, messages, error handling
+#ifdef PCB_IMPLEMENTATION_LOG
 void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
     //https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
 #if PCB_PLATFORM_WINDOWS
@@ -1028,24 +1360,10 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
             break;
     }
 }
-
-#ifndef PCB_logTrace
-#ifdef PCB_DEBUG
-#define PCB_logTrace(...) PCB_log(PCB_LOGLEVEL_TRACE, __VA_ARGS__)
-#else
-#define PCB_logTrace(...)
-#endif //PCB_DEBUG
-#endif //PCB_logTrace
-
-#ifndef PCB_logDebug
-#ifdef PCB_DEBUG
-#define PCB_logDebug(...) PCB_log(PCB_LOGLEVEL_DEBUG, __VA_ARGS__)
-#else
-#define PCB_logDebug(...)
-#endif //PCB_DEBUG
-#endif //PCB_logDebug
+#endif //PCB_IMPLEMENTATION_LOG
 
 
+#ifdef PCB_IMPLEMENTATION_ERR
 int PCB_GetError(void) {
 #if PCB_PLATFORM_WINDOWS
     return (int)GetLastError();
@@ -1082,8 +1400,6 @@ int PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize) {
 #endif //platform
 }
 
-//Log the latest error obtained from PCB_GetError() to stderr.
-//Otherwise functions similarly to `printf`.
 void PCB_logLatestError(const char* fmt, ...) {
     char buf[256] = {0};
     if(PCB_GetErrorMessage(
@@ -1096,13 +1412,11 @@ void PCB_logLatestError(const char* fmt, ...) {
     va_end(args);
     fprintf(stderr, ": %s\n", buf);
 }
+#endif //PCB_IMPLEMENTATION_ERR
+
 
 //Section 2.2: Platform-independent (sort of) filesystem functions
-
-//Creates a directory in the given `path`.
-//Returns whether the operation succeeded.
-//Failure by "it already exists" is treated as success.
-//On Linux, permission field of the created directory is rw-r--r--.
+#ifdef PCB_IMPLEMENTATION_FS
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
     if(mkdir(path, 0644) == -1) {
@@ -1128,45 +1442,11 @@ bool PCB_mkdir(const char* path) {
 #endif //platform
 }
 
-typedef enum {
-    //Unknown/unsupported file type.
-    PCB_FILETYPE_UNKNOWN = 0x1,
-    //Regular file.
-    PCB_FILETYPE_REG = 0x2,
-    //Directory.
-    PCB_FILETYPE_DIR = 0x3,
-    //Pipe, socket, etc. Further checks are platform-specific unfortunately.
-    PCB_FILETYPE_STREAM = 0x4,
-    //Character device, for example a console or some USB device.
-    PCB_FILETYPE_CHAR = 0x5,
-    //Block device, for example a hard drive.
-    PCB_FILETYPE_BLK = 0x6,
-    //Non-existent filesystem entry.
-    PCB_FILETYPE_NONE = 0x10,
-    //Symbolic link, always returned alongside another filetype.
-    PCB_FILETYPE_SYMLINK = 0x20,
-
-    //Unknown/unsupported file type that is pointed to via a symlink.
-    PCB_FILETYPE_UNKNOWN_SYM = PCB_FILETYPE_UNKNOWN | PCB_FILETYPE_SYMLINK,
-    //Regular file that is pointed to via a symlink.
-    PCB_FILETYPE_REG_SYM = PCB_FILETYPE_REG | PCB_FILETYPE_SYMLINK,
-    //Directory that is pointed to via a symlink.
-    PCB_FILETYPE_DIR_SYM = PCB_FILETYPE_DIR | PCB_FILETYPE_SYMLINK,
-    //Pipe, socket, etc. that is pointed to via a symlink.
-    PCB_FILETYPE_STREAM_SYM = PCB_FILETYPE_STREAM | PCB_FILETYPE_SYMLINK,
-    //Character device that is pointed to via a symlink.
-    PCB_FILETYPE_CHAR_SYM = PCB_FILETYPE_CHAR | PCB_FILETYPE_SYMLINK,
-    //Block device that is pointed to via a symlink.
-    PCB_FILETYPE_BLK_SYM = PCB_FILETYPE_BLK | PCB_FILETYPE_SYMLINK,
-    //Symlink that points to a non-existent filesystem entry.
-    PCB_FILETYPE_NONE_SYM = PCB_FILETYPE_NONE | PCB_FILETYPE_SYMLINK,
-
-    //An error occured while checking the type; to get the error code
-    //call `PCB_GetError()`.
-    PCB_FILETYPE_ERROR = 0,
-    //A convenience value to strip away the symlink bit if one doesn't care.
-    PCB_FILETYPE_SYMLINK_IGN = ~PCB_FILETYPE_SYMLINK
-} PCB_FileType;
+int PCB_FS_Exists(const char* path) {
+    PCB_FileType type = PCB_FS_GetType(path);
+    if(type == PCB_FILETYPE_ERROR) return -1;
+    return type != PCB_FILETYPE_NONE;
+}
 
 PCB_FileType PCB_FS_GetType(const char* path) {
     if(path == NULL) {
@@ -1271,56 +1551,11 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
     return modTime;
 #endif //platform
 }
+#endif //PCB_IMPLEMENTATION_FS
 
-int PCB_FS_Exists(const char* path) {
-    PCB_FileType type = PCB_FS_GetType(path);
-    if(type == PCB_FILETYPE_ERROR) return -1;
-    return type != PCB_FILETYPE_NONE;
-}
 
 //Section 2.3: Strings, string views, vectors of strings...
-//Section 2.3.1: A vector of const char*, a shell command
-typedef struct {
-    const char** data;
-    size_t length;
-    size_t capacity;
-} PCB_CStrings;
-
-typedef PCB_CStrings PCB_ShellCommand;
-
-#ifndef PCB_ShellCommand_append_arg
-#define PCB_ShellCommand_append_arg(cmd, str) PCB_Vec_append(cmd, str)
-#endif //PCB_ShellCommand_append_arg
-
-#ifndef PCB_ShellCommand_append_args
-#define PCB_ShellCommand_append_args(cmd, ...) \
-    PCB_Vec_append_multiple( \
-        cmd, \
-        ((const char*[]) {__VA_ARGS__}), \
-        (sizeof((const char*[]){ __VA_ARGS__ }) / sizeof(const char*)) \
-    )
-#endif //PCB_ShellCommand_append_args
-
-//Section 2.3.2: Dynamic string implementation
-
-//A dynamic array of characters with a
-//trailing zero at the end - a string.
-//Unlike other dynamic arrays has a concrete implementation.
-//The trailing zero is not included in its length.
-typedef struct {
-    char* data;
-    size_t length;
-    size_t capacity;
-} PCB_String;
-
-//A non-owning view at a portion of some string.
-//Likely does not end with a zero, keep that in mind
-//when passing `data` to a function expecting a C string.
-typedef struct {
-    const char* data;
-    size_t length;
-} PCB_StringView;
-
+#ifdef PCB_IMPLEMENTATION_STRING
 //a temporary convenience macro
 #define PCB_String_realloc(this, targetSize) do {           \
     size_t newCapacity = this->capacity;                    \
@@ -1339,10 +1574,6 @@ bool PCB_String_reserve(PCB_String* this, const size_t howMany) {
     return true;
 }
 
-//Resizes `this` to fit a string of `targetLength` length.
-//Truncates the string to `targetLength` if `targetLength < this->length`.
-//Does nothing if `targetLength == this->length`.
-//Behaves identically to `PCB_String_reserve` otherwise.
 bool PCB_String_resize(PCB_String* this, const size_t targetLength) {
     if(targetLength == this->length) return true;
     else if(targetLength < this->length) {
@@ -1375,7 +1606,6 @@ bool PCB_String_append_cstr(PCB_String* this, const char* str) {
     return true;
 }
 
-//Appends `c` to `this` `howManyTimes` times.
 bool PCB_String_append_chars(PCB_String* this, const char c, const size_t howManyTimes) {
     if(this->length + howManyTimes >= this->capacity) {
         const size_t targetSize = this->length + howManyTimes + 1;
@@ -1387,9 +1617,6 @@ bool PCB_String_append_chars(PCB_String* this, const char c, const size_t howMan
     return true;
 }
 
-//Makes `c` the last character in `this`.
-//If `c` is not the last character, it appends it.
-//Otherwise does nothing.
 bool PCB_String_setSuffix_char(PCB_String* this, const char c) {
     if(this->data == NULL) PCB_String_realloc(this, 1);
     if(this->length == 0) {
@@ -1420,7 +1647,7 @@ PCB_String PCB_String_clone(const PCB_String* this) {
     PCB_memcpy(s.data, this->data, s.length + 1);
     return s;
 }
-//Compares `a` and `b` lexicographically.
+
 int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
     if(a->data == NULL && b->data == NULL) return 0;
     else if(a->data == NULL) return 1;
@@ -1430,7 +1657,6 @@ int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
         : (a->length > b->length) - (a->length < b->length);
 }
 
-//Compares `a` and `b`, case insensitive version.
 int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
     if(a->data == NULL && b->data == NULL) return 0;
     else if(a->data == NULL) return 1;
@@ -1438,16 +1664,12 @@ int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
     return strncasecmp(a->data, b->data, a->length);
 }
 
-//Checks if `this` starts with `other`.
-//If any of them is empty (i.e. `data == NULL`), returns false.
 bool PCB_String_startsWith(const PCB_String* this, const PCB_String* other) {
     if(this->data == NULL || other->data == NULL) return false;
     if(other->length > this->length) return false;
     return !PCB_memcmp(this->data, other->data, other->length);
 }
 
-//Checks if `this` starts with `other`.
-//If `this` is empty (i.e. `data == NULL`), returns false.
 bool PCB_String_startsWith_cstr(const PCB_String* this, const char* other) {
     if(this->data == NULL) return false;
     const size_t len = PCB_strlen(other);
@@ -1455,8 +1677,6 @@ bool PCB_String_startsWith_cstr(const PCB_String* this, const char* other) {
     return !PCB_memcmp(this->data, other, len);
 }
 
-//Checks if `this` ends with `other`.
-//If any of them is empty (i.e. `data == NULL`), returns false.
 bool PCB_String_endsWith(const PCB_String* this, const PCB_String* other) {
     if(this->data == NULL || other->data == NULL) return false;
     if(other->length > this->length) return false;
@@ -1466,8 +1686,6 @@ bool PCB_String_endsWith(const PCB_String* this, const PCB_String* other) {
     );
 }
 
-//Checks if `this` ends with `other`.
-//If `this` is empty (i.e. `data == NULL`), returns false.
 bool PCB_String_endsWith_cstr(const PCB_String* this, const char* other) {
     if(this->data == NULL) return false;
     const size_t len = PCB_strlen(other);
@@ -1484,12 +1702,6 @@ void PCB_String_toUpperCase(PCB_String* this) {
     }
 }
 
-PCB_String PCB_String_toUpperCase_copy(const PCB_String* this) {
-    PCB_String copy = PCB_String_clone(this);
-    PCB_String_toUpperCase(&copy);
-    return copy;
-}
-
 void PCB_String_toLowerCase(PCB_String* this) {
     if(this->data == NULL) return;
     for(size_t i = 0; i < this->length; i++) {
@@ -1499,14 +1711,18 @@ void PCB_String_toLowerCase(PCB_String* this) {
     }
 }
 
+PCB_String PCB_String_toUpperCase_copy(const PCB_String* this) {
+    PCB_String copy = PCB_String_clone(this);
+    PCB_String_toUpperCase(&copy);
+    return copy;
+}
+
 PCB_String PCB_String_toLowerCase_copy(const PCB_String* this) {
     PCB_String copy = PCB_String_clone(this);
     PCB_String_toLowerCase(&copy);
     return copy;
 }
 
-//Pops the `other->length` characters from `this` if they match.
-//Returns the new length.
 size_t PCB_String_pop(PCB_String* this, const PCB_String* other) {
     if(PCB_String_endsWith(this, other)) {
         this->data[this->length - other->length] = '\0';
@@ -1539,17 +1755,11 @@ PCB_String PCB_String_from_CStrings(const PCB_CStrings* cstr, const char* delimi
     *cursor = '\0';
     return str;
 }
+#endif //PCB_IMPLEMENTATION_STRING
+
 
 //Section 2.4: Platform-independent (sort of) process functions.
-
-typedef struct {
-#if PCB_PLATFORM_WINDOWS
-    HANDLE handle;
-#elif PCB_PLATFORM_POSIX
-    pid_t handle;
-#endif //platform-dependent handles to processes
-} PCB_Process;
-
+#ifdef PCB_IMPLEMENTATION_PROCESS
 PCB_Process PCB_Process_self() {
     PCB_assert(false && "Not yet implemented");
 #if PCB_PLATFORM_WINDOWS
@@ -1608,17 +1818,6 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
 #endif //platform-dependent way of running a shell command
 }
 
-/**
- * @brief Runs a shell command and waits for it to exit.
- * 
- * @param command command built with `PCB_ShellCommand_*` utilities.
- * @return exit code of the executed command or a negative value
- * outside the range of possible exit codes (a negative value on
- * POSIX-compliant systems, a value < -2³² on Windows).
- * For a full description, see Appendix 1 at the bottom.
- * 
- * If you just want to check for any error simply check for a negative value.
- */
 ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
     if(command->length < 1) {
         PCB_log(
@@ -1641,59 +1840,11 @@ ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
 #endif //platform-dependent return code
     return PCB_Process_waitForExit(process);
 }
-
-//Section 3: PCB's build capability
-
-#define PCB_BUILD_CAPABILITY //temporary for development
-
-#ifdef PCB_BUILD_CAPABILITY
-//Section 3.??? (not finalized)
-
-typedef struct {
-    //Path to the compiler executable to use.
-    ////Defaults to the compiler's name used to build this file.
-    const char* compilerPath;
-    //Path to the build directory. Defaults to "build/".
-    const char* buildPath;
-    //Vector of paths to source directories.
-    PCB_CStrings sources;
-    //Vector of paths to include directories.
-    PCB_CStrings includes;
-    //Vector of names of libraries to link dynamically.
-    PCB_CStrings libs;
-    //Vector of names of libraries to link *statically*.    
-    PCB_CStrings staticLibs;
-    //Vector of additional paths to pass to the compiler to
-    //search for specified libraries.
-    PCB_CStrings librarySearchPaths;
-    //Vector of compiler optimization flags. Not a singular const char*
-    //since, for example in GCC, you can pass "-f" optimization flags
-    //on top of "-O" flags.
-    PCB_CStrings optimizationFlags;
-    //Vector of debug flags. Put flags about sanitizers here.
-    PCB_CStrings debugFlags;
-    //Vector of warning flags, as well as warning-as-error flags.
-    PCB_CStrings warningFlags;
-    //Vector of other compiler flags not covered by the rest of this struct.
-    PCB_CStrings otherFlags;
-    //Internal buffer used for enumerating source paths.
-    PCB_String currentSourcePath;
-    //Internal buffer used for enumerating build paths w.r.t. the source path.
-    PCB_String currentBuildPath;
-    //Internal buffer used for commands when building. Do not use.
-    PCB_ShellCommand commandBuffer;
-    //The language standard used to compile source files.
-    //Defaults to the standard used to build this file.
-    long standard;
-} PCB_BuildContext;
+#endif //PCB_IMPLEMENTATION_PROCESS
 
 
-
-
-
-//Section 3.3: Functions used for building.
-
-
+//Section 2.5: build capability
+#ifdef PCB_IMPLEMENTATION_BUILD
 int PCB__build_file(PCB_BuildContext* context) {
     PCB_log(
         PCB_LOGLEVEL_INFO,
@@ -1791,27 +1942,8 @@ int PCB__build_directory(PCB_BuildContext* context) {
 #endif //platform-dependent directory enumeration
 }
 
-typedef enum {
-    PCB_BUILDOPTION_NONE = 0,
-    //Emits debug symbols into object files.
-    PCB_BUILDOPTION_DEBUG = 1,
-    //Equivalent to -O3 or /O3. For more granularity modify
-    //the build context manually.
-    PCB_BUILDOPTION_OPTIMIZE = 1 << 1,
-    //Turns ASan on if the target supports it.
-    PCB_BUILDOPTION_ASAN = 1 << 2
-    //TODO: other sanitizers + more options
-} PCB_BuildOption;
 
-/**
- * @brief Create a PCB_BuildContext struct.
- * 
- * @param flags PCB_BuildOptions OR'ed together
- * @return a zeroed out struct if `flags == 0` or on error. 
- * Otherwise returns a default-initialized build context based on flags passed.
- * 
- * See Appendix 1 for more details.
- */
+
 PCB_BuildContext PCB_CreateBuildContext(int flags) {
     if(flags == 0) return (PCB_BuildContext) {0};
     PCB_BuildContext context = {
@@ -1901,8 +2033,7 @@ int PCB_buildFromContext(PCB_BuildContext* context) {
     PCB_assert(false && "Unfinished");
     
 }
-
-#endif //PCB_BUILD_CAPABILITY
+#endif //PCB_IMPLEMENTATION_BUILD
 
 #ifdef __cplusplus
 }
