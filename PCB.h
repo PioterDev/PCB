@@ -1254,6 +1254,11 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
 #endif //platform
 }
 
+int PCB_FS_Exists(const char* path) {
+    PCB_FileType type = PCB_FS_GetType(path);
+    if(type == PCB_FILETYPE_ERROR) return -1;
+    return type != PCB_FILETYPE_NONE;
+}
 
 //Section 2.3: Strings, string views, vectors of strings...
 //Section 2.3.1: A vector of const char*, a shell command
