@@ -1110,6 +1110,119 @@ bool PCB_mkdir(const char* path) {
 #endif //platform
 }
 
+typedef enum {
+    //Unknown/unsupported file type.
+    PCB_FILETYPE_UNKNOWN = 0x1,
+    //Regular file.
+    PCB_FILETYPE_REG = 0x2,
+    //Directory.
+    PCB_FILETYPE_DIR = 0x3,
+    //Pipe, socket, etc. Further checks are platform-specific unfortunately.
+    PCB_FILETYPE_STREAM = 0x4,
+    //Character device, for example a console or some USB device.
+    PCB_FILETYPE_CHAR = 0x5,
+    //Block device, for example a hard drive.
+    PCB_FILETYPE_BLK = 0x6,
+    //Non-existent filesystem entry.
+    PCB_FILETYPE_NONE = 0x10,
+    //Symbolic link, always returned alongside another filetype.
+    PCB_FILETYPE_SYMLINK = 0x20,
+
+    //Unknown/unsupported file type that is pointed to via a symlink.
+    PCB_FILETYPE_UNKNOWN_SYM = PCB_FILETYPE_UNKNOWN | PCB_FILETYPE_SYMLINK,
+    //Regular file that is pointed to via a symlink.
+    PCB_FILETYPE_REG_SYM = PCB_FILETYPE_REG | PCB_FILETYPE_SYMLINK,
+    //Directory that is pointed to via a symlink.
+    PCB_FILETYPE_DIR_SYM = PCB_FILETYPE_DIR | PCB_FILETYPE_SYMLINK,
+    //Pipe, socket, etc. that is pointed to via a symlink.
+    PCB_FILETYPE_STREAM_SYM = PCB_FILETYPE_STREAM | PCB_FILETYPE_SYMLINK,
+    //Character device that is pointed to via a symlink.
+    PCB_FILETYPE_CHAR_SYM = PCB_FILETYPE_CHAR | PCB_FILETYPE_SYMLINK,
+    //Block device that is pointed to via a symlink.
+    PCB_FILETYPE_BLK_SYM = PCB_FILETYPE_BLK | PCB_FILETYPE_SYMLINK,
+    //Symlink that points to a non-existent filesystem entry.
+    PCB_FILETYPE_NONE_SYM = PCB_FILETYPE_NONE | PCB_FILETYPE_SYMLINK,
+
+    //An error occured while checking the type; to get the error code
+    //call `PCB_GetError()`.
+    PCB_FILETYPE_ERROR = 0,
+    //A convenience value to strip away the symlink bit if one doesn't care.
+    PCB_FILETYPE_SYMLINK_IGN = ~PCB_FILETYPE_SYMLINK
+} PCB_FileType;
+
+PCB_FileType PCB_FS_GetType(const char* path) {
+    if(path == NULL) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        errno = EFAULT; return PCB_FILETYPE_ERROR;
+    }
+#if PCB_PLATFORM_WINDOWS
+    PCB_FileType type;
+    HANDLE f = CreateFileA(
+        path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+    );
+    if(f == INVALID_HANDLE_VALUE) {
+        errno = 0;
+        type = GetLastError() == ERROR_FILE_NOT_FOUND ? PCB_FILETYPE_NONE : PCB_FILETYPE_ERROR;
+        goto end;
+    }
+    switch(GetFileType(f)) {
+        case FILE_TYPE_CHAR: type = PCB_FILETYPE_CHAR; break;
+        case FILE_TYPE_PIPE: type = PCB_FILETYPE_STREAM; break;
+        case FILE_TYPE_UNKNOWN:
+            type = GetLastError() == NO_ERROR ? PCB_FILETYPE_UNKNOWN : PCB_FILETYPE_ERROR;
+            break;
+        case FILE_TYPE_DISK: {
+            FILE_ATTRIBUTE_TAG_INFO tags;
+            if(!GetFileInformationByHandleEx(
+                f, FileAttributeTagInfo, &tags, sizeof(tags)
+            )) {
+                errno = 0; type = PCB_FILETYPE_ERROR; break;
+            }
+            if(tags.FileAttributes == INVALID_FILE_ATTRIBUTES) {
+                errno = 0; type = PCB_FILETYPE_ERROR; break;
+            }
+            //TODO: Windows has something called "reparse points"
+            //that are used for symlinks and "junctions". Implement logic for them.
+            if(tags.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                type = PCB_FILETYPE_DIR;
+            else type = PCB_FILETYPE_REG;
+        } break;
+        default: type = PCB_FILETYPE_UNKNOWN; break;
+    }
+    end:
+    CloseHandle(f);
+    return type;
+#elif PCB_PLATFORM_POSIX
+    struct stat s;
+    if(lstat(path, &s) == -1) {
+        if(errno == ENOENT) {errno = 0; return PCB_FILETYPE_NONE; }
+        else return PCB_FILETYPE_ERROR;
+    }
+    if(S_ISLNK(s.st_mode)) {
+        if(stat(path, &s) == -1) {
+            if(errno == ENOENT) {errno = 0; return PCB_FILETYPE_NONE_SYM; }
+            else return PCB_FILETYPE_ERROR;
+        }
+        if(S_ISREG(s.st_mode)) return PCB_FILETYPE_REG_SYM;
+        if(S_ISDIR(s.st_mode)) return PCB_FILETYPE_DIR_SYM;
+        if(S_ISCHR(s.st_mode)) return PCB_FILETYPE_CHAR_SYM;
+        if(S_ISBLK(s.st_mode)) return PCB_FILETYPE_BLK_SYM;
+        if(S_ISFIFO(s.st_mode) || S_ISSOCK(s.st_mode)) return PCB_FILETYPE_STREAM_SYM;
+        return PCB_FILETYPE_UNKNOWN_SYM;
+    }
+    if(S_ISREG(s.st_mode)) return PCB_FILETYPE_REG;
+    if(S_ISDIR(s.st_mode)) return PCB_FILETYPE_DIR;
+    if(S_ISCHR(s.st_mode)) return PCB_FILETYPE_CHAR;
+    if(S_ISBLK(s.st_mode)) return PCB_FILETYPE_BLK;
+    if(S_ISFIFO(s.st_mode) || S_ISSOCK(s.st_mode)) return PCB_FILETYPE_STREAM;
+    return PCB_FILETYPE_UNKNOWN;
+#endif //platform
+}
+
+
 //Section 2.3: Strings, string views, vectors of strings...
 //Section 2.3.1: A vector of const char*, a shell command
 typedef struct {
