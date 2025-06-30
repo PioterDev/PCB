@@ -604,6 +604,54 @@ static void f()
 #endif //PCB_HAS_STRING_H
 #endif //PCB_strlen
 
+//MSVC, again being an outlier, doesn't natively support positional argument
+//syntax. Therefore we need to #define macros specifically for it...smh.
+//PCB_printf is not used by the library, but is provided anyway since
+//`printf` is the most widely used function from the printf family.
+#ifndef PCB_printf
+#if PCB_COMPILER_MSVC
+#define PCB_printf _printf_p
+#else
+#define PCB_printf printf
+#endif //MSVC scheiße
+#endif //PCB_printf
+
+#ifndef PCB_fprintf
+#if PCB_COMPILER_MSVC
+#define PCB_fprintf _fprintf_p
+#else
+#define PCB_fprintf fprintf
+#endif //MSVC scheiße
+#endif //PCB_fprintf
+
+#ifndef PCB_vfprintf
+#if PCB_COMPILER_MSVC
+#define PCB_vfprintf _vfprintf_p
+#else
+#define PCB_vfprintf vfprintf
+#endif //MSVC scheiße
+#endif //PCB_vfprintf
+
+#ifndef PCB_snprintf
+#if PCB_COMPILER_MSVC
+//This one is weird. It's named as if it was sprintf, but takes in buffer size...
+//TODO: verify that this function *actually* behaves like snprintf
+#define PCB_snprintf _sprintf_p
+#else
+#define PCB_snprintf snprintf
+#endif //MSVC scheiße
+#endif //PCB_snprintf
+
+#ifndef PCB_vsnprintf
+#if PCB_COMPILER_MSVC
+//Another weird one.
+#define PCB_vsnprintf _vsprintf_p
+#else
+#define PCB_vsnprintf vsnprintf
+#endif //MSVC scheiße
+#endif //PCB_vsnprintf
+
+
 #ifndef PCB_assert
 #ifdef PCB_HAS_ASSERT_H
 #define PCB_assert(expr) assert(expr)
@@ -1055,7 +1103,7 @@ typedef enum {
  */
 PCBAPI void PCBCALL PCB_log(
     PCB_LogLevel level, const char* fmt, ...
-);
+) PCB_Printf_Format(2, 3);
 
 #ifndef PCB_logTrace
 #ifdef PCB_DEBUG
@@ -1081,10 +1129,13 @@ PCBAPI int PCBCALL PCB_GetError(void);
  */
 PCBAPI void PCBCALL PCB_ClearError(void);
 PCBAPI int PCBCALL PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize);
-//Log the latest error obtained from PCB_GetError() to stderr.
-//Otherwise functions similarly to `printf`.
-PCBAPI void PCBCALL PCB_logLatestError(const char* fmt, ...);
-
+/**
+ * @brief Log the latest error obtained from `PCB_GetError()` to stderr.
+ * Otherwise functions similarly to `printf`.
+ *
+ * @param fmt `printf`-like format string
+ */
+PCBAPI void PCBCALL PCB_logLatestError(const char* fmt, ...) PCB_Printf_Format(1, 2);
 
 /**
  * @brief Creates a directory in the given `path`.
@@ -1135,6 +1186,11 @@ PCBAPI bool PCBCALL PCB_String_append_cstr(PCB_String* this, const char* str);
 PCBAPI bool PCBCALL PCB_String_append_chars(
     PCB_String* this, const char c, const size_t howManyTimes
 );
+/**
+ * @brief Appends a `printf`-like formatted string to `str`.
+ * @return whether the operation succeeded: can only fail on realloc failure.
+ */
+PCBAPI bool PCBCALL PCB_String_appendf(PCB_String* str, const char* fmt, ...) PCB_Printf_Format(2, 3);
 //Makes `c` the last character in `this`.
 //If `c` is not the last character, it appends it.
 //Otherwise does nothing.
@@ -1331,7 +1387,6 @@ int PCB_memcmp(const void* p1, const void* p2, size_t n) {
 //Section 2.1: Logging, messages, error handling
 #ifdef PCB_IMPLEMENTATION_LOG
 void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
-    //https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
 #if PCB_PLATFORM_WINDOWS
     //TODO: ANSI escape sequences are supported since Windows 10,
     //but have to be enabled with SetConsoleMode.
@@ -1351,55 +1406,55 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
         case PCB_LOGLEVEL_TRACE:
         case PCB_LOGLEVEL_TRACE_NL:
 #if PCB_PLATFORM_WINDOWS
-            fprintf(stdout, "[");
-            SetConsoleTextAttribute(hStderr, 8); fprintf(stdout, "Trace");
-            SetConsoleTextAttribute(hStderr, 0xf); fprintf(stdout, "]\t");
+            PCB_fprintf(stdout, "[");
+            SetConsoleTextAttribute(hStderr, 8); PCB_fprintf(stdout, "Trace");
+            SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stdout, "]\t");
 #else
-            fprintf(stdout, "[\033[38;5;238mTrace\033[0m]\t");
+            PCB_fprintf(stdout, "[\033[38;5;238mTrace\033[0m]\t");
 #endif
             break;
         case PCB_LOGLEVEL_DEBUG:
         case PCB_LOGLEVEL_DEBUG_NL:
 #if PCB_PLATFORM_WINDOWS
-        fprintf(stdout, "[");
-        SetConsoleTextAttribute(hStderr, 0xb); fprintf(stdout, "Debug");
-        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stdout, "]\t");
+        PCB_fprintf(stdout, "[");
+        SetConsoleTextAttribute(hStderr, 0xb); PCB_fprintf(stdout, "Debug");
+        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stdout, "]\t");
 #else
-        fprintf(stdout, "[\033[38;5;51mDebug\033[0m]\t");
+        PCB_fprintf(stdout, "[\033[38;5;51mDebug\033[0m]\t");
 #endif
         break;
     case PCB_LOGLEVEL_INFO:
     case PCB_LOGLEVEL_INFO_NL:
-        fprintf(stdout, "[Info]\t");
+        PCB_fprintf(stdout, "[Info]\t");
         break;
     case PCB_LOGLEVEL_WARN:
     case PCB_LOGLEVEL_WARN_NL:
 #if PCB_PLATFORM_WINDOWS
-        fprintf(stdout, "[");
-        SetConsoleTextAttribute(hStderr, 6); fprintf(stdout, "Warn");
-        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stdout, "]\t");
+        PCB_fprintf(stdout, "[");
+        SetConsoleTextAttribute(hStderr, 6); PCB_fprintf(stdout, "Warn");
+        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stdout, "]\t");
 #else
-        fprintf(stdout, "[\033[38;5;214mWarn\033[0m]\t");
+        PCB_fprintf(stdout, "[\033[38;5;214mWarn\033[0m]\t");
 #endif
         break;
     case PCB_LOGLEVEL_ERROR:
     case PCB_LOGLEVEL_ERROR_NL:
 #if PCB_PLATFORM_WINDOWS
-        fprintf(stderr, "[");
-        SetConsoleTextAttribute(hStderr, 0xc); fprintf(stderr, "Error");
-        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stderr, "]\t");
+        PCB_fprintf(stderr, "[");
+        SetConsoleTextAttribute(hStderr, 0xc); PCB_fprintf(stderr, "Error");
+        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stderr, "]\t");
 #else
-        fprintf(stderr, "[\033[38;5;9mError\033[0m]\t");
+        PCB_fprintf(stderr, "[\033[38;5;9mError\033[0m]\t");
 #endif
         break;
     case PCB_LOGLEVEL_FATAL:
     case PCB_LOGLEVEL_FATAL_NL:
 #if PCB_PLATFORM_WINDOWS
-        fprintf(stderr, "[");
-        SetConsoleTextAttribute(hStderr, 4); fprintf(stderr, "Fatal");
-        SetConsoleTextAttribute(hStderr, 0xf); fprintf(stderr, "]\t");
+        PCB_fprintf(stderr, "[");
+        SetConsoleTextAttribute(hStderr, 4); PCB_fprintf(stderr, "Fatal");
+        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stderr, "]\t");
 #else
-        fprintf(stderr, "[\033[1m\033[38;5;1mFatal\033[0m]\t");
+        PCB_fprintf(stderr, "[\033[1m\033[38;5;1mFatal\033[0m]\t");
 #endif
         break;
     }
@@ -1413,19 +1468,19 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
         case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_DEBUG_NL:
         case PCB_LOGLEVEL_INFO:  case PCB_LOGLEVEL_INFO_NL:
         case PCB_LOGLEVEL_WARN:  case PCB_LOGLEVEL_WARN_NL:
-            vfprintf(stdout, fmt, args); break;
+            PCB_vfprintf(stdout, fmt, args); break;
         case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_ERROR_NL:
         case PCB_LOGLEVEL_FATAL: case PCB_LOGLEVEL_FATAL_NL:
-            vfprintf(stderr, fmt, args); break;
+            PCB_vfprintf(stderr, fmt, args); break;
     }
     va_end(args);
     switch(level) {
         case PCB_LOGLEVEL_NONE:  case PCB_LOGLEVEL_TRACE:
         case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_INFO:
         case PCB_LOGLEVEL_WARN:
-            fprintf(stdout, "\n"); break;
+            PCB_fprintf(stdout, "\n"); break;
         case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_FATAL:
-            fprintf(stderr, "\n"); break;
+            PCB_fprintf(stderr, "\n"); break;
         case PCB_LOGLEVEL_NONE_NL:  case PCB_LOGLEVEL_TRACE_NL:
         case PCB_LOGLEVEL_DEBUG_NL: case PCB_LOGLEVEL_INFO_NL:
         case PCB_LOGLEVEL_WARN_NL:  case PCB_LOGLEVEL_ERROR_NL:
@@ -1464,7 +1519,7 @@ int PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize) {
 //this code right here is a very good example of xkcd 927
 #ifdef _GNU_SOURCE
     char* errStr = strerror_r(errnum, buf, bufSize);
-    if(buf != errStr) snprintf(buf, bufSize, "%s", errStr);
+    if(buf != errStr) PCB_snprintf(buf, bufSize, "%s", errStr);
     return 0;
 #elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
     int code = strerror_r(errnum, buf, bufSize);
@@ -1474,7 +1529,7 @@ int PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize) {
 #error test
     return strerror_s(buf, bufSize, errnum);
 #else
-    snprintf(buf, bufSize, "%s", strerror(errnum));
+    PCB_snprintf(buf, bufSize, "%s", strerror(errnum));
     return 0;
 #endif //this is really annoying...
 #endif //platform
@@ -1488,9 +1543,9 @@ void PCB_logLatestError(const char* fmt, ...) {
     PCB_log(PCB_LOGLEVEL_ERROR_NL, ""); //quick'n'dirty hack
     va_list args;
     va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
+    PCB_vfprintf(stderr, fmt, args);
     va_end(args);
-    fprintf(stderr, ": %s\n", buf);
+    PCB_fprintf(stderr, ": %s\n", buf);
 }
 #endif //PCB_IMPLEMENTATION_ERR
 
@@ -1694,6 +1749,20 @@ bool PCB_String_append_chars(PCB_String* this, const char c, const size_t howMan
     PCB_memset(this->data + this->length, c, howManyTimes);
     this->length += howManyTimes;
     this->data[this->length] = '\0';
+    return true;
+}
+
+bool PCB_String_appendf(PCB_String* str, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    //'\0' is implicitly stored at the end
+    const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args);
+    va_end(args);
+    if(!PCB_String_reserve(str, lengthRequired)) return false;
+    va_start(args, fmt); //                             '\0'
+    PCB_vsnprintf(str->data + str->length, lengthRequired + 1, fmt, args);
+    va_end(args);
+    str->length += lengthRequired;
     return true;
 }
 
