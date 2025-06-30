@@ -1076,6 +1076,10 @@ PCBAPI void PCBCALL PCB_log(
 
 
 PCBAPI int PCBCALL PCB_GetError(void);
+/**
+ * @brief Clear the error obtainable with `PCB_GetError`.
+ */
+PCBAPI void PCBCALL PCB_ClearError(void);
 PCBAPI int PCBCALL PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize);
 //Log the latest error obtained from PCB_GetError() to stderr.
 //Otherwise functions similarly to `printf`.
@@ -1439,6 +1443,13 @@ int PCB_GetError(void) {
 #elif PCB_PLATFORM_POSIX
     return errno;
 #endif //platform
+}
+
+void PCB_ClearError(void) {
+#if PCB_PLATFORM_WINDOWS
+    SetLastError(0);
+#endif //Windows scheiße
+    errno = 0;
 }
 
 int PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize) {
