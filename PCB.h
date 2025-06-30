@@ -53,88 +53,89 @@ extern "C" {
 //2. PCB_BuildContext structure for PCB_build() instead of globals
 //+ new function PCB_buildFromContext(PCB_BuildContext*)
 
-//PCB uses the following naming convention:
-//
-//- Names starting with "data type" should have "_" as next character.
-//- Names with the same prefix should have "_" as next character.
-//- If a name block does not contain any "long" word
-//(~8+ characters long), camelCase is used; snake_case otherwise
-//- If names refer to something similar, their prefix should
-//also be similar and the differing part should be connected
-//with "_". Additionally, if there is an established
-//default, the differing part can be omitted for the default one.
-//- If the resulting name using camelCase would hurt
-//readability, convert parts/all of it to snake_case.
-//- Conversely, if the resulting name using snake_case would hurt
-//readability, convert parts/all of it to camelCase.
-//- If a name contains names of at least 2 data types,
-//favor snake_case.
-//- Compile-time constants should favor CAPITALIZED SNAKE_CASE.
-//- Non-trivial data types' first letter should be CAPITALIZED.
-//- Name parts that can be inferred by analyzing target's use
-//case should be removed.
-//- Prefer names with full words over partial words.
-//- Prefer short and descriptive names for non-static variables
-//and more descriptive names for static variables.
-//- A combination of "type name", contents of "type name"
-//(if struct/union) and "variable name" should be enough
-//to infer the reason of the variable's existence.
-//- Avoid single-letter variable names, unless used
-//in a mathematical context.
-//- If a name can be made shorter without sacrificing
-//readability, it should...with restraint.
-//- Lastly, this is a guideline, not a strict set of rules.
-//Exceptions will happen.
-//
-//
-//
-//For example:
-//
-//typedef struct {
-// char* data;
-// size_t length;
-// size_t capacity;
-//} "dynamic string";
-//"dynamic string" is non-trivial -> "Dynamic_string"?
-//No, the part "Dynamic" can be inferred by its intended
-//use case and functions manipulating it -> "_string"?
-//No, the underscore hurts readability -> "string"?
-//No, it's non-trivial -> "String"?
-//Maybe, what about "Str"?
-//No, "Str" is not a full english word -> back to "String".
-//Settled.
-//
-//Let's say that we implement 2 following functions:
-//
-//"String starts with String" with arguments (String, String)
-//and
-//"String starts with C string" with arguments (String, C String)
-//
-//Both manipulate "String" -> both start with "String_".
-//Both share "starts with" as a prefix:
-// "starts" and "with" and not long enough, combine with camelCase.
-// Now both start with "String_startsWith".
-//Both do something similar, but on different arguments,
-//therefore current name + the rest of the name should be
-//connected with "_".
-//
-//We get:
-//"String_startsWith_String"
-//and
-//"String_startsWith_CString".
-//The first one will be the default -> "String_startsWith".
-//The second one could be shortened to "String_startsWith_cstr"
-//
-//
-//
-//All in all, I think this is a reasonable naming convention.
-//Certainly better than strictly following camelCase/snake_case/etc.
-//Certainly better than a lack of any convention.
-//And most certainly better than whatever the fuck
-//libstdc++ uses internally...trust me, if styling code
-//was a marathon, libstdc++ would sprint in circles
-//until it lit the asphalt on fire and opened
-//a nether portal.
+/* PCB uses the following naming convention:
+ *
+ * - Names starting with "data type" should have "_" as next character.
+ * - Names with the same prefix should have "_" as next character.
+ * - If a name block does not contain any "long" word
+ * (~8+ characters long), camelCase is used; snake_case otherwise
+ * - If names refer to something similar, their prefix should
+ * also be similar and the differing part should be connected
+ * with "_". Additionally, if there is an established
+ * default, the differing part can be omitted for the default one.
+ * - If the resulting name using camelCase would hurt
+ * readability, convert parts/all of it to snake_case.
+ * - Conversely, if the resulting name using snake_case would hurt
+ * readability, convert parts/all of it to camelCase.
+ * - If a name contains names of at least 2 data types,
+ * favor snake_case.
+ * - Compile-time constants should favor CAPITALIZED SNAKE_CASE.
+ * - Non-trivial data types' first letter should be CAPITALIZED.
+ * - Name parts that can be inferred by analyzing target's use
+ * case should be removed.
+ * - Prefer names with full words over partial words.
+ * - Prefer short and descriptive names for non-static variables
+ * and more descriptive names for static variables.
+ * - A combination of "type name", contents of "type name"
+ * (if struct/union) and "variable name" should be enough
+ * to infer the reason of the variable's existence.
+ * - Avoid single-letter variable names, unless used
+ * in a mathematical context.
+ * - If a name can be made shorter without sacrificing
+ * readability, it should...with restraint.
+ * - Lastly, this is a guideline, not a strict set of rules.
+ * Exceptions will happen.
+ *
+ *
+ *
+ * For example:
+ *
+ * typedef struct {
+ *  char* data;
+ *  size_t length;
+ *  size_t capacity;
+ * } "dynamic string";
+ * "dynamic string" is non-trivial -> "Dynamic_string"?
+ * No, the part "Dynamic" can be inferred by its intended
+ * use case and functions manipulating it -> "_string"?
+ * No, the underscore hurts readability -> "string"?
+ * No, it's non-trivial -> "String"?
+ * Maybe, what about "Str"?
+ * No, "Str" is not a full english word -> back to "String".
+ * Settled.
+ *
+ * Let's say that we implement 2 following functions:
+ *
+ * "String starts with String" with arguments (String, String)
+ * and
+ * "String starts with C string" with arguments (String, C String)
+ *
+ * Both manipulate "String" -> both start with "String_".
+ * Both share "starts with" as a prefix:
+ *  "starts" and "with" and not long enough, combine with camelCase.
+ *  Now both start with "String_startsWith".
+ * Both do something similar, but on different arguments,
+ * therefore current name + the rest of the name should be
+ * connected with "_".
+ *
+ * We get:
+ * "String_startsWith_String"
+ * and
+ * "String_startsWith_CString".
+ * The first one will be the default -> "String_startsWith".
+ * The second one could be shortened to "String_startsWith_cstr"
+ *
+ *
+ *
+ * All in all, I think this is a reasonable naming convention.
+ * Certainly better than strictly following camelCase/snake_case/etc.
+ * Certainly better than a lack of any convention.
+ * And most certainly better than whatever the fuck
+ * libstdc++ uses internally...trust me, if styling code
+ * was a marathon, libstdc++ would sprint in circles
+ * until it lit the asphalt on fire and opened
+ * a nether portal.
+ */
 
 
 
@@ -542,8 +543,7 @@ static void f()
 
 #endif //PCB_USE_CSTDLIB?
 
-//Section 1.5: Define functions/macros that PCB uses
-//from the standard library
+//Section 1.5: Define functions/macros that PCB uses from the standard library
 #ifndef PCB_realloc
 #ifdef PCB_HAS_STDLIB_H
 #define PCB_realloc realloc
@@ -601,7 +601,7 @@ static void f()
 #ifndef PCB_strlen
 #ifdef PCB_HAS_STRING_H
 #define PCB_strlen strlen
-#endif ////PCB_HAS_STRING_H
+#endif //PCB_HAS_STRING_H
 #endif //PCB_strlen
 
 #ifndef PCB_assert
@@ -913,19 +913,48 @@ typedef enum {
 } PCB_FileType;
 
 
-//A dynamic array of characters with a
-//trailing zero at the end - a string.
-//Unlike other dynamic arrays has a concrete implementation.
-//The trailing zero is not included in its length.
+/* A dynamic array of ASCII characters with a trailing zero at the end - a string.
+ * Has a concrete implementation unlike other dynamic arrays.
+ * The trailing zero is not included in its length.
+ *
+ * You can safely pass a `PCB_String*` to functions that expect a
+ * `PCB_StringView*` since they share the prefix.
+ *
+ * You can, in most situations, safely pass a `const PCB_StringView*`
+ * to functions that expect a `const PCB_String*`.
+ *
+ * If a function relates to memory management, it likely reads the `capacity`
+ * field, which isn't present in a `PCB_StringView`, so you can't
+ * pass it there (I mean, duh).
+ *
+ * For example, you can safely pass a `const PCB_StringView*` instead of
+ * `const PCB_String*` into `PCB_String_append`, but you can't do that
+ * with `PCB_String_clone`.
+ */
 typedef struct {
     char* data;
     size_t length;
     size_t capacity;
 } PCB_String;
 
-//A non-owning view at a portion of some string.
-//Likely does not end with a zero, keep that in mind
-//when passing `data` to a function expecting a C string.
+/* A non-owning view at a portion of some string.
+ * Likely does not end with a zero, keep that in mind when passing
+ * `data` to a function expecting a C string.
+ *
+ * You can safely pass a `PCB_String*` to functions that expect a
+ * `PCB_StringView*` since they share the prefix.
+ *
+ * You can, in most situations, safely pass a `const PCB_StringView*`
+ * to functions that expect a `const PCB_String*`.
+ *
+ * If a function relates to memory management, it likely reads the `capacity`
+ * field, which isn't present in a `PCB_StringView`, so you can't
+ * pass it there (I mean, duh).
+ *
+ * For example, you can safely pass a `const PCB_StringView*` instead of
+ * `const PCB_String*` into `PCB_String_append`, but you can't do that
+ * with `PCB_String_clone`.
+ */
 typedef struct {
     const char* data;
     size_t length;
@@ -1014,7 +1043,19 @@ typedef enum {
 
 
 
-PCBAPI void PCBCALL PCB_log(PCB_LogLevel level, const char* fmt, ...);
+
+/**
+ * @brief Logs a `printf`-like string to either stdout or stderr
+ * based on `level`.
+ *
+ * @param level log level
+ *
+ * if `PCB_LOGLEVEL_ERROR(_NL)` or `PCB_LOGLEVEL_FATAL(_NL)`,  logs to stderr,
+ * otherwise logs to stdout
+ */
+PCBAPI void PCBCALL PCB_log(
+    PCB_LogLevel level, const char* fmt, ...
+);
 
 #ifndef PCB_logTrace
 #ifdef PCB_DEBUG
@@ -1041,13 +1082,39 @@ PCBAPI int PCBCALL PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize);
 PCBAPI void PCBCALL PCB_logLatestError(const char* fmt, ...);
 
 
-//Creates a directory in the given `path`.
-//Returns whether the operation succeeded.
-//Failure by "it already exists" is treated as success.
-//On Linux, permission field of the created directory is rw-r--r--.
+/**
+ * @brief Creates a directory in the given `path`.
+ * Returns whether the operation succeeded.
+ *
+ * Failure by "it already exists" is treated as success.
+ *
+ * On Linux, permission field of the created directory is `rwxrwxr-x`.
+ * @param path path/to/directory/to/create, not transitive
+ */
 PCBAPI bool PCBCALL PCB_mkdir(const char* path);
+/**
+ * @brief Checks if a filesystem entry exists.
+ *
+ * @param path path/to/thing/in/filesystem
+ * @return `true` if exists, `false` if doesn't, a negative value
+ * otherwise. To get the error code call `PCB_GetError`.
+ */
 PCBAPI int PCBCALL PCB_FS_Exists(const char* path);
+/**
+ * @brief Get the file type of `path`.
+ * Note that if `path` refers to a symbolic link, the value returned
+ * contains a bitwise OR of the underlying file type and `PCB_FILETYPE_SYMLINK`.
+ * Therefore you shouldn't use `==` directly with the return value.
+ * To ignore the symlink bit, apply bitwise AND with `PCB_FILETYPE_SYMLINK_IGN`
+ * to remove it.
+ * @param path path/to/thing/in/filesystem
+ */
 PCBAPI PCB_FileType PCBCALL PCB_FS_GetType(const char* path);
+/**
+ * @brief Get the modification time of a filesystem entry.
+ *
+ * @return 0 on error, 1 if the entry doesn't exist, some other integer otherwise.
+ */
 PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path);
 
 
