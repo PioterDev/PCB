@@ -1299,6 +1299,16 @@ PCBAPI int PCBCALL PCB_String_compare_ci(
     const PCB_String* a, const PCB_String* b
 );
 /**
+ * @brief Compares `a` and `b` lexicographically, version with a C string.
+ * @return same as `PCB_String_compare`.
+ */
+PCBAPI int PCBCALL PCB_String_compare_cstr(const PCB_String* a, const char* b);
+/**
+ * @brief Compares `a` and `b`, case insensitive version with a C string.
+ * @return same as `PCB_String_compare`.
+ */
+PCBAPI int PCBCALL PCB_String_compare_cstr_ci(const PCB_String* a, const char* b);
+/**
  * @brief Checks if `str` starts with `other`.
  * If any of them doesn't exist (i.e. `data == NULL`), returns false.
  * @return whether `str` starts with `other`
@@ -2004,8 +2014,10 @@ PCB_String PCB_String_clone(const PCB_String* str) {
 }
 
 int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
-    if(a->data == NULL && b->data == NULL) return 0;
-    else if(a->data == NULL) return 1;
+    // if(a->data == NULL && b->data == NULL) return 0;
+    // else if(a->data == NULL) return 1;
+    // else if(b->data == NULL) return -1;
+    if(a->data == NULL) return b->data != NULL;
     else if(b->data == NULL) return -1;
     return a->length == b->length
         ? PCB_memcmp(a->data, b->data, a->length)
@@ -2013,10 +2025,21 @@ int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
 }
 
 int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
-    if(a->data == NULL && b->data == NULL) return 0;
-    else if(a->data == NULL) return 1;
+    if(a->data == NULL) return b->data != NULL;
     else if(b->data == NULL) return -1;
     return strncasecmp(a->data, b->data, a->length);
+}
+
+int PCB_String_compare_cstr(const PCB_String* a, const char* b) {
+    if(a->data == NULL) return b != NULL;
+    else if(b == NULL) return -1;
+    return PCB_strcmp(a->data, b);
+}
+
+int PCB_String_compare_cstr_ci(const PCB_String* a, const char* b) {
+    if(a->data == NULL) return b != NULL;
+    else if(b == NULL) return -1;
+    return strncasecmp(a->data, b, a->length);
 }
 
 bool PCB_String_startsWith(const PCB_String* str, const PCB_String* other) {
