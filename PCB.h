@@ -1174,15 +1174,35 @@ PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path);
 
 
 
+/**
+ * @brief Reserves `howMany` ASCII characters in `this`.
+ * @return whether the operation succeeded: fails on realloc failure.
+ */
 PCBAPI bool PCBCALL PCB_String_reserve(PCB_String* this, const size_t howMany);
-//Resizes `this` to fit a string of `targetLength` length.
-//Truncates the string to `targetLength` if `targetLength < this->length`.
-//Does nothing if `targetLength == this->length`.
-//Behaves identically to `PCB_String_reserve` otherwise.
+/**
+ * @brief Resizes `this` to fit a string of `targetLength` length.
+ * Truncates the string to `targetLength` if `targetLength < this->length`.
+ * Does nothing if `targetLength == this->length`.
+ * Behaves identically to `PCB_String_reserve` otherwise.
+ * @return whether the operation succeeded: fails on realloc failure.
+ */
 PCBAPI bool PCBCALL PCB_String_resize(PCB_String* this, const size_t targetLength);
+/**
+ * @brief Appends `other` to `this`.
+ * @return whether the operation succeeded:
+ * fails on realloc failure or if `other == NULL`.
+ */
 PCBAPI bool PCBCALL PCB_String_append(PCB_String* this, const PCB_String* other);
+/**
+ * @brief Appends `str` to `this`.
+ * @return whether the operation succeeded:
+ * fails on realloc failure or if `this == NULL`.
+ */
 PCBAPI bool PCBCALL PCB_String_append_cstr(PCB_String* this, const char* str);
-//Appends `c` to `this` `howManyTimes` times.
+/**
+ * @brief Appends `c` to `this` `howManyTimes` times.
+ * @return whether the operation succeeded: can only fail on realloc failure.
+ */
 PCBAPI bool PCBCALL PCB_String_append_chars(
     PCB_String* this, const char c, const size_t howManyTimes
 );
@@ -1191,44 +1211,97 @@ PCBAPI bool PCBCALL PCB_String_append_chars(
  * @return whether the operation succeeded: can only fail on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_appendf(PCB_String* str, const char* fmt, ...) PCB_Printf_Format(2, 3);
-//Makes `c` the last character in `this`.
-//If `c` is not the last character, it appends it.
-//Otherwise does nothing.
+/**
+ * @brief Makes `c` the last character in `this`.
+ * If `c` is not the last character, it appends it.
+ * Otherwise does nothing.
+ * @return `false` if reallocation failed, `true` otherwise
+ */
 PCBAPI bool PCBCALL PCB_String_setSuffix_char(PCB_String* this, const char c);
+/**
+ * @brief Clones `this`.
+ * @return an initialized `PCB_String` structure or a zeroed out one on failure
+ */
 PCBAPI PCB_String PCBCALL PCB_String_clone(const PCB_String* this);
-//Compares `a` and `b` lexicographically.
-PCBAPI int PCBCALL PCB_String_compare(const PCB_String* a, const PCB_String* b);
-//Compares `a` and `b`, case insensitive version.
-PCBAPI int PCBCALL PCB_String_compare_ci(const PCB_String* a, const PCB_String* b);
-//Checks if `this` starts with `other`.
-//If any of them is empty (i.e. `data == NULL`), returns false.
+/**
+ * @brief Compares `a` and `b` lexicographically.
+ * @return
+ * 0 on equality or if `a` and `b` are invalid,
+ *
+ * a negative value if `a` < `b` or `b` is invalid,
+ *
+ * a positive value if `a` > `b` or `a` is invalid.
+ */
+PCBAPI int PCBCALL PCB_String_compare(
+    const PCB_String* a, const PCB_String* b
+);
+/**
+ * @brief Compares `a` and `b`, case insensitive version.
+ * @return same as `PCB_String_compare`.
+ */
+PCBAPI int PCBCALL PCB_String_compare_ci(
+    const PCB_String* a, const PCB_String* b
+);
+/**
+ * @brief Checks if `this` starts with `other`.
+ * If any of them doesn't exist (i.e. `data == NULL`), returns false.
+ * @return whether `this` starts with `other`
+ */
 PCBAPI bool PCBCALL PCB_String_startsWith(
     const PCB_String* this, const PCB_String* other
 );
-//Checks if `this` starts with `other`.
-//If `this` is empty (i.e. `data == NULL`), returns false.
+/**
+ * @brief Checks if `this` starts with `other`.
+ * If `this` doesn't exist (i.e. `data == NULL`), returns false.
+ * @return whether `this` starts with `other`
+ */
 PCBAPI bool PCBCALL PCB_String_startsWith_cstr(
     const PCB_String* this, const char* other
 );
-//Checks if `this` ends with `other`.
-//If any of them is empty (i.e. `data == NULL`), returns false.
+/**
+ * @brief Checks if `this` ends with `other`.
+ * If any of them doesn't exist (i.e. `data == NULL`), returns false.
+ * @return whether `this` ends with `other`
+ */
 PCBAPI bool PCBCALL PCB_String_endsWith(
     const PCB_String* this, const PCB_String* other
 );
-//Checks if `this` ends with `other`.
-//If `this` is empty (i.e. `data == NULL`), returns false.
+/**
+ * @brief Checks if `this` ends with `other`.
+ * If `this` doesn't exist (i.e. `data == NULL`), returns false.
+ * @return whether `this` ends with `other`
+ */
 PCBAPI bool PCBCALL PCB_String_endsWith_cstr(
     const PCB_String* this, const char* other
 );
+/**
+ * @brief Converts `this` to uppercase.
+ */
 PCBAPI void PCBCALL PCB_String_toUpperCase(PCB_String* this);
+/**
+ * @brief Converts `this` to lowercase.
+ */
 PCBAPI void PCBCALL PCB_String_toLowerCase(PCB_String* this);
+/**
+ * @brief Converts a clone of `this` to uppercase.
+ * @return an initialized `PCB_String` structure or a zeroed out one on failure
+ */
 PCBAPI PCB_String PCBCALL PCB_String_toUpperCase_copy(const PCB_String* this);
+/**
+ * @brief Converts a clone of `this` to lowercase.
+ * @return an initialized `PCB_String` structure or a zeroed out one on failure
+ */
 PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(const PCB_String* this);
 //Pops the `other->length` characters from `this` if they match.
 //Returns the new length.
 PCBAPI size_t PCBCALL PCB_String_pop(PCB_String* this, const PCB_String* other);
+
+/**
+ * @brief Creates a new `PCB_String` from `cstrs` joined with `delimiter.
+ * @return an initialized `PCB_String` structure or a zeroed out one on failure
+ */
 PCBAPI PCB_String PCBCALL PCB_String_from_CStrings(
-    const PCB_CStrings* cstr, const char* delimiter
+    const PCB_CStrings* cstrs, const char* delimiter
 );
 
 
@@ -1289,6 +1362,10 @@ PCBAPI int PCBCALL PCB_buildFromContext(PCB_BuildContext* context);
 #ifndef PCB_IMPLEMENTATION_PROCESS
 #define PCB_IMPLEMENTATION_PROCESS
 #endif //PCB_IMPLEMENTATION_PROCESS
+
+#ifndef PCB_IMPLEMENTATION_ARENA
+#define PCB_IMPLEMENTATION_ARENA
+#endif //PCB_IMPLEMENTATION_ARENA
 
 #ifndef PCB_IMPLEMENTATION_BUILD
 #define PCB_IMPLEMENTATION_BUILD
