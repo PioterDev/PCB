@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 2
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1307,10 +1307,18 @@ PCBAPI PCB_String PCBCALL PCB_String_toUpperCase_copy(const PCB_String* str);
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
 PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(const PCB_String* str);
-//Pops the `other->length` characters from `this` if they match.
-//Returns the new length.
-PCBAPI size_t PCBCALL PCB_String_pop(PCB_String* this, const PCB_String* other);
-
+/**
+ * @brief Pops the last character in `str`.
+ * If `str` is empty, returns `\0` without modification.
+ */
+PCBAPI char PCBCALL PCB_String_pop(PCB_String* str);
+/**
+ * @brief Removes `other->length` characters from `str` if they match.
+ * @return new length
+ */
+PCBAPI size_t PCBCALL PCB_String_removeSuffix(
+    PCB_String* str, const PCB_String* other
+);
 /**
  * @brief Creates a new `PCB_String` from `cstrs` joined with `delimiter.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
@@ -1966,12 +1974,19 @@ PCB_String PCB_String_toLowerCase_copy(const PCB_String* str) {
     return copy;
 }
 
-size_t PCB_String_pop(PCB_String* this, const PCB_String* other) {
-    if(PCB_String_endsWith(this, other)) {
-        this->data[this->length - other->length] = '\0';
-        return this->length -= other->length;
+char PCB_String_pop(PCB_String* str) {
+    if(str->length == 0) return '\0';
+    char c = str->data[str->length - 1];
+    str->data[--str->length] = '\0';
+    return c;
+}
+
+size_t PCB_String_removeSuffix(PCB_String* str, const PCB_String* other) {
+    if(PCB_String_endsWith(str, other)) {
+        str->data[str->length - other->length] = '\0';
+        return str->length -= other->length;
     }
-    return this->length;
+    return str->length;
 }
 
 PCB_String PCB_String_from_CStrings(const PCB_CStrings* cstrs, const char* delimiter) {
