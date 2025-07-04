@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 3
+#define PCB_VERSION_PATCH 4
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1065,11 +1065,24 @@ typedef PCB_CStrings PCB_ShellCommand;
 typedef struct {
 #if PCB_PLATFORM_WINDOWS
     HANDLE handle;
+    DWORD status;
 #elif PCB_PLATFORM_POSIX
     pid_t handle;
+    int status;
 #endif //platform-dependent handles to processes
 } PCB_Process;
 
+#ifndef PCB_PROCESS_INVALID_HANDLE
+#if PCB_PLATFORM_WINDOWS
+#define PCB_PROCESS_INVALID_HANDLE INVALID_HANDLE_VALUE
+#elif PCB_PLATFORM_POSIX
+/* 0 is the kernel (or part of it), i.e. no userspace process can be 0.
+ * Any negative PID is also invalid as defined by POSIX.
+ * See https://pubs.opengroup.org/onlinepubs/9699919799/.
+ */
+#define PCB_PROCESS_INVALID_HANDLE -1
+#endif //platform
+#endif //PCB_PROCESS_INVALID_HANDLE
 
 typedef struct {
     //Path to the compiler executable to use.
@@ -1430,26 +1443,62 @@ PCBAPI PCB_String PCBCALL PCB_String_from_CStrings(
 
 
 
-PCBAPI PCB_Process PCBCALL PCB_Process_self();
-PCBAPI bool PCBCALL PCB_Process_isValid(PCB_Process process);
-PCBAPI int PCBCALL PCB_Process_waitForExit(PCB_Process process);
+/**
+ * @brief Returns a `PCB_Process` structure with data
+ * about itself. Not implemented.
+ */
+PCBAPI PCB_Process PCBCALL PCB_Process_self(void);
+/**
+ * @brief Create a `process` struct with invalid fields (all other functions
+ * rely on this fact). This function MUST be used instead of standard
+ * zero-initialization, otherwise the behavior is undefined.
+*/
+PCBAPI PCB_Process PCBCALL PCB_Process_init(void);
+/**
+ * @brief Checks whether `process` is a valid process.
+ * NOTE: does NOT check whether `process` is an existing process.
+ */
+PCBAPI bool PCBCALL PCB_Process_isValid(const PCB_Process* process);
+/**
+ * @brief Waits for `process` to exit.
+ * @return `true` if `process` exited, `false` on error; call `PCB_GetError()`
+ * to get the error code.
+ */
+PCBAPI bool PCBCALL PCB_Process_waitForExit(PCB_Process* process);
+/**
+* @brief Checks if `process` exited.
+* @return `true` if `process` exited, `false` if not, -1 on error;
+* call `PCB_GetError()` to get the error code.
+*/
+PCBAPI int PCBCALL PCB_Process_checkExit(PCB_Process* process);
+/**
+* @brief Get the exit code of `process`. If `process` has not exited yet,
+* returns -1.
+*/
+PCBAPI int PCBCALL PCB_Process_getExitCode(const PCB_Process* process);
 
+/**
+ * @brief Destroys the passed `process` structure, invalidates
+ * its member fields.
+ */
+PCBAPI void PCBCALL PCB_Process_destroy(PCB_Process* process);
 
+/**
+ * @brief Spawns a child process, which runs `command` concurrently.
+ * @return a valid `PCB_Process` structure with information about the
+ * child process or a structure with an invalid `handle` field on error.
+ * To check it, use `PCB_Process_isValid`.
+ *
+ * On POSIX systems, if `command` is not null-terminated, this function will
+ * append `NULL` to `command` prior to calling `exec` and remove it afterwards.
+ */
 PCBAPI PCB_Process PCBCALL PCB_ShellCommand_runBg(PCB_ShellCommand* command);
 /**
- * @brief Runs a shell command and waits for it to exit.
- * 
- * @param command command built with `PCB_ShellCommand_*` utilities.
- * @return exit code of the executed command or a negative value
- * outside the range of possible exit codes (a negative value on
- * POSIX-compliant systems, a value < -2³² on Windows).
- * For a full description, see Appendix 1 at the bottom.
- * 
- * If you just want to check for any error simply check for a negative value.
+ * @brief Runs `command` and waits for it to exit.
+ * @return the exit code of `command` or -1, the info about the error
+ * is logged, to get the error code call `PCB_GetError()`.
  */
-PCBAPI ssize_t PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
-
-
+PCBAPI int PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
 
 /**
  * @brief Create a PCB_BuildContext struct.
@@ -2210,8 +2259,8 @@ PCB_String PCB_String_from_CStrings(const PCB_CStrings* cstrs, const char* delim
 
 //Section 2.4: Platform-independent (sort of) process functions.
 #ifdef PCB_IMPLEMENTATION_PROCESS
-PCB_Process PCB_Process_self() {
-    PCB_assert(false && "Not yet implemented");
+PCB_Process PCB_Process_self(void) {
+    PCB_TODO("PCB_Process_self");
 #if PCB_PLATFORM_WINDOWS
 
 #elif PCB_PLATFORM_POSIX
@@ -2219,24 +2268,78 @@ PCB_Process PCB_Process_self() {
 #endif
 }
 
-bool PCB_Process_isValid(PCB_Process process) {
+PCB_Process PCB_Process_init(void) {
+    PCB_Process p = PCB_ZEROED;
+    p.handle = PCB_PROCESS_INVALID_HANDLE;
 #if PCB_PLATFORM_WINDOWS
-    return process.handle != INVALID_HANDLE_VALUE;
+    p.status = STILL_ACTIVE;
+#endif //platform
+    return p;
+}
+
+bool PCB_Process_isValid(const PCB_Process* process) {
+#if PCB_PLATFORM_WINDOWS
+    return process->handle != INVALID_HANDLE_VALUE;
 #elif PCB_PLATFORM_POSIX
-    return process.handle > (pid_t)0;
+    return process->handle > (pid_t)0;
 #endif
 }
 
-int PCB_Process_waitForExit(PCB_Process process) {
+bool PCB_Process_waitForExit(PCB_Process* process) {
 #if PCB_PLATFORM_WINDOWS
-    PCB_assert(false && "Not yet implemented");
+    DWORD val = WaitForSingleObject(process->handle, INFINITE);
+    if(val == WAIT_FAILED) {
+        errno = 0; return false;
+    } //WAIT_TIMEOUT is impossible since INFINITE is provided as wait time
+    PCB_assert(GetExitCodeProcess(process->handle, &process->status));
+    PCB_assert(process->status != STILL_ACTIVE);
+    return true;
 #elif PCB_PLATFORM_POSIX
-    int exitCode;
-    waitpid(process.handle, &exitCode, 0);
-    return exitCode;
-#endif
+    pid_t id = -1;
+    wait: id = waitpid(process->handle, &process->status, 0);
+    if(id == -1) {
+        if(errno == EINTR) goto wait;
+        return false;
+    }
+    PCB_assert(id != 0);
+    return true;
+#endif //platform
 }
 
+int PCB_Process_checkExit(PCB_Process* process) {
+#if PCB_PLATFORM_WINDOWS
+    if(!GetExitCodeProcess(process->handle, &process->status)) {
+        errno = 0; return -1;
+    };
+    return process->status != STILL_ACTIVE;
+#elif PCB_PLATFORM_POSIX
+    pid_t id = waitpid(process->handle, &process->status, WNOHANG);
+    if(id == -1) return -1;
+    if(id == 0) return false; //no child changed state
+    if(WIFEXITED(process->status) || WIFSIGNALED(process->status)) {
+        return true;
+    }
+    return false;
+#endif //platform
+}
+
+int PCB_Process_getExitCode(const PCB_Process* process) {
+#if PCB_PLATFORM_WINDOWS
+    return process->status;
+#elif PCB_PLATFORM_POSIX
+    if(WIFEXITED(process->status)) return WEXITSTATUS(process->status);
+    if(WIFSIGNALED(process->status)) return -WTERMSIG(process->status) - 1;
+    return -1;
+#endif //platform
+}
+
+void PCB_Process_destroy(PCB_Process* process) {
+#if PCB_PLATFORM_WINDOWS
+    CloseHandle(process->handle);
+    process->status = STILL_ACTIVE;
+#endif //platform
+    process->handle = PCB_PROCESS_INVALID_HANDLE;
+}
 PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
 #if PCB_PLATFORM_WINDOWS
     PCB_assert(false && "Not yet implemented");
@@ -2268,27 +2371,20 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
 #endif //platform-dependent way of running a shell command
 }
 
-ssize_t PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
+int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
     if(command->length < 1) {
-        PCB_log(
-            PCB_LOGLEVEL_ERROR,
-            "Cannot run an empty command"
-        );
-#if PCB_PLATFORM_WINDOWS
-        return (ssize_t)0x8000000000000000;
-#elif PCB_PLATFORM_POSIX
-        return -1;
-#endif //platform-dependent return code
+        PCB_log(PCB_LOGLEVEL_ERROR, "Cannot run an empty command");
+        PCB_ClearError(); errno = EINVAL; return -1;
     }
 
     PCB_Process process = PCB_ShellCommand_runBg(command);
-    if(!PCB_Process_isValid(process))
-#if PCB_PLATFORM_WINDOWS
-        return (ssize_t)0x8000000000000001;
-#elif PCB_PLATFORM_POSIX
-        return -2;
-#endif //platform-dependent return code
-    return PCB_Process_waitForExit(process);
+    if(!PCB_Process_isValid(&process)) {
+        return -1; //error code is in `PCB_GetError()`
+    }
+    if(!PCB_Process_waitForExit(&process)) return -1;
+    int code = PCB_Process_getExitCode(&process);
+    PCB_Process_destroy(&process);
+    return code;
 }
 #endif //PCB_IMPLEMENTATION_PROCESS
 
