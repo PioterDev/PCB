@@ -1269,6 +1269,12 @@ PCBAPI bool PCBCALL PCB_String_remove_range(
  */
 PCBAPI bool PCBCALL PCB_String_setSuffix_char(PCB_String* str, const char c);
 /**
+ * @brief Truncate `str` until `c` is found. If `c` is not found, `str` is *not*
+ * truncated.
+ * @return `true` if successfully truncated,`false` if `c` was not found
+ */
+PCBAPI bool PCBCALL PCB_String_truncate_until_char(PCB_String* str, const char c);
+/**
  * @brief Clones `str`.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
@@ -1982,6 +1988,21 @@ bool PCB_String_setSuffix_char(PCB_String* str, const char c) {
 }
 
 #undef PCB_String_realloc
+
+bool PCB_String_truncate_until_char(PCB_String* str, const char c) {
+    if(str->data == NULL || str->length == 0) return false;
+    if(str->data[str->length - 1] == c) return true;
+    const char* cursor = str->data + str->length - 1;
+    while(cursor != str->data && *cursor != c) { --cursor; }
+    if(cursor == str->data) {
+        if(*cursor != c) return false;
+        str->data[str->length = 1] = '\0';
+        return true;
+    }
+    const size_t newLength = (size_t)(cursor + 1 - str->data);
+    str->data[str->length = newLength] = '\0';
+    return true;
+}
 
 PCB_String PCB_String_clone(const PCB_String* str) {
     if(str->data == NULL || str->length == 0)
