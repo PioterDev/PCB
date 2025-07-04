@@ -896,6 +896,7 @@ while((index) < (vec)->length) {                            \
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/shm.h>
 #include <sys/wait.h>
 #include <dirent.h>
 #include <errno.h>
@@ -2340,34 +2341,155 @@ void PCB_Process_destroy(PCB_Process* process) {
 #endif //platform
     process->handle = PCB_PROCESS_INVALID_HANDLE;
 }
+
+
+//check whether `vfork` is available according to vfork(2)...I love you glibc <3
+#if PCB_PLATFORM_POSIX
+#ifdef PCB_HAS_VFORK
+#error "PCB_HAS_VFORK macro should not be defined prior to this place"
+#else
+#ifdef __GLIBC__
+#if __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 12
+//and now, hell begins
+#if (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE+0 >= 500) && !(defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200809L)
+#define PCB_TEMP 1
+#else
+#define PCB_TEMP 0
+#endif //temporary convenience macro
+#if __GLIBC_MINOR__ == 19
+#if PCB_TEMP && defined(_DEFAULT_SOURCE) && defined(_BSD_SOURCE)
+#define PCB_HAS_VFORK
+#endif //glibc 2.19 check
+#elif __GLIBC_MINOR__ > 19
+#if PCB_TEMP && defined(_DEFAULT_SOURCE)
+#define PCB_HAS_VFORK
+#endif //glibc >2.19 check
+#else
+#if PCB_TEMP && defined(_BSD_SOURCE)
+#define PCB_HAS_VFORK
+#endif //glibc 2.12-2.18 check
+#endif //glibc 2.12+ checks
+#undef PCB_TEMP
+#else
+#if defined(_BSD_SOURCE) || (defined(_XOPEN_SOURCE) && (_XOPEN_SOURCE+0) >= 500)
+#define PCB_HAS_VFORK
+#endif //glibc check (<2.12)
+#endif //glibc checks
+#endif //glibc
+#endif //PCB_HAS_VFORK
+#endif //POSIX-only thing
+
 PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
-#if PCB_PLATFORM_WINDOWS
-    PCB_assert(false && "Not yet implemented");
-#elif PCB_PLATFORM_POSIX
-    if(command->length < 1) {
-        PCB_log(
-            PCB_LOGLEVEL_ERROR,
-            "Cannot run an empty command"
-        );
-        return (PCB_Process){ .handle = -1 };
+    if(command == NULL || command->data == NULL || command->length < 1) {
+        PCB_log(PCB_LOGLEVEL_ERROR, "Cannot run an empty command");
+        PCB_ClearError(); errno = EINVAL;
+        return PCB_Process_init();
     }
-    PCB_ShellCommand_append_arg(command, NULL);
-    PCB_Process child = { .handle = fork() };
+#if PCB_PLATFORM_WINDOWS
+    STARTUPINFO startupinfo   = PCB_ZEROED; startupinfo.cb = sizeof(startupinfo);
+    PROCESS_INFORMATION pInfo = PCB_ZEROED;
+
+    PCB_String s = PCB_ZEROED; //Windows wants a flat string instead of char* const*
+    //a heuristic prediction to minimize reallocs
+    PCB_String_reserve(&s, 8 * command->length);
+    for(size_t i = 0; i < command->length; i++) {
+        //other whitespace characters are nonsensical inside a shell command...right?
+        bool needs_quotes =
+            strpbrk(command->data[i], " \t\v") != NULL ||
+            command->data[i][0] == '\0'; //""
+        if(needs_quotes) PCB_String_append_chars(&s, '"', 1);
+        const char* cursor = command->data[i];
+        while(*cursor) {
+            const char* needs_escaping = strpbrk(cursor, "\"\'\\");
+            if(needs_escaping == NULL) {
+                PCB_String_append_cstr(&s, cursor);
+                break;
+            }
+            int l = (int)(needs_escaping - cursor);
+            PCB_String_appendf(&s, "%.*s\\%c", l, cursor, *needs_escaping);
+            cursor += l + 1;
+        }
+        if(needs_quotes) PCB_String_append_chars(&s, '"', 1);
+
+        PCB_String_append_chars(&s, ' ', 1);
+    }
+    PCB_String_pop(&s); //remove trailing ' '
+
+    errno = 0;
+    BOOL success = CreateProcessA(
+        NULL, s.data, NULL, NULL, true, 0, NULL, NULL, &startupinfo, &pInfo
+    );
+    PCB_String_destroy(&s);
+    if(!success) {
+        PCB_logLatestError("Failed to create a child process");
+        return PCB_Process_init();
+    }
+    CloseHandle(pInfo.hThread);
+    PCB_Process process = PCB_Process_init();
+    process.handle = pInfo.hProcess;
+    return process;
+#elif PCB_PLATFORM_POSIX
+    //the caller may depend on the lack of null termination afterwards
+    bool hadNullLast = true;
+    if(command->data[command->length - 1] != NULL) {
+        PCB_ShellCommand_append_arg(command, NULL);
+        hadNullLast = false;
+    }
+    int code = 0;
+    PCB_Process child = PCB_Process_init();
+#ifdef PCB_HAS_VFORK
+    child.handle = vfork();
+#else
+    struct shmid_ds d;
+    //checking what error has occured in the child is impossible with fork() without some IPC
+    int tmpRegionID = 1;
+    int* tmpRegion = (int*)-1;
+    tmpRegionID = shmget(IPC_PRIVATE, sizeof(errno), 0600 | IPC_CREAT);
+    if(tmpRegionID == -1) {
+        PCB_logLatestError("Failed to create a temporary shared memory segment");
+        code = -errno; goto end;
+    }
+    //this region will be automatically detached in the child if `exec` succeeds or it exits
+    tmpRegion = (int*)shmat(tmpRegionID, NULL, 0);
+    if(tmpRegion == (void*)-1) {
+        PCB_logLatestError("Failed to attach a temporary shared memory segment");
+        code = -errno; goto end;
+    }
+    *tmpRegion = 0; //not actually needed, but we're being paranoid
+    child.handle = fork();
+#endif //PCB_HAS_VFORK?
     if(child.handle == -1) {
-        PCB_log(
-            PCB_LOGLEVEL_ERROR,
-            "Failed to create a child process: %s",
-            strerror(errno)
-        );
-        return (PCB_Process) { .handle = -2 };
+        code = errno;
+        PCB_logLatestError("Failed to create a child process");
     }
     else if(child.handle == 0) {
         execvp(command->data[0], (char* const*)command->data);
-        PCB_log(PCB_LOGLEVEL_ERROR, "Couldn't execute command");
-        exit(1);
+        code = errno;
+#ifdef PCB_HAS_VFORK
+        PCB_logLatestError("Failed to execute shell command");
+#else
+        *tmpRegion = errno;
+        shmdt(tmpRegion);
+#endif //PCB_HAS_VFORK?
+        _exit(255);
     }
+#ifndef PCB_HAS_VFORK
+    for(;;) { //spin until child detaches the region
+        shmctl(tmpRegionID, IPC_STAT, &d);
+        if(d.shm_nattch == 1) break;
+    }
+    if(*tmpRegion != 0) {
+        code = -*tmpRegion;
+        errno = *tmpRegion;
+        PCB_logLatestError("Failed to execute shell command");
+    }
+    end:
+    if(tmpRegion != (void*)-1) shmdt(tmpRegion);
+    if(tmpRegionID != -1)      shmctl(tmpRegionID, IPC_RMID, NULL);
+#endif //!PCB_HAS_VFORK?
+    if(code != 0) child.handle = -code;
+    if(!hadNullLast) --command->length;
     return child;
-
 #endif //platform-dependent way of running a shell command
 }
 
