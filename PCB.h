@@ -1869,7 +1869,7 @@ bool PCB_String_resize(PCB_String* str, const size_t targetLength) {
 }
 
 bool PCB_String_append(PCB_String* str, const PCB_String* other) {
-    if(other->data == NULL) return true;
+    if(other == NULL || other->data == NULL) return false;
     if(!PCB_String_reserve(str, other->length)) return false; //with '\0'
     PCB_memcpy(str->data + str->length, other->data, other->length + 1);
     str->length += other->length;
@@ -1888,8 +1888,7 @@ bool PCB_String_append_cstr(PCB_String* str, const char* cstr) {
 bool PCB_String_append_chars(PCB_String* str, const char c, const size_t howManyTimes) {
     if(!PCB_String_reserve(str, howManyTimes)) return false;
     PCB_memset(str->data + str->length, c, howManyTimes);
-    str->length += howManyTimes;
-    str->data[str->length] = '\0';
+    str->length += howManyTimes; str->data[str->length] = '\0';
     return true;
 }
 
@@ -2021,20 +2020,20 @@ int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
 }
 
 bool PCB_String_startsWith(const PCB_String* str, const PCB_String* other) {
-    if(str->data == NULL || other->data == NULL) return false;
+    if(str->data == NULL || other == NULL || other->data == NULL) return false;
     if(other->length > str->length) return false;
     return !PCB_memcmp(str->data, other->data, other->length);
 }
 
 bool PCB_String_startsWith_cstr(const PCB_String* str, const char* other) {
-    if(str->data == NULL) return false;
+    if(str->data == NULL || other == NULL) return false;
     const size_t len = PCB_strlen(other);
     if(len > str->length) return false;
     return !PCB_memcmp(str->data, other, len);
 }
 
 bool PCB_String_endsWith(const PCB_String* str, const PCB_String* other) {
-    if(str->data == NULL || other->data == NULL) return false;
+    if(str->data == NULL || other == NULL || other->data == NULL) return false;
     if(other->length > str->length) return false;
     return !PCB_memcmp(
         str->data + str->length - other->length,
@@ -2043,7 +2042,7 @@ bool PCB_String_endsWith(const PCB_String* str, const PCB_String* other) {
 }
 
 bool PCB_String_endsWith_cstr(const PCB_String* str, const char* other) {
-    if(str->data == NULL) return false;
+    if(str->data == NULL || other == NULL) return false;
     const size_t len = PCB_strlen(other);
     if(len > str->length) return false;
     return !PCB_memcmp(str->data + str->length - len, other, len);
@@ -2104,7 +2103,7 @@ size_t PCB_String_removeSuffix(PCB_String* str, const PCB_String* other) {
 }
 
 PCB_String PCB_String_from_CStrings(const PCB_CStrings* cstrs, const char* delimiter) {
-    if(cstrs->data == NULL || cstrs->length == 0)
+    if(cstrs == NULL || cstrs->data == NULL || cstrs->length == 0 || delimiter == NULL)
         return (PCB_String){0};
     size_t totalLength = 0;
     for(size_t i = 0; i < cstrs->length; totalLength += PCB_strlen(cstrs->data[i++]));
