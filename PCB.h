@@ -522,6 +522,7 @@ static void f()
 #include <stddef.h>
 //A useful command to list errno info: errno -l | sort -k2 -n
 #include <errno.h>
+#include <time.h>
 #else
 //fallback for no booleans
 #if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ < 202311L && !defined(bool)
@@ -1084,6 +1085,12 @@ typedef struct {
 #endif //PCB_PROCESS_INVALID_HANDLE
 
 typedef struct {
+    PCB_Process* data;
+    size_t length;
+    size_t capacity;
+} PCB_Processes;
+
+typedef struct {
     //Path to the compiler executable to use.
     ////Defaults to the compiler's name used to build this file.
     const char* compilerPath;
@@ -1514,12 +1521,50 @@ PCBAPI int PCBCALL PCB_Process_checkExit(PCB_Process* process);
 * returns -1.
 */
 PCBAPI int PCBCALL PCB_Process_getExitCode(const PCB_Process* process);
-
 /**
  * @brief Destroys the passed `process` structure, invalidates
  * its member fields.
  */
 PCBAPI void PCBCALL PCB_Process_destroy(PCB_Process* process);
+
+/**
+ * @brief Waits for any process in `processes` to exit.
+ * The entry for the process that exits is invalidated by calling
+ * `PCB_Process_destroy` on it.
+ * @return the exit code of the exited process or -1 on error;
+ * call `PCB_GetError()` to get the error code.
+ */
+PCBAPI int PCBCALL PCB_Processes_waitForAny(PCB_Processes* processes);
+/**
+ * @brief Waits for a subset of processes in `processes` in a range of
+ * [`start`, `end`). Ignores invalid entries.
+ * Contrary to `PCB_Processes_waitForAny` it does NOT invalidate entries.
+ * @return
+ * - 0 if all processes exited with code 0,
+ * - -1 if `processes == NULL` (errno is set to EFAULT) or
+ *   `end > processes->length` (errno is set to EINVAL),
+ * - `n` if `n`th (at index `n-1`) process did not exit with code 0
+ * (subtract 1 to get the index), call `PCB_Process_getExitCode` on it
+ * to get the exit code,
+ * - `-n-1` if waiting for the `n`th (at index `n-1`) process failed
+ * (flip the sign and add 2 to get the index).
+ *
+ * In the last 2 cases, processes after the `n`th one are NOT waited on;
+ * the caller must retry waiting on the rest.
+ */
+PCBAPI int PCBCALL PCB_Processes_waitForRange(
+    PCB_Processes* processes, size_t start, size_t end
+);
+/**
+ * @brief Waits for all processes in `processes` to exit.
+ * Ignores invalid entries.
+ * Contrary to `PCB_Processes_waitForAny` it does NOT invalidate entries.
+ * This function is equivalent to
+ * `PCB_Processes_waitForRange(processes, 0, processes->length)`.
+ * Read its documentation before using this function.
+ * @return See `PCB_Processes_waitForRange`.
+ */
+PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes);
 
 /**
  * @brief Spawns a child process, which runs `command` concurrently.
@@ -2407,6 +2452,84 @@ void PCB_Process_destroy(PCB_Process* process) {
     process->handle = PCB_PROCESS_INVALID_HANDLE;
 }
 
+int PCB_Processes_waitForAny(PCB_Processes* processes) {
+    if(processes == NULL) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        errno = EFAULT; return -1;
+    }
+    int status = 0;
+    size_t invalid = 0;
+    while(true) {
+        size_t i = 0;
+        for(; i < processes->length; i++) {
+            PCB_Process* p = &processes->data[i];
+            if(!PCB_Process_isValid(p)) { ++invalid; continue; }
+            int check = PCB_Process_checkExit(p);
+            if(check == -1) return -1;
+            if(check) {
+                status = PCB_Process_getExitCode(p);
+                PCB_Process_destroy(p);
+                return status;
+            }
+        }
+        if(i == processes->length) { //no child exited
+            if(invalid == processes->length) { //all entries are invalid
+#if PCB_PLATFORM_WINDOWS
+                SetLastError(0);
+#endif
+                errno = EINVAL; return -1;
+            } //otherwise yield the time slice to wait
+#if PCB_PLATFORM_WINDOWS
+            Sleep(0);
+#elif PCB_PLATFORM_POSIX
+            /* There is no way to yield the time slice
+             * under POSIX in a cross-platform way AFAIK,
+             * ignoring `sched_yield`, which merely yields the CPU.
+             * Therefore, we shall sleep.............
+             */
+            struct timespec t;
+            t.tv_nsec = 20 * 1000 * 1000; t.tv_sec = 0;
+            nanosleep(&t, NULL);
+#endif //platform
+        }
+    }
+    PCB_Unreachable;
+}
+
+//TODO: untested
+int PCB_Processes_waitForRange(PCB_Processes* processes, size_t start, size_t end) {
+    if(processes == NULL) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        errno = EFAULT; return -1;
+    }
+    if(end > processes->length) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        errno = EINVAL; return -1;
+    }
+    int status = 0;
+    for(size_t i = start; i < end; i++) {
+        PCB_Process* p = &processes->data[i];
+        if(!PCB_Process_isValid(p)) continue;
+        if(!PCB_Process_waitForExit(p)) {
+            //this is an annoying way to signal which entry errored out,
+            //but the only one without using any additional structures.
+            return -(int)i - 2;
+        }
+        int exitCode = PCB_Process_getExitCode(p);
+        if(exitCode != 0) return (int)(i + 1);
+    }
+    return status;
+}
+
+int PCB_Processes_waitForAll(PCB_Processes* processes) {
+    return PCB_Processes_waitForRange(processes, 0, processes->length);
+}
 
 //check whether `vfork` is available according to vfork(2)...I love you glibc <3
 #if PCB_PLATFORM_POSIX
