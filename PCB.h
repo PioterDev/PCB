@@ -1224,6 +1224,44 @@ PCBAPI bool PCBCALL PCB_String_append_chars(
  */
 PCBAPI bool PCBCALL PCB_String_appendf(PCB_String* str, const char* fmt, ...) PCB_Printf_Format(2, 3);
 /**
+ * @brief Inserts `other` into `str` at `position`.
+ * @return whether the operation succeeded:
+ * fails on invalid arguments passed or if realloc failed.
+ */
+PCBAPI bool PCBCALL PCB_String_insert(
+    PCB_String* str, const PCB_String* other, size_t position
+);
+/**
+ * @brief Inserts `str` into `str` at `position`.
+ * @return whether the operation succeeded: fails on invalid arguments passed or if realloc failed.
+ */
+PCBAPI bool PCBCALL PCB_String_insert_cstr(
+    PCB_String* str, size_t position, const char* cstr
+);
+/**
+ * @brief Inserts `c` into `str` at `position` `howManyTimes` times.
+ * @return whether the operation succeeded:
+ * fails on invalid arguments passed or if realloc failed.
+ */
+PCBAPI bool PCBCALL PCB_String_insert_chars(
+    PCB_String* str, size_t position, const char c, size_t howManyTimes
+);
+/**
+ * @brief Inserts a `printf`-like formatted string into `str` at `position`.
+ * @return whether the operation succeeded:
+ * fails on invalid arguments passed or if realloc failed.
+ */
+PCBAPI bool PCBCALL PCB_String_insertf(
+    PCB_String* str, size_t position, const char* fmt, ...
+) PCB_Printf_Format(3, 4);
+/**
+ * @brief Removes characters in a range of `[start, start + length)`.
+ * @return whether the operation succeded: can only fail on invalid range passed
+ */
+PCBAPI bool PCBCALL PCB_String_remove_range(
+    PCB_String* str, size_t start, size_t length
+);
+/**
  * @brief Makes `c` the last character in `str`.
  * If `c` is not the last character, it appends it.
  * Otherwise does nothing.
@@ -1865,6 +1903,58 @@ bool PCB_String_appendf(PCB_String* str, const char* fmt, ...) {
     PCB_vsnprintf(str->data + str->length, lengthRequired + 1, fmt, args);
     va_end(args);
     str->length += lengthRequired;
+    return true;
+}
+
+bool PCB_String_insert(PCB_String* str, const PCB_String* other, size_t position) {
+    if(other == NULL || other->data == NULL || position > str->length) return false;
+    if(other->length == 0) return true; //minor optimization
+    if(!PCB_String_reserve(str, other->length)) return false;
+    PCB_memmove(str->data + position + other->length, str->data + position, str->length - position);
+    PCB_memcpy(str->data + position, other->data, other->length);
+    str->length += other->length; str->data[str->length] = '\0';
+    return true;
+}
+
+bool PCB_String_insert_cstr(PCB_String* str, size_t position, const char* cstr) {
+    if(cstr == NULL || position > str->length) return false;
+    size_t len = PCB_strlen(cstr);
+    if(len == 0) return true;
+    if(!PCB_String_reserve(str, len)) return false;
+    PCB_memmove(str->data + position + len, str->data + position, str->length - position);
+    PCB_memcpy(str->data + position, cstr, len);
+    str->length += len; str->data[str->length] = '\0';
+    return true;
+}
+
+bool PCB_String_insert_chars(
+    PCB_String* str, size_t position, const char c, size_t howManyTimes
+) {
+    if(position > str->length) return false;
+    if(howManyTimes == 0) return true;
+    if(!PCB_String_reserve(str, howManyTimes)) return false;
+    PCB_memmove(str->data + position + howManyTimes, str->data + position, str->length - position);
+    PCB_memset(str->data + position, c, howManyTimes);
+    str->length += howManyTimes; str->data[str->length] = '\0';
+    return true;
+}
+
+bool PCB_String_insertf(PCB_String* str, size_t position, const char* fmt, ...) {
+    if(position > str->length) return false;
+    va_list args;
+    va_start(args, fmt);
+    const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args);
+    va_end(args);
+    if(!PCB_String_reserve(str, lengthRequired)) return false;
+
+    //PCB_vsnprintf will override the last character with '\0', so we need to save it
+    char overridden = str->data[position];
+    PCB_memmove(str->data + position + lengthRequired, str->data + position, str->length - position);
+    va_start(args, fmt);
+    PCB_vsnprintf(str->data + position, lengthRequired + 1, fmt, args);
+    va_end(args);
+    str->data[position + lengthRequired] = overridden;
+    str->length += lengthRequired; str->data[str->length] = '\0';
     return true;
 }
 
