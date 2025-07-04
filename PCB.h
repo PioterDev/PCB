@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 5
+#define PCB_VERSION_PATCH 6
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1169,11 +1169,50 @@ PCBAPI void PCBCALL PCB_log(
 
 
 
+/**
+ * @brief Get the error code of the last error that has occured.
+ *
+ * WARNING: for the sake of attempting to be cross-platform, the return value
+ * is *only* relevant in the context of this library. Do NOT use for error
+ * handling outside. This is because Windows has its own error storage entirely
+ * separate to libc, which conflict, making it very difficult to write a centralized
+ * error handler.
+ *
+ * Note to future maintainers: this *is* possible in the context of this library,
+ * BUT every function that errors out on libc MUST call `SetLastError(0)`; likewise,
+ * every function that errors out on WinAPI MUST set `errno` to 0. This puts a whole
+ * lot of strain on the implementation though, so TODO: I guess it'll be a
+ * pain in the ass to do this.
+ *
+ * @return 0 if no error has occured,
+ *
+ * On Windows: a negative value if the error comes from libc (`errno`),
+ * a positive value otherwise (WinAPI).
+ *
+ * On POSIX systems: `-errno`.
+ *
+ * Generally, if the return value is negative, the error comes from libc.
+ * Otherwise it's platform-dependent.
+ */
 PCBAPI int PCBCALL PCB_GetError(void);
 /**
  * @brief Clear the error obtainable with `PCB_GetError`.
  */
 PCBAPI void PCBCALL PCB_ClearError(void);
+/**
+ * @brief Get the error string corresponding to `errnum` into `buf` of
+ * `bufSize` size.
+ *
+ * WARNING: `errnum` ****MUST**** be obtained by calling `PCB_GetError`,
+ * otherwise you lose **ALL** portability with regards to error handling
+ * AND are **GUARANTEED** to get incorrect results.
+ *
+ * DO NOT BLINDLY PASS `errno` OR `GetLastError()` WITHOUT READING THE DOCS ABOVE!!
+ *
+ * @return 0 on success,
+ * otherwise an error code according to the schema above is returned and
+ * the previous error code is preserved.
+ */
 PCBAPI int PCBCALL PCB_GetErrorString(int errnum, char* buf, size_t bufSize);
 /**
  * @brief Log the latest error obtained from `PCB_GetError()` to stderr.
@@ -1745,9 +1784,10 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
 #ifdef PCB_IMPLEMENTATION_ERR
 int PCB_GetError(void) {
 #if PCB_PLATFORM_WINDOWS
-    return (int)GetLastError();
+    if(errno == 0) return (int)GetLastError();
+    else return -errno;
 #elif PCB_PLATFORM_POSIX
-    return errno;
+    return -errno;
 #endif //platform
 }
 
@@ -1760,25 +1800,41 @@ void PCB_ClearError(void) {
 
 int PCB_GetErrorString(int errnum, char* buf, size_t bufSize) {
 #if PCB_PLATFORM_WINDOWS
+    if(errnum < 0) {
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L && defined(__STDC_LIB_EXT1__)
+        return -strerror_s(buf, bufSize, -errnum);
+#else
+        PCB_snprintf(buf, bufSize, "%s", strerror(-errnum));
+        return 0;
+#endif //C11 shenanigans
+    }
+    DWORD err = GetLastError(); //preserve last error
     DWORD l = FormatMessageA(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         NULL, errnum, 0, buf, (DWORD)bufSize, NULL
     );
-    if(l == 0) return (int)GetLastError();
+    if(l == 0) {
+        DWORD newErr = GetLastError();
+        SetLastError(err);
+        return (int)newErr;
+    }
     return 0;
 #elif PCB_PLATFORM_POSIX
+    //PCB_GetError() maps errno values to their negative
+    //counterparts for cross-platformness
+    errnum = -errnum;
 //this code right here is a very good example of xkcd 927
 #ifdef _GNU_SOURCE
     char* errStr = strerror_r(errnum, buf, bufSize);
     if(buf != errStr) PCB_snprintf(buf, bufSize, "%s", errStr);
     return 0;
-#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200112L
+    int err = errno; //preserve last error
     int code = strerror_r(errnum, buf, bufSize);
-    if(code >= 0) return code; //glibc >= 2.13
-    return errno; //glibc < 2.13
-#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && defined(__STDC_LIB_EXT1__)
-#error test
-    return strerror_s(buf, bufSize, errnum);
+    if(code >= 0) return -code; //glibc >= 2.13
+    int newErr = errno; errno = err; return newErr; //glibc < 2.13
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L && defined(__STDC_LIB_EXT1__)
+    return -strerror_s(buf, bufSize, errnum);
 #else
     PCB_snprintf(buf, bufSize, "%s", strerror(errnum));
     return 0;
@@ -1788,15 +1844,26 @@ int PCB_GetErrorString(int errnum, char* buf, size_t bufSize) {
 
 void PCB_logLatestError(const char* fmt, ...) {
     char buf[256] = PCB_ZEROED;
-    if(PCB_GetErrorMessage(
-        PCB_GetError(), buf, sizeof(buf))
-    ) return;
-    PCB_log(PCB_LOGLEVEL_ERROR_NL, ""); //quick'n'dirty hack
+#if PCB_PLATFORM_WINDOWS
+    bool addNl = PCB_GetError() <= 0;
+#endif //error strings from WinAPI are ended with '\n'
+    if(PCB_GetErrorString(
+        PCB_GetError(), buf, sizeof(buf)
+    ) != 0) {
+        PCB_log(PCB_LOGLEVEL_ERROR, "Failed to get error string...");
+        return; //wtf are we supposed to do if getting the error string fails...
+    }
+    PCB_log(PCB_LOGLEVEL_ERROR_NL, "%s", ""); //quick'n'dirty hack
     va_list args;
     va_start(args, fmt);
     PCB_vfprintf(stderr, fmt, args);
     va_end(args);
+#if PCB_PLATFORM_WINDOWS
+    if(addNl) PCB_fprintf(stderr, ": %s\n", buf);
+    else PCB_fprintf(stderr, ": %s", buf);
+#else
     PCB_fprintf(stderr, ": %s\n", buf);
+#endif
 }
 #endif //PCB_IMPLEMENTATION_ERR
 
