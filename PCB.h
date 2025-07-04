@@ -1887,12 +1887,13 @@ bool PCB_String_append(PCB_String* str, const PCB_String* other) {
 }
 
 bool PCB_String_append_cstr(PCB_String* str, const char* cstr) {
-    size_t len = PCB_strlen(str);
+    if(cstr == NULL) return false;
+    size_t len = PCB_strlen(cstr);
     if(str->length + len >= str->capacity) {
         const size_t targetSize = str->length + len + 1;
         PCB_String_realloc(str, targetSize);
     }
-    PCB_memcpy(str->data + str->length, str, len + 1);
+    PCB_memcpy(str->data + str->length, cstr, len + 1);
     str->length += len;
     return true;
 }
