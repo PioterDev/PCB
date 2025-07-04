@@ -1175,6 +1175,18 @@ PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path);
 
 
 /**
+ * @brief Frees `str`'s buffer and resets fields to 0.
+ */
+PCBAPI void PCBCALL PCB_String_destroy(PCB_String* str);
+#ifndef PCB_String_reset
+/**
+ * @brief Resets `str` to hold no string. Does nothing if `str->data == NULL`.
+ */
+#define PCB_String_reset(str) while((str)->data != NULL) { \
+    (str)->data[(str)->length = 0] = '\0'; break; \
+}
+#endif //PCB_String_reset
+/**
  * @brief Reserves `howMany` ASCII characters in `str`.
  * @return whether the operation succeeded: fails on realloc failure.
  */
@@ -1274,6 +1286,9 @@ PCBAPI bool PCBCALL PCB_String_endsWith(
 PCBAPI bool PCBCALL PCB_String_endsWith_cstr(
     const PCB_String* str, const char* other
 );
+#ifndef PCB_String_isEmpty
+#define PCB_String_isEmpty(str) ((str)->data == NULL || (str)->length == 0)
+#endif //PCB_String_isEmpty
 /**
  * @brief Converts `str` to uppercase.
  */
@@ -1779,6 +1794,8 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
     this->data = newData;                                   \
     this->capacity = newCapacity;                           \
 } while(0)
+
+void PCB_String_destroy(PCB_String* str) { PCB_Vec_destroy(str); }
 
 bool PCB_String_reserve(PCB_String* str, const size_t howMany) {
     const size_t newSize = str->length + howMany + 1;
