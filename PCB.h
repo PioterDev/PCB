@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 2
+#define PCB_VERSION_PATCH 3
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -681,6 +681,22 @@ static void f()
 #endif //PCB_VEC_INITIAL_CAPACITY
 
 #ifndef PCB_Vec_reserve
+#ifdef __cplusplus
+#define PCB_Vec_reserve(vec, howMany) do {                  \
+    size_t new__capacity__ = (vec)->capacity;               \
+    if(new__capacity__ == 0)                                \
+        new__capacity__ = PCB_VEC_INITIAL_CAPACITY;         \
+    while((vec)->capacity + (howMany) > new__capacity__) {  \
+        new__capacity__ *= 2;                               \
+    } if(new__capacity__ == (vec)->capacity) break;         \
+    void* new__data__ = (void*)PCB_realloc(                 \
+        (vec)->data, new__capacity__ * sizeof(*(vec)->data) \
+    ); if(new__data__ == NULL) break;                       \
+    PCB_memcpy(                                             \
+        &(vec)->data, &new__data__, sizeof(new__data__)     \
+    ); (vec)->capacity = new__capacity__;                   \
+} while(0)
+#else
 /**
  * @brief Reserves `howMany` additional slots in `vec`.
  *
@@ -693,12 +709,13 @@ static void f()
     while((vec)->capacity + (howMany) > new__capacity__) {  \
         new__capacity__ *= 2;                               \
     } if(new__capacity__ == (vec)->capacity) break;         \
-    void* new__data__ = PCB_realloc(                        \
+    void* new__data__ = (void*)PCB_realloc(                 \
         (vec)->data, new__capacity__ * sizeof(*(vec)->data) \
     ); if(new__data__ == NULL) break;                       \
     (vec)->data = new__data__;                              \
     (vec)->capacity = new__capacity__;                      \
 } while(0)
+#endif //C++
 #endif //PCB_Vec_reserve
 
 #ifndef PCB_Vec_free
