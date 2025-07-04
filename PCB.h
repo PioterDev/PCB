@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 6
+#define PCB_VERSION_PATCH 7
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -197,22 +197,20 @@ extern "C" {
 #endif //PCB_PLATFORM_POSIX
 
 #if PCB_PLATFORM_POSIX
-#ifdef __cplusplus
-#if __cplusplus >= 201103L
-#define _XOPEN_SOURCE 700
+#if PCB_PLATFORM_LINUX
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif //_GNU_SOURCE
 #else
-#define _XOPEN_SOURCE 500
-#endif //C++11
-#else //C
-#if __STDC_VERSION__ >= 201112L
-#define _XOPEN_SOURCE 700
-#elif __STDC_VERSION__ >= 199901L
+#if !defined(_XOPEN_SOURCE) && !defined(_POSIX_C_SOURCE)
+#if defined(__GLIBC__) && __GLIBC__+0 >= 2 && __GLIBC_MINOR__+0 < 10
 #define _XOPEN_SOURCE 600
 #else
-#define _XOPEN_SOURCE 500
-#endif //C versions
-#endif //C++?
-#endif //POSIX sources required locally
+#define _XOPEN_SOURCE 700
+#endif //glibc 2.10
+#endif //only #define if no feature test macro is #defined
+#endif //Use _GNU_SOURCE on Linux
+#endif //POSIX sources used locally
 
 //Section 1.2: Identify the compiler used to compile this code
 
