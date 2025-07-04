@@ -1845,23 +1845,16 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
 
 //Section 2.3: Strings, string views, vectors of strings...
 #ifdef PCB_IMPLEMENTATION_STRING
-//a temporary convenience macro
-#define PCB_String_realloc(this, targetSize) do {           \
-    size_t newCapacity = this->capacity;                    \
-    if(this->capacity == 0)                                 \
-        newCapacity = PCB_VEC_INITIAL_CAPACITY;             \
-    while(targetSize > newCapacity) newCapacity *= 2;       \
-    char* newData = PCB_realloc(this->data, newCapacity);   \
-    if(newData == NULL) return false;                       \
-    this->data = newData;                                   \
-    this->capacity = newCapacity;                           \
-} while(0)
-
 void PCB_String_destroy(PCB_String* str) { PCB_Vec_destroy(str); }
 
 bool PCB_String_reserve(PCB_String* str, const size_t howMany) {
-    const size_t newSize = str->length + howMany + 1;
-    PCB_String_realloc(str, newSize);
+    const size_t newSize = str->length + howMany + 1; //'\0'
+    if(newSize <= str->capacity) return true;
+    size_t newCapacity = str->capacity == 0 ? PCB_VEC_INITIAL_CAPACITY : str->capacity;
+    while(newSize > newCapacity) newCapacity *= 2;
+    char* newData = (char*)PCB_realloc(str->data, newCapacity);
+    if(newData == NULL) return false;
+    str->data = newData; str->capacity = newCapacity;
     return true;
 }
 
@@ -1877,10 +1870,7 @@ bool PCB_String_resize(PCB_String* str, const size_t targetLength) {
 
 bool PCB_String_append(PCB_String* str, const PCB_String* other) {
     if(other->data == NULL) return true;
-    if(str->length + other->length >= str->capacity) {
-        const size_t targetSize = str->length + other->length + 1;
-        PCB_String_realloc(str, targetSize);
-    }
+    if(!PCB_String_reserve(str, other->length)) return false; //with '\0'
     PCB_memcpy(str->data + str->length, other->data, other->length + 1);
     str->length += other->length;
     return true;
@@ -1889,20 +1879,14 @@ bool PCB_String_append(PCB_String* str, const PCB_String* other) {
 bool PCB_String_append_cstr(PCB_String* str, const char* cstr) {
     if(cstr == NULL) return false;
     size_t len = PCB_strlen(cstr);
-    if(str->length + len >= str->capacity) {
-        const size_t targetSize = str->length + len + 1;
-        PCB_String_realloc(str, targetSize);
-    }
+    if(!PCB_String_reserve(str, len)) return false; //again, with '\0'
     PCB_memcpy(str->data + str->length, cstr, len + 1);
     str->length += len;
     return true;
 }
 
 bool PCB_String_append_chars(PCB_String* str, const char c, const size_t howManyTimes) {
-    if(str->length + howManyTimes >= str->capacity) {
-        const size_t targetSize = str->length + howManyTimes + 1;
-        PCB_String_realloc(str, targetSize);
-    }
+    if(!PCB_String_reserve(str, howManyTimes)) return false;
     PCB_memset(str->data + str->length, c, howManyTimes);
     str->length += howManyTimes;
     str->data[str->length] = '\0';
@@ -1976,7 +1960,7 @@ bool PCB_String_insertf(PCB_String* str, size_t position, const char* fmt, ...) 
 }
 
 bool PCB_String_setSuffix_char(PCB_String* str, const char c) {
-    if(str->data == NULL) PCB_String_realloc(str, 1);
+    if(str->data == NULL && !PCB_String_reserve(str, 1)) return false;
     if(str->length == 0) {
         str->data[0] = c; str->data[++str->length] = '\0';
         return true;
@@ -1987,8 +1971,6 @@ bool PCB_String_setSuffix_char(PCB_String* str, const char c) {
     }
     return true;
 }
-
-#undef PCB_String_realloc
 
 bool PCB_String_truncate_until_char(PCB_String* str, const char c) {
     if(str->data == NULL || str->length == 0) return false;
