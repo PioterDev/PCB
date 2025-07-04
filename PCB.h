@@ -849,6 +849,23 @@ while((index) < (vec)->length) {                            \
 #endif //PCB_Vec_forEach
 
 //Section 1.6.2: Other macros
+#ifndef PCB_ZEROED
+#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
+#define PCB_ZEROED {}
+#else
+#define PCB_ZEROED {0}
+#endif //C++ || >=C23
+#endif //PCB_ZEROED
+
+//this macro exists for compatibility with ISO C++
+#ifndef PCB_ZEROED_T
+#ifdef __cplusplus
+#define PCB_ZEROED_T(T) T{}
+#else
+#define PCB_ZEROED_T(T) (T)PCB_ZEROED
+#endif //C++?
+#endif //PCB_ZEROED_T
+
 
 
 //Section 1.7: Import platform-specific header files
@@ -1700,7 +1717,7 @@ int PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize) {
 }
 
 void PCB_logLatestError(const char* fmt, ...) {
-    char buf[256] = {0};
+    char buf[256] = PCB_ZEROED;
     if(PCB_GetErrorMessage(
         PCB_GetError(), buf, sizeof(buf))
     ) return;
@@ -1829,7 +1846,7 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
     if(hFile == INVALID_HANDLE_VALUE)
         return (uint64_t)(GetLastError() == ERROR_FILE_NOT_FOUND);
 
-    BY_HANDLE_FILE_INFORMATION fileinfo = {0};
+    BY_HANDLE_FILE_INFORMATION fileinfo = PCB_ZEROED;
     BOOL b = GetFileInformationByHandle(hFile, &fileinfo);
     CloseHandle(hFile);
     if(!b) return 0;
@@ -1839,7 +1856,7 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
     modTime += (uint64_t)(fileinfo.ftLastWriteTime.dwHighDateTime) << 32;
     return modTime;
 #elif PCB_PLATFORM_POSIX
-    struct stat fileinfo = {0};
+    struct stat fileinfo = PCB_ZEROED;
     if(stat(path, &fileinfo) == -1) return (uint64_t)(errno == ENOENT);
     uint64_t modTime;
 #ifdef __STRICT_ANSI__
@@ -2007,16 +2024,12 @@ bool PCB_String_truncate_until_char(PCB_String* str, const char c) {
 
 PCB_String PCB_String_clone(const PCB_String* str) {
     if(str->data == NULL || str->length == 0)
-        return (PCB_String){0};
-    PCB_String s = {
-        .data = PCB_realloc(NULL, str->length + 1),
-        .length = str->length,
-        .capacity = str->capacity
-    };
-    if(s.data == NULL) {
-        s.length = s.capacity = 0;
-        return s;
-    }
+        return PCB_ZEROED_T(PCB_String);
+    PCB_String s = PCB_ZEROED;
+    s.data = (char*)PCB_realloc(NULL, str->length + 1);
+    if(s.data == NULL) return s;
+    s.length = str->length;
+    s.capacity = str->capacity;
     PCB_memcpy(s.data, str->data, s.length + 1);
     return s;
 }
@@ -2135,23 +2148,25 @@ size_t PCB_String_removeSuffix(PCB_String* str, const PCB_String* other) {
 
 PCB_String PCB_String_from_CStrings(const PCB_CStrings* cstrs, const char* delimiter) {
     if(cstrs == NULL || cstrs->data == NULL || cstrs->length == 0 || delimiter == NULL)
-        return (PCB_String){0};
+        return PCB_ZEROED_T(PCB_String);
     size_t totalLength = 0;
     for(size_t i = 0; i < cstrs->length; totalLength += PCB_strlen(cstrs->data[i++]));
-    //delimiter isn't placed at the end              v    '\0'
+    //delimiter isn't placed at the end                  v    '\0'
     totalLength += PCB_strlen(delimiter) * (cstrs->length - 1) + 1;
-    PCB_String str = {
-        .data = PCB_realloc(NULL, totalLength),
-        .length = totalLength - 1, //we don't count the '\0'
-        .capacity = totalLength,
-    };
-    if(str.data == NULL) return (PCB_String) {0};
+
+    PCB_String str = PCB_ZEROED;
+    str.data = (char*)PCB_realloc(NULL, totalLength);
+    if(str.data == NULL) return str;
+    str.length = totalLength - 1; //we don't count the '\0'
+    str.capacity = totalLength;
+
     char* cursor = str.data;
     for(size_t i = 0; i < cstrs->length - 1; i++) {
         const char* current = cstrs->data[i];
         for(; *current; *cursor++ = *current++);  //this is cursed...
         for(current = delimiter; *current; *cursor++ = *current++);
     }
+
     for(const char* current = cstrs->data[cstrs->length - 1]; *current; *cursor++ = *current++);
     *cursor = '\0';
     return str;
