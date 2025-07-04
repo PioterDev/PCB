@@ -1048,17 +1048,19 @@ typedef struct {
 
 typedef PCB_CStrings PCB_ShellCommand;
 
+#ifndef PCB_CStrings_append
+#define PCB_CStrings_append(cstrs, str) PCB_Vec_append(cstrs, str)
+#endif //PCB_CStrings_append
 #ifndef PCB_ShellCommand_append_arg
-#define PCB_ShellCommand_append_arg(cmd, str) PCB_Vec_append(cmd, str)
+#define PCB_ShellCommand_append_arg PCB_CStrings_append
 #endif //PCB_ShellCommand_append_arg
 
+#ifndef PCB_CStrings_append_many
+#define PCB_CStrings_append_many(cstrs, ...) \
+    PCB_Vec_append_variadic(cstrs, const char*, __VA_ARGS__)
+#endif //PCB_CStrings_append_many
 #ifndef PCB_ShellCommand_append_args
-#define PCB_ShellCommand_append_args(cmd, ...) \
-    PCB_Vec_append_multiple( \
-        cmd, \
-        ((const char*[]) {__VA_ARGS__}), \
-        (sizeof((const char*[]){ __VA_ARGS__ }) / sizeof(const char*)) \
-    )
+#define PCB_ShellCommand_append_args PCB_CStrings_append_many
 #endif //PCB_ShellCommand_append_args
 
 
