@@ -2021,7 +2021,7 @@ int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
     else if(b->data == NULL) return -1;
     return a->length == b->length
         ? PCB_memcmp(a->data, b->data, a->length)
-        : (a->length > b->length) - (a->length < b->length);
+        : PCB_strcmp(a->data, b->data);
 }
 
 int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
