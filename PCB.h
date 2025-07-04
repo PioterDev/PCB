@@ -1351,6 +1351,16 @@ PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(const PCB_String* str);
  */
 PCBAPI char PCBCALL PCB_String_pop(PCB_String* str);
 /**
+ * @brief Pops `howMany` characters from `str` into `out`.
+ * If `howMany > str->length`, `howMany` is clamped to `str->length`.
+ * If `out` is NULL, characters are discarded.
+ * The caller must ensure that `out` can hold at least `howMany` bytes.
+ * @return number of characters popped
+ */
+PCBAPI size_t PCBCALL PCB_String_pop_many(
+    PCB_String* str, size_t howMany, char* out
+);
+/**
  * @brief Removes `other->length` characters from `str` if they match.
  * @return new length
  */
@@ -2069,6 +2079,15 @@ char PCB_String_pop(PCB_String* str) {
     char c = str->data[str->length - 1];
     str->data[--str->length] = '\0';
     return c;
+}
+
+size_t PCB_String_pop_many(PCB_String* str, size_t howMany, char* out) {
+    if(howMany == 0) return 0;
+    if(str->data == NULL || str->length == 0) return 0;
+    if(howMany > str->length) howMany = str->length;
+    if(out != NULL) PCB_memcpy(out, str->data + str->length - howMany, howMany + 1);
+    str->data[str->length -= howMany] = '\0';
+    return howMany;
 }
 
 size_t PCB_String_removeSuffix(PCB_String* str, const PCB_String* other) {
