@@ -526,12 +526,10 @@ static void f()
 #include <errno.h>
 #else
 //fallback for no booleans
-#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ < 202311L
+#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ < 202311L && !defined(bool)
 #ifndef PCB_BOOL_LOCALLY_DEFINED
 #define PCB_BOOL_LOCALLY_DEFINED
-#ifndef bool
 #define bool _Bool
-#endif //bool
 #ifndef true
 #define true 1
 #endif //true
