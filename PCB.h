@@ -1965,7 +1965,8 @@ bool PCB_String_setSuffix_char(PCB_String* str, const char c) {
         str->data[0] = c; str->data[++str->length] = '\0';
         return true;
     }
-    if(str->data[str->length - 1] != 'c') {
+    if(str->data[str->length - 1] != c) {
+        if(!PCB_String_reserve(str, 1)) return false;
         str->data[str->length] = c;
         str->data[++str->length] = '\0';
     }
