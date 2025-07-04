@@ -1968,6 +1968,14 @@ bool PCB_String_insertf(PCB_String* str, size_t position, const char* fmt, ...) 
     return true;
 }
 
+bool PCB_String_remove_range(PCB_String* str, size_t start, size_t length) {
+    if(start >= str->length || start + length > str->length) return false;
+    if(length == 0) return true; //would cause a redundant memmove
+    if(str->data == NULL) return true; //debatable whether to treat as a success, but eh
+    PCB_memmove(str->data + start, str->data + start + length, str->length - (start + length) + 1);
+    str->length -= length; return true;
+}
+
 bool PCB_String_setSuffix_char(PCB_String* str, const char c) {
     if(str->data == NULL && !PCB_String_reserve(str, 1)) return false;
     if(str->length == 0) {
