@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 4
+#define PCB_VERSION_PATCH 5
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1174,7 +1174,7 @@ PCBAPI int PCBCALL PCB_GetError(void);
  * @brief Clear the error obtainable with `PCB_GetError`.
  */
 PCBAPI void PCBCALL PCB_ClearError(void);
-PCBAPI int PCBCALL PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize);
+PCBAPI int PCBCALL PCB_GetErrorString(int errnum, char* buf, size_t bufSize);
 /**
  * @brief Log the latest error obtained from `PCB_GetError()` to stderr.
  * Otherwise functions similarly to `printf`.
@@ -1758,7 +1758,7 @@ void PCB_ClearError(void) {
     errno = 0;
 }
 
-int PCB_GetErrorMessage(int errnum, char* buf, size_t bufSize) {
+int PCB_GetErrorString(int errnum, char* buf, size_t bufSize) {
 #if PCB_PLATFORM_WINDOWS
     DWORD l = FormatMessageA(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
