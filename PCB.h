@@ -1572,7 +1572,7 @@ PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes);
  * @brief Spawns a child process, which runs `command` concurrently.
  * @return a valid `PCB_Process` structure with information about the
  * child process or a structure with an invalid `handle` field on error.
- * To check it, use `PCB_Process_isValid`.
+ * To check it, use `PCB_Process_isValid`. The error is logged automatically.
  *
  * On POSIX systems, if `command` is not null-terminated, this function will
  * append `NULL` to `command` prior to calling `exec` and remove it afterwards.
@@ -1580,8 +1580,8 @@ PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes);
 PCBAPI PCB_Process PCBCALL PCB_ShellCommand_runBg(PCB_ShellCommand* command);
 /**
  * @brief Runs `command` and waits for it to exit.
- * @return the exit code of `command` or -1, the info about the error
- * is logged, to get the error code call `PCB_GetError()`.
+ * @return the exit code of `command` or -1 on error,
+ * to get the error code call `PCB_GetError()`. The error is logged automatically.
  */
 PCBAPI int PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
 
@@ -2690,10 +2690,11 @@ int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
     }
 
     PCB_Process process = PCB_ShellCommand_runBg(command);
-    if(!PCB_Process_isValid(&process)) {
-        return -1; //error code is in `PCB_GetError()`
+    if(!PCB_Process_isValid(&process)) return -1;
+    if(!PCB_Process_waitForExit(&process)) {
+        PCB_logLatestError("Failed to wait for shell command to exit");
+        return -1;
     }
-    if(!PCB_Process_waitForExit(&process)) return -1;
     int code = PCB_Process_getExitCode(&process);
     PCB_Process_destroy(&process);
     return code;
