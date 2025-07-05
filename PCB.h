@@ -1635,6 +1635,16 @@ PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena);
  * After this call, `arena` becomes a dangling pointer!
  */
 PCBAPI void PCBCALL PCB_Arena_destroy(PCB_Arena* arena);
+/**
+ * @brief `sprintf`s a new string in `arena`.
+ * @return pointer to the allocated string or NULL on error
+ *
+ * This function is only available if PCB was compiled with stdio.h present.
+ * Otherwise it always returns NULL.
+ */
+PCBAPI char* PCBCALL PCB_Arena_asprintf(
+    PCB_Arena* arena, const char* fmt, ...
+) PCB_Printf_Format(2, 3);
 
 
 
@@ -2846,6 +2856,33 @@ void PCB_Arena_destroy(PCB_Arena* arena) {
         next = (PCB_Arena_Prefix*)next->next;
     }
 }
+
+#ifdef PCB_HAS_STDIO_H
+char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args) + 1;
+    va_end(args);
+    char* text = (char*)PCB_Arena_alloc(arena, lengthRequired);
+    if(text == NULL)  {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif //for PCB_GetError
+        errno = ENOMEM;
+        return NULL;
+    }
+    va_start(args, fmt);
+    const size_t printedLength = (size_t)PCB_vsnprintf(text, lengthRequired, fmt, args);
+    va_end(args); //         '\0'
+    PCB_assert(printedLength + 1 == lengthRequired);
+    return text;
+}
+#else
+char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
+    (void)arena; (void)fmt;
+    return NULL;
+}
+#endif //PCB_HAS_STDIO_H?
 #endif //PCB_IMPLEMENTATION_ARENA
 
 
