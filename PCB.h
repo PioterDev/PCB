@@ -2844,7 +2844,12 @@ PCB_Arena* PCB_Arena_init(size_t size) {
     size_t capacity = 1;
     while(capacity < size) capacity *= 2;
     PCB_Arena_Prefix* arena = (PCB_Arena_Prefix*)PCB_realloc(NULL, capacity + sizeof(*arena));
-    if(arena == NULL) return NULL;
+    if(arena == NULL) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        return NULL;
+    }
     arena->length = 0;
     arena->capacity = capacity / sizeof(void*);
     arena->next = NULL;
@@ -2910,13 +2915,7 @@ char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
     const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args) + 1;
     va_end(args);
     char* text = (char*)PCB_Arena_alloc(arena, lengthRequired);
-    if(text == NULL)  {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif //for PCB_GetError
-        errno = ENOMEM;
-        return NULL;
-    }
+    if(text == NULL)  return NULL;
     va_start(args, fmt);
     const size_t printedLength = (size_t)PCB_vsnprintf(text, lengthRequired, fmt, args);
     va_end(args); //         '\0'
@@ -2934,13 +2933,7 @@ char* PCB_Arena_strdup(PCB_Arena* arena, const char* str) {
     if(str == NULL) return NULL;
     size_t len = PCB_strlen(str) + 1; // '\0'
     char* text = (char*)PCB_Arena_alloc(arena, len);
-    if(text == NULL) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        errno = ENOMEM;
-        return NULL;
-    }
+    if(text == NULL) return NULL;
     PCB_memcpy(text, str, len);
     return text;
 }
@@ -2949,13 +2942,7 @@ char* PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n) {
     if(str == NULL) return NULL;
     size_t len = PCB_strnlen(str, n); //           '\0'
     char* text = (char*)PCB_Arena_alloc(arena, len + 1);
-    if(text == NULL) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        errno = ENOMEM;
-        return NULL;
-    }
+    if(text == NULL) return NULL;
     PCB_memcpy(text, str, len);
     text[len] = '\0'; //`str` may not end with '\0'
     return text;
