@@ -1925,7 +1925,7 @@ void PCB_logLatestError(const char* fmt, ...) {
 #ifdef PCB_IMPLEMENTATION_FS
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
-    if(mkdir(path, 0644) == -1) {
+    if(mkdir(path, 0775) == -1) {
         switch(errno) {
             case EEXIST: //not an error if already exists
                 return true;
@@ -1936,6 +1936,7 @@ bool PCB_mkdir(const char* path) {
     }
     return true;
 #elif PCB_PLATFORM_WINDOWS
+    errno = 0;
     if(!CreateDirectory(path, NULL)) {
         DWORD err = GetLastError();
         if(err == ERROR_ALREADY_EXISTS) return true;
@@ -1943,8 +1944,6 @@ bool PCB_mkdir(const char* path) {
         return false;
     }
     return true;
-#else
-#error "Not implemented"
 #endif //platform
 }
 
