@@ -1519,8 +1519,16 @@ PCBAPI bool PCBCALL PCB_Process_waitForExit(PCB_Process* process);
 */
 PCBAPI int PCBCALL PCB_Process_checkExit(PCB_Process* process);
 /**
-* @brief Get the exit code of `process`. If `process` has not exited yet,
-* returns -1.
+* @brief Get the exit code of `process`.
+* @return
+* On Windows: `process->status` (it is mapped directly to an exit code there),
+* On POSIX systems:
+* - value in the range of [0, 255] for a normal exit,
+* - `-s-1` if terminated by a signal with a numeric value `s`,
+* - -1 otherwise - this can mean that `process` was stopped/continued; use
+* `WIFSTOPPED`, `WSTOPSIG`, `WIFCONTINUED` macros inside
+* `#if PCB_PLATFORM_POSIX` on `process->status`
+* to handle that case since it's platform-specific.
 */
 PCBAPI int PCBCALL PCB_Process_getExitCode(const PCB_Process* process);
 /**
