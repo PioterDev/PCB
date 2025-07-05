@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 7
+#define PCB_VERSION_PATCH 8
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1092,6 +1092,18 @@ typedef struct {
     size_t capacity;
 } PCB_Processes;
 
+
+typedef struct PCB_Arena PCB_Arena;
+/**
+ * @brief A prefix of `PCB_Arena` for metadata.
+ */
+typedef struct {
+    size_t length;
+    size_t capacity;
+    PCB_Arena* next;
+} PCB_Arena_Prefix;
+
+
 typedef struct {
     //Path to the compiler executable to use.
     ////Defaults to the compiler's name used to build this file.
@@ -1598,6 +1610,33 @@ PCBAPI PCB_Process PCBCALL PCB_ShellCommand_runBg(PCB_ShellCommand* command);
  * to get the error code call `PCB_GetError()`. The error is logged automatically.
  */
 PCBAPI int PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
+
+
+
+/**
+ * @brief Creates a new arena allocator with `size` bytes as initial capacity.
+ * @return a valid pointer to the arena
+ * or NULL if `size == 0` or the allocation failed
+ */
+PCBAPI PCB_Arena* PCBCALL PCB_Arena_init(size_t size);
+/**
+ * @brief Allocates `size` bytes in `arena`.
+ * The actual number of bytes allocated will be rounded up to pointer size.
+ * @return a valid pointer to the allocated buffer aligned to pointer size
+ * or NULL if `size == 0` or if allocation failed
+ */
+PCBAPI void* PCBCALL PCB_Arena_alloc(PCB_Arena* arena, size_t size);
+/**
+ * @brief Resets `arena` as if nothing was allocated.
+ */
+PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena);
+/**
+ * @brief Destroys `arena`, i.e. frees blocks contained within it.
+ * After this call, `arena` becomes a dangling pointer!
+ */
+PCBAPI void PCBCALL PCB_Arena_destroy(PCB_Arena* arena);
+
+
 
 /**
  * @brief Create a PCB_BuildContext struct.
@@ -2750,7 +2789,68 @@ int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
 #endif //PCB_IMPLEMENTATION_PROCESS
 
 
-//Section 2.5: build capability
+
+//Section 2.5: other platform-independent stuff
+#ifdef PCB_IMPLEMENTATION_ARENA
+PCB_Arena* PCB_Arena_init(size_t size) {
+    if(size == 0) return NULL;
+    size_t capacity = 1;
+    while(capacity < size) capacity *= 2;
+    PCB_Arena_Prefix* arena = (PCB_Arena_Prefix*)PCB_realloc(NULL, capacity + sizeof(*arena));
+    if(arena == NULL) return NULL;
+    arena->length = 0;
+    arena->capacity = capacity / sizeof(void*);
+    arena->next = NULL;
+    return (PCB_Arena*)arena;
+}
+
+void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    //size rounded to a multiple of pointer size
+    size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+    if(size == 0) return NULL;
+    try_alloc:
+    if(a->length + (size / sizeof(void*)) > a->capacity) {
+        if(a->next != NULL)  {
+            a = (PCB_Arena_Prefix*)a->next;
+            goto try_alloc;
+        }
+        size_t capacity = ((PCB_Arena_Prefix*)arena)->capacity;
+        while(capacity < size) capacity *= 2;
+        a->next = PCB_Arena_init(capacity);
+        if(a->next == NULL) return NULL;
+        a = (PCB_Arena_Prefix*)a->next;
+    }
+    void* data = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
+    a->length += size / sizeof(void*);
+    return data;
+}
+
+void PCB_Arena_reset(PCB_Arena* arena) {
+    PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)(((PCB_Arena_Prefix*)arena)->next);
+    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
+    while(true) {
+        current->length = 0;
+        if(next == NULL) break;
+        current = next;
+        next = (PCB_Arena_Prefix*)next->next;
+    }
+}
+
+void PCB_Arena_destroy(PCB_Arena* arena) {
+    PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)(((PCB_Arena_Prefix*)arena)->next);
+    while(true) {
+        PCB_free(arena);
+        arena = (PCB_Arena*)next;
+        if(arena == NULL) break;
+        next = (PCB_Arena_Prefix*)next->next;
+    }
+}
+#endif //PCB_IMPLEMENTATION_ARENA
+
+
+
+//Section 2.6: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
 int PCB__build_file(PCB_BuildContext* context) {
     PCB_log(
