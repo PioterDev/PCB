@@ -1684,6 +1684,12 @@ PCBAPI char* PCBCALL PCB_Arena_strdup(PCB_Arena* arena, const char* str);
 PCBAPI char* PCBCALL PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n);
 
 
+/**
+ * @brief Get the number of cores in the system.
+ * A value of 0 is returned on platforms that are not supported.
+ */
+PCBAPI size_t PCBCALL PCB_getNumberOfCores(void);
+
 
 /**
  * @brief Create a PCB_BuildContext struct.
@@ -2949,7 +2955,20 @@ char* PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n) {
 }
 #endif //PCB_IMPLEMENTATION_ARENA
 
-
+//uncategorized functions should be put here
+#ifdef PCB_IMPLEMENTATION
+size_t PCB_getNumberOfCores(void) {
+#if PCB_PLATFORM_WINDOWS
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    return sysinfo.dwNumberOfProcessors;
+#elif PCB_PLATFORM_POSIX
+    return (size_t)sysconf(_SC_NPROCESSORS_ONLN);
+#else
+    return 0;
+#endif //platform
+}
+#endif //PCB_IMPLEMENTATION
 
 //Section 2.6: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
