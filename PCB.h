@@ -1263,6 +1263,12 @@ PCBAPI PCB_FileType PCBCALL PCB_FS_GetType(const char* path);
  * @return 0 on error, 1 if the entry doesn't exist, some other integer otherwise.
  */
 PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path);
+/**
+* @brief Loads entire file from `path` into a dynamically allocated buffer.
+* @return `true` on success, `false` on error; to get the error
+* code call `PCB_GetError()`.
+*/
+PCBAPI bool PCBCALL PCB_FS_ReadEntireFile(const char* path, PCB_String* buf);
 
 
 
@@ -2056,6 +2062,41 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
     return modTime;
 #endif //platform
 }
+
+bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
+    if(path == NULL || buf == NULL) return false;
+    bool success = false;
+    FILE* f; int64_t s;
+    f = fopen(path, "rb");
+    if(f == NULL) return false;
+    if(fseek(f, 0, SEEK_END) == -1) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        goto end;
+    }
+#if PCB_PLATFORM_WINDOWS
+    s = _ftelli64(f);
+#else
+    s = ftell(f);
+#endif
+    if(s == -1) goto end;
+    if(fseek(f, 0, SEEK_SET) == -1) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        goto end;
+    }
+    if(!PCB_String_reserve(buf, (size_t)s)) goto end;
+    fread(buf->data + buf->length, 1, (size_t)s, f);
+    if(ferror(f)) goto end;
+    buf->data[buf->length += (size_t)s] = '\0';
+    success = true;
+    end:
+    if(f != NULL) fclose(f);
+    return success;
+}
+
 #endif //PCB_IMPLEMENTATION_FS
 
 
