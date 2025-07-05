@@ -1638,6 +1638,13 @@ PCBAPI int PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
  */
 PCBAPI PCB_Arena* PCBCALL PCB_Arena_init(size_t size);
 /**
+ * @brief Initialize a `PCB_Arena` in a chunk of memory pointed to by `mem`
+ * and size `memsize`.
+ * @return a valid pointer to the arena or NULL if `memsize` is insufficient to
+ * hold the arena.
+ */
+PCBAPI PCB_Arena* PCBCALL PCB_Arena_init_in(void* mem, size_t memsize);
+/**
  * @brief Allocates `size` bytes in `arena`.
  * The actual number of bytes allocated will be rounded up to pointer size.
  * @return a valid pointer to the allocated buffer aligned to pointer size
@@ -2840,6 +2847,15 @@ PCB_Arena* PCB_Arena_init(size_t size) {
     if(arena == NULL) return NULL;
     arena->length = 0;
     arena->capacity = capacity / sizeof(void*);
+    arena->next = NULL;
+    return (PCB_Arena*)arena;
+}
+
+PCB_Arena* PCB_Arena_init_in(void* mem, size_t memsize) {
+    if(memsize <= sizeof(PCB_Arena_Prefix)) return NULL;
+    PCB_Arena_Prefix* arena = (PCB_Arena_Prefix*)mem;
+    arena->length = 0;
+    arena->capacity = (memsize - sizeof(PCB_Arena_Prefix)) / sizeof(void*);
     arena->next = NULL;
     return (PCB_Arena*)arena;
 }
