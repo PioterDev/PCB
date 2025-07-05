@@ -601,6 +601,24 @@ static void f()
 #endif //PCB_HAS_STRING_H
 #endif //PCB_strlen
 
+#ifndef PCB_strnlen
+#if defined(PCB_HAS_STRING_H)
+#ifdef __GLIBC__
+#if __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 10
+#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200809L
+#define PCB_strnlen strnlen
+#endif //POSIX source of strnlen
+#else
+#if defined(_GNU_SOURCE)
+#define PCB_strnlen strnlen
+#endif //GNU source of strnlen
+#endif //glibc 2.10 checks
+#endif //glibc
+#endif //PCB_HAS_STRING_H
+#endif //PCB_strnlen
+//TODO: strpbrk, strncasecmp
+
+
 //MSVC, again being an outlier, doesn't natively support positional argument
 //syntax. Therefore we need to #define macros specifically for it...smh.
 //PCB_printf is not used by the library, but is provided anyway since
