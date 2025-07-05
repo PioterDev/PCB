@@ -1663,6 +1663,18 @@ PCBAPI void PCBCALL PCB_Arena_destroy(PCB_Arena* arena);
 PCBAPI char* PCBCALL PCB_Arena_asprintf(
     PCB_Arena* arena, const char* fmt, ...
 ) PCB_Printf_Format(2, 3);
+/**
+ * @brief Duplicates `str` in `arena`.
+ * @return pointer to the duplicated string or NULL if `str == NULL` or if
+ * allocation failed.
+ */
+PCBAPI char* PCBCALL PCB_Arena_strdup(PCB_Arena* arena, const char* str);
+/**
+ * @brief Duplicates `str` in `arena`, copying at most `n` bytes.
+ * @return pointer to the duplicated string or NULL if `str == NULL` or if
+ * allocation failed.
+ */
+PCBAPI char* PCBCALL PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n);
 
 
 
@@ -2901,6 +2913,37 @@ char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
     return NULL;
 }
 #endif //PCB_HAS_STDIO_H?
+
+char* PCB_Arena_strdup(PCB_Arena* arena, const char* str) {
+    if(str == NULL) return NULL;
+    size_t len = PCB_strlen(str) + 1; // '\0'
+    char* text = (char*)PCB_Arena_alloc(arena, len);
+    if(text == NULL) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        errno = ENOMEM;
+        return NULL;
+    }
+    PCB_memcpy(text, str, len);
+    return text;
+}
+
+char* PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n) {
+    if(str == NULL) return NULL;
+    size_t len = PCB_strnlen(str, n); //           '\0'
+    char* text = (char*)PCB_Arena_alloc(arena, len + 1);
+    if(text == NULL) {
+#if PCB_PLATFORM_WINDOWS
+        SetLastError(0);
+#endif
+        errno = ENOMEM;
+        return NULL;
+    }
+    PCB_memcpy(text, str, len);
+    text[len] = '\0'; //`str` may not end with '\0'
+    return text;
+}
 #endif //PCB_IMPLEMENTATION_ARENA
 
 
