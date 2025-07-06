@@ -1692,6 +1692,43 @@ PCBAPI size_t PCBCALL PCB_getNumberOfCores(void);
 
 
 /**
+ * @brief Get the string version of the C standard from an integer value
+ * `standard` (for example, `199901` for "c99").
+ * @return a pointer to a string literal or NULL if a match wasn't found
+ */
+PCBAPI const char* PCBCALL PCB_GetCStandardStr(long standard);
+/**
+ * @brief Get the string version of the C standard from an integer value
+ * `standard` (for example, `202002` for "c++20").
+ * @return a pointer to a string literal or NULL if a match wasn't found
+ */
+PCBAPI const char* PCBCALL PCB_GetCppStandardStr(long standard);
+
+/**
+ * @brief Get the integer version of the C standard from a C string.
+ *
+ * @param standard C string containing "cX" where "X" identifies
+ * the standard (for example "c99" for `199901`).
+ * 'c' in "cX" MUST be lowercase, such is the requirement of GCC/Clang
+ * for "-std=" flag.
+ * @return non-zero integer value of a standard or 0 if a match wasn't found.
+ * For C89, the value returned is exceptionally `1` since it didn't have
+ * a specific value associated.
+ */
+PCBAPI long PCBCALL PCB_GetCStandardInt(const char* standard);
+/**
+ * @brief Get the integer version of the C++ standard from a C string
+ *
+ * @param standard C string containing "c++X", where "X" identifies
+ * the standard (for example "c++20" for `202002`).
+ * 'c' in "c++X" MUST be lowercase, such is the requirement of GCC/Clang
+ * for "-std=" flag.
+ * @return non-zero integer value of a standard or 0 if a match wasn't found.
+ */
+PCBAPI long PCBCALL PCB_GetCppStandardInt(const char* standard);
+
+
+/**
  * @brief Create a PCB_BuildContext struct.
  * 
  * @param flags PCB_BuildOptions OR'ed together
@@ -2972,6 +3009,111 @@ size_t PCB_getNumberOfCores(void) {
 
 //Section 2.6: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
+const char* PCB_GetCStandardStr(long standard) {
+    switch(standard) {
+        case 1L:      return "c89"; //see below why 1
+//https://sourceforge.net/p/predef/wiki/Standards
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+        case 199409L: return "iso9899:199409";
+#endif //GCC/Clang have this as a flag for C95, dunno about MSVC
+        case 199901L: return "c99";
+        case 201112L: return "c11";
+        case 201710L: return "c17";
+#if PCB_COMPILER_GCC && __GNUC__ <= 13 && __GNUC__ >= 9
+        case 202000L: return "c2x";
+#endif //gcc's "c2x", deprecated in GCC14
+        case 202311L: return "c23";
+#if   PCB_COMPILER_GCC && __GNUC__ >= 15
+        case 202500L: return "c2y";
+#elif PCB_COMPILER_CLANG && __clang_major__ >= 19
+        case 202400L: return "c2y";
+#endif //"c2y"
+        default:      return NULL;
+    }
+    PCB_Unreachable;
+}
+
+const char* PCB_GetCppStandardStr(long standard) {
+    switch(standard) {
+        case 199711L: return "c++98";
+        case 201103L: return "c++11"; //there was no C++03 macro definition
+        case 201402L: return "c++14";
+        case 201703L: return "c++17";
+        case 202002L: return "c++20";
+        case 202302L: return "c++23";
+        default:      return NULL;
+    }
+    PCB_Unreachable;
+}
+
+long PCB_GetCStandardInt(const char* standard) {
+    if(standard == NULL) return 0;
+    const char* cursor = standard + 1;
+    if(standard[0] != 'c') {
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+        if(PCB_strncmp(standard, "iso9899:", 8) != 0) return 0;
+        cursor = standard + 8;
+#else
+        return 0;
+#endif //GCC/Clang recognize "-std=iso9899:*", not the case with C++ for some reason
+    }
+    long v = 0;
+    while(*cursor) {
+        if(*cursor >= '0' && *cursor <= '9') {
+            v = v * 10 + (*cursor - '0'); ++cursor;
+        } else return 0; //invalid character
+    }
+    switch(v) {
+        //C89 doesn't have __STDC_VERSION__, but it's a valid
+        //"-std=", hence a special value of 1
+        case 89:
+        case 90:   return 1L; //C89 = ANSI C <=> C90 = ISO C90
+        //when `standard` starts with "c"
+        case 99:   return 199901L;
+        case 11:   return 201112L;
+        case 17:   return 201710L;
+        case 23:   return 202311L;
+        //when `standard` starts with "iso9899:", only for GCC/Clang
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+        case 1990: return 1L;
+        case 1999: return 199901L;
+        case 2011: return 201112L;
+        case 2017:
+        case 2018: return 201710L;
+#if PCB_COMPILER_GCC
+        case 2024: return 202311L;
+#endif //for some reason Clang doesn't have "-std=iso9899:2024"
+#endif //GCC/Clang recognize "-std=iso9899:*"
+        case 199409: return 199409L;
+        default: return 0;
+    }
+    PCB_Unreachable;
+}
+
+long PCB_GetCppStandardInt(const char* standard) {
+    if(standard == NULL) return 0;
+    size_t len = PCB_strlen(standard);
+    //no "c++" at the start
+    if(len < 3 || PCB_strncmp(standard, "c++", 3) != 0) return 0;
+    const char* cursor = standard + 3;
+    long v = 0;
+    while(*cursor) {
+        if(*cursor >= '0' && *cursor <= '9') {
+            v = v * 10 + (*cursor - '0'); ++cursor;
+        } else return 0; //invalid character
+    }
+    switch(v) {
+        case 98: return 199711L;
+        case 11: return 201103L;
+        case 14: return 201402L;
+        case 17: return 201703L;
+        case 20: return 202002L;
+        case 23: return 202302L;
+        default: return 0;
+    }
+    PCB_Unreachable;
+}
+
 int PCB__build_file(PCB_BuildContext* context) {
     PCB_log(
         PCB_LOGLEVEL_INFO,
