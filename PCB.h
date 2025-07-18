@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 8
+#define PCB_VERSION_PATCH 9
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -410,13 +410,13 @@ extern "C" {
 #endif //C++?
 #endif //PCB_NoReturn
 
-#ifndef PCB_ForceInline
-#if (defined(__GNUC__) && __GNUC__ >= 4) || PCB_COMPILER_CLANG
-#define ForceInline inline __attribute__((always_inline))
+#ifndef PCB_ForceInline //TODO: assess whether the check below is correct
+#if (PCB_COMPILER_GCC && __GNUC__ >= 4) || PCB_COMPILER_CLANG
+#define PCB_ForceInline inline __attribute__((always_inline))
 #elif PCB_COMPILER_MSVC
-#define ForceInline __forceinline
+#define PCB_ForceInline __forceinline
 #else
-#define ForceInline inline
+#define PCB_ForceInline inline
 #endif //Compilers
 #endif //PCB_ForceInline
 
