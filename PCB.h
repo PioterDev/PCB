@@ -3135,7 +3135,7 @@ long PCB_GetCppStandardInt(const char* standard) {
     PCB_Unreachable;
 }
 
-int PCB__build_file(PCB_BuildContext* context) {
+static int PCB__build_file(PCB_BuildContext* context) {
     PCB_log(
         PCB_LOGLEVEL_INFO,
         "In: %s, out: %s",
@@ -3146,7 +3146,7 @@ int PCB__build_file(PCB_BuildContext* context) {
 }
 
 //TODO: document return values
-int PCB__build_directory(PCB_BuildContext* context) {
+static int PCB__build_directory(PCB_BuildContext* context) {
 #if PCB_PLATFORM_WINDOWS
     (void)context;
     PCB_TODO("PCB__build_directory");
