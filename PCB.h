@@ -683,13 +683,34 @@ static void f()
 #endif //PCB_TODO
 
 #ifndef PCB_ARRAY_LEN
+//Get `arr`'s length. `arr` must be an array, otherwise the result is incorrect.
 #define PCB_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif //PCB_ARRAY_LEN
 
 #ifndef PCB_SHIFT
-#define PCB_SHIFT(xs, xs_sz) (PCB_assert((xs) > 0), --(xs), *(xs_sz)++)
+//Bash-like shifting of `args` counted by `count`. Asserts that `count > 0`.
+#define PCB_SHIFT(count, args) (PCB_assert((count) > 0), --(count), *(args)++)
 #endif //PCB_SHIFT
 
+#ifndef PCB__STRINGIFY
+//Turn `x` preprocessor token into a string literal (helper).
+#define PCB__STRINGIFY(x) #x
+#endif //PCB_STR
+
+#ifndef PCB_STRINGIFY
+//Turn `x` preprocessor token into a string literal.
+#define PCB_STRINGIFY(x) PCB__STRINGIFY(x)
+#endif //PCB_STRINGIFY
+
+#ifndef PCB__CONCAT
+//Concatenate `x` & `y` preprocessor tokens (helper).
+#define PCB__CONCAT(x, y) x##y
+#endif //PCB__CONCAT
+
+#ifndef PCB_CONCAT
+//Concatenate `x` & `y` preprocessor tokens.
+#define PCB_CONCAT(x, y) PCB__CONCAT(x, y)
+#endif //PCB_CONCAT
 
 
 //Section 1.6.2: template<*> struct vector in C let's goooo
