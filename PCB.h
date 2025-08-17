@@ -677,6 +677,7 @@ static void f()
 #endif //PCB_assert
 
 //Section 1.6: Define other useful macros
+//Section 1.6.1: General purpose macros
 #ifndef PCB_TODO
 #define PCB_TODO(msg) PCB_assert(0 && msg " not yet implemented")
 #endif //PCB_TODO
@@ -691,7 +692,7 @@ static void f()
 
 
 
-//Section 1.6.1: template<*> struct vector in C let's goooo
+//Section 1.6.2: template<*> struct vector in C let's goooo
 
 #ifndef PCB_VEC_INITIAL_CAPACITY
 #define PCB_VEC_INITIAL_CAPACITY 64
@@ -880,7 +881,7 @@ while((index) < (vec)->length) {                            \
         { expr(&(vec)->data[iINDex__]); }
 #endif //PCB_Vec_forEach
 
-//Section 1.6.2: Other macros
+//Section 1.6.3: Macros for C++ compatibility
 #ifndef PCB_ZEROED
 #if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_ZEROED {}
@@ -889,7 +890,6 @@ while((index) < (vec)->length) {                            \
 #endif //C++ || >=C23
 #endif //PCB_ZEROED
 
-//this macro exists for compatibility with ISO C++
 #ifndef PCB_ZEROED_T
 #ifdef __cplusplus
 #define PCB_ZEROED_T(T) T{}
