@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 9
+#define PCB_VERSION_PATCH 10
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1080,6 +1080,11 @@ typedef struct {
 } PCB_StringView;
 
 typedef struct {
+    const char* key;
+    const char* value;
+} PCB_CStringPair;
+
+typedef struct {
     const char** data;
     size_t length;
     size_t capacity;
@@ -1143,22 +1148,56 @@ typedef struct {
 } PCB_Arena_Prefix;
 
 
+typedef enum {
+    /* Unknown argv syntax, causes `PCB_BuildContext`'s options
+     * to be passed without processing.
+     */
+    PCB_ARGVSYNTAX_UNKNOWN,
+    //POSIX argv syntax ("-...(=...)", for example "-DLEVEL=2").
+    PCB_ARGVSYNTAX_POSIX,
+    //Microsoft argv syntax ("/...(:...)", for example "/DLEVEL:2").
+    PCB_ARGVSYNTAX_MS,
+} PCB_ArgvSyntax;
+
+/* Enum for compiler identification at *runtime* (hence the _RT suffix)
+ * rather than compile time (without the _RT suffix).
+ */
+typedef enum {
+    PCB_COMPILER_RT_UNKNOWN,
+    PCB_COMPILER_RT_GCC,
+    PCB_COMPILER_RT_CLANG,
+    PCB_COMPILER_RT_MSVC,
+} PCB_Compiler_RT;
+
+typedef enum {
+    PCB_BUILDTYPE_EXEC,
+    PCB_BUILDTYPE_STATICLIB,
+    PCB_BUILDTYPE_DYNAMICLIB,
+} PCB_BuildType;
+
 typedef struct {
-    //Path to the compiler executable to use.
-    ////Defaults to the compiler's name used to build this file.
+    /* Path to the compiler executable to use for C and C++ respectively.
+     * Defaults to the compiler's name used to build this file.
+     */
     const char* compilerPath;
-    //Path to the build directory. Defaults to "build/".
+    //Path to the build directory for caching object files. Defaults to "build/".
     const char* buildPath;
-    //Vector of paths to source directories.
+    //Name of the final executable/shared object.
+    const char* outputPath;
+    /* Vector of paths to source directories/individual files.
+     * Currently only 1 source directory is supported,
+     * while individual files are not implemented yet.
+     */
     PCB_CStrings sources;
     //Vector of paths to include directories.
     PCB_CStrings includes;
     //Vector of names of libraries to link dynamically.
     PCB_CStrings libs;
-    //Vector of names of libraries to link *statically*.    
+    //Vector of names of libraries to link *statically*.
     PCB_CStrings staticLibs;
-    //Vector of additional paths to pass to the compiler to
-    //search for specified libraries.
+    /* Vector of additional paths to pass to the compiler
+     * to search for specified libraries.
+     */
     PCB_CStrings librarySearchPaths;
     //Vector of compiler optimization flags. Not a singular const char*
     //since, for example in GCC, you can pass "-f" optimization flags
@@ -1168,29 +1207,129 @@ typedef struct {
     PCB_CStrings debugFlags;
     //Vector of warning flags, as well as warning-as-error flags.
     PCB_CStrings warningFlags;
+    //Vector of flags for the preprocessor (defs and undefs).
+    struct {
+        struct {
+            PCB_CStringPair* data;
+            size_t length;
+            size_t capacity;
+        } defines;
+        PCB_CStrings undefines;
+    } preprocessorFlags;
     //Vector of other compiler flags not covered by the rest of this struct.
     PCB_CStrings otherFlags;
     //Internal buffer used for enumerating source paths.
     PCB_String currentSourcePath;
     //Internal buffer used for enumerating build paths w.r.t. the source path.
     PCB_String currentBuildPath;
-    //Internal buffer used for commands when building. Do not use.
+    //Internal buffer used for commands when building.
     PCB_ShellCommand commandBuffer;
-    //The language standard used to compile source files.
-    //Defaults to the standard used to build this file.
+    //Internal vector of child process handles.
+    PCB_Processes processes;
+    //Internal arena allocator. May be safely reset after building and used for your own things.
+    //DO NOT ALLOCATE ANYTHING PRIOR TO BUILDING!!! THE ALLOCATION WILL BE OVERRIDDEN!
+    PCB_Arena* arena;
+    //Internal buffer used for accumulating source file paths for compilation.
+    PCB_CStrings sourceFiles;
+    //Internal buffer used for accumulating object file paths for linking.
+    PCB_CStrings objectFiles;
+    /* The language standard used to compile source files.
+     * Defaults to the standard used to build this file.
+     * Setting it to 0 stops the standard flag from being added.
+     */
     long standard;
+
+    //Flags for the build context.
+    //TODO: add useful stuff here
+    union {
+        unsigned int all;
+//temporary macro for choosing between an unnamed struct if in C11+ or a named one
+#ifndef PCB_TEMP
+#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 201112L)
+#define PCB_TEMP fields
+#else
+#define PCB_TEMP
+#endif //C++ || <C11
+#endif //PCB_TEMP
+        struct {
+            /* Specifies how many commands should be run in parallel.
+             *
+             * A value of 0, 1, >1 means
+             * no parallelism,
+             * running "number of cores in the system" commands in parallel,
+             * running this exact amount of commands in parallel respectively.
+             */
+            unsigned char parallel;
+            //Whether to force recompilation of all detected source files.
+            unsigned char alwaysBuild : 1;
+            /* Specifies the command-line argument parsing syntax.
+             * See the `PCB_ArgvSyntax` enum for details.
+             */
+            PCB_ArgvSyntax argvSyntax : 2;
+            /* Whether to use GNU extensions.
+             * Only relevant with compilers that support it.
+             * Otherwise it should be set to false.
+             */
+            unsigned char gnu : 1;
+            //TODO: implementation & docs
+            PCB_Compiler_RT compilerUsed : 3;
+            /* Whether to use a C compiler for C files in a C++ build.
+             * Setting this flag in C will cause C++ files to be compiled
+             * with a C++ compiler instead of being skipped.
+             */
+            unsigned char ccInCpp : 1;
+            //Whether anything was rebuilt. Only use when the entire build succeeded.
+            unsigned char rebuiltAnything : 1;
+            //TODO: implementation & docs
+            PCB_BuildType buildType : 2;
+            unsigned int _unused : 12;
+        } PCB_TEMP;
+#undef PCB_TEMP
+    } flags;
 } PCB_BuildContext;
+
+#ifndef PCB_BuildContext_flags
+#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 201112L)
+#define PCB_BuildContext_flags(ctx) (ctx)->flags.fields
+#else
+#define PCB_BuildContext_flags(ctx) (ctx)->flags
+#endif //C++ || <C11
+#endif //PCB_BuildContext_flags
 
 typedef enum {
     PCB_BUILDOPTION_NONE = 0,
-    //Emits debug symbols into object files.
-    PCB_BUILDOPTION_DEBUG = 1,
-    //Equivalent to -O3 or /O3. For more granularity modify
-    //the build context manually.
-    PCB_BUILDOPTION_OPTIMIZE = 1 << 1,
-    //Turns ASan on if the target supports it.
-    PCB_BUILDOPTION_ASAN = 1 << 2
-    //TODO: other sanitizers + more options
+    //Sets build path to "build/", adds "src/" to sources and "include/" to includes.
+    PCB_BUILDOPTION_DEFAULT_PATHS = 1 << 1,
+    //Sets compiler path, language standard to the compiler name,
+    //standard used to compile this file and the compiler's argv syntax.
+    PCB_BUILDOPTION_DEFAULT_COMPILER = 1 << 2,
+    //Adds a list of warnings from `PCB__BuildContext_addDefaultWarnings()`.
+    PCB_BUILDOPTION_DEFAULT_WARNINGS = 1 << 3,
+    //Sets some fields to commonly used defaults.
+    PCB_BUILDOPTION_DEFAULTS =
+        PCB_BUILDOPTION_DEFAULT_PATHS    |
+        PCB_BUILDOPTION_DEFAULT_COMPILER |
+        PCB_BUILDOPTION_DEFAULT_WARNINGS,
+    //Causes debug symbols to be emitted into object files. TODO: in MSVC
+    PCB_BUILDOPTION_DEBUG = 1 << 4,
+    //Equivalent to -O3 or /O2. For more granularity modify the build context manually.
+    PCB_BUILDOPTION_OPTIMIZE = 1 << 5,
+    //Turns the thread sanitizer (TSan) on if available. Incompatible with ASan and LSan.
+    PCB_BUILDOPTION_TSAN = 1 << 6,
+    //Turns the address sanitizer (ASan) on if available. Incompatible with TSan.
+    PCB_BUILDOPTION_ASAN = 1 << 7,
+    //Turns the leak sanitizer (LSan) on if available. Incompatible with TSan.
+    PCB_BUILDOPTION_LSAN = 1 << 8,
+    //Turns the undefined behavior sanitizer (UBSan) on if available.
+    PCB_BUILDOPTION_UBSAN = 1 << 9,
+    /* There are more sanitizers available, but they are compiler-exclusive:
+     * Memory sanitizer (clang only):
+     * https://clang.llvm.org/docs/MemorySanitizer.html
+     * Fuzzing (MSVC only):
+     * https://learn.microsoft.com/en-us/cpp/build/reference/fsanitize?view=msvc-170
+     */
+
+    //TODO: more options
 } PCB_BuildOption;
 
 
@@ -1750,16 +1889,27 @@ PCBAPI long PCBCALL PCB_GetCppStandardInt(const char* standard);
 
 
 /**
- * @brief Create a PCB_BuildContext struct.
- * 
+ * @brief Initializes the passed `context`.
+ *
  * @param flags PCB_BuildOptions OR'ed together
- * @return a zeroed out struct if `flags == 0` or on error. 
- * Otherwise returns a default-initialized build context based on flags passed.
- * 
- * See Appendix 1 for more details.
+ * @return 0 on success or non-zero value on error; TODO: docs for error values
  */
-PCBAPI PCB_BuildContext PCBCALL PCB_CreateBuildContext(int flags);
-PCBAPI int PCBCALL PCB_buildFromContext(PCB_BuildContext* context);
+PCBAPI int PCBCALL PCB_BuildContext_init(PCB_BuildContext* context, int flags);
+/**
+ * @brief Create a PCB_BuildContext struct.
+ *
+ * This function exists for lazy users. It is generally
+ * recommended to zero-initialize a `PCB_BuildContext`
+ * and pass it to `PCB_BuildContext_init`, because it
+ * allows for detecting initialization errors.
+ *
+ * @param flags PCB_BuildOptions OR'ed together
+ * @return an initialized `PCB_BuildContext` struct.
+ * Keep in mind that this function may silently fail,
+ * which can cause subtle bugs.
+ */
+PCBAPI PCB_BuildContext PCBCALL PCB_BuildContext_create(int flags);
+PCBAPI int PCBCALL PCB_build_fromContext(PCB_BuildContext* context);
 
 #endif //PCB_NO_DECLARATIONS
 
