@@ -982,6 +982,15 @@ for(                                                                \
 #endif //C++?
 #endif //PCB_ZEROED_T
 
+#ifndef PCB_CLITERAL
+#ifdef __cplusplus
+#define PCB_CLITERAL(Type) Type
+#else
+#define PCB_CLITERAL(Type) (Type)
+#endif //C++
+#endif //PCB_CLITERAL
+
+
 
 
 //Section 1.7: Import platform-specific header files
