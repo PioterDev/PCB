@@ -1785,7 +1785,16 @@ PCBAPI void PCBCALL PCB_log(
 
 #ifndef PCB_logTrace
 #ifdef PCB_DEBUG
+#if PCB_DEBUG+0 > 2
+#define PCB_logTrace(...) do { \
+    PCB_log(PCB_LOGLEVEL_TRACE_NL, "[" __FILE__ "/%s:" PCB_STRINGIFY(__LINE__) "] ", __func__); \
+    PCB_log(PCB_LOGLEVEL_NONE, __VA_ARGS__); \
+} while(0)
+#elif PCB_DEBUG+0 == 2
 #define PCB_logTrace(...) PCB_log(PCB_LOGLEVEL_TRACE, __VA_ARGS__)
+#else
+#define PCB_logTrace(...)
+#endif //PCB_DEBUG > 1
 #else
 #define PCB_logTrace(...)
 #endif //PCB_DEBUG
@@ -2384,6 +2393,17 @@ PCBAPI int PCBCALL PCB_build_fromContext(PCB_BuildContext* context);
 
 //these functions should be moved somewhere else, for now they're here
 #ifdef PCB_IMPLEMENTATION
+#ifdef PCB_DEBUG_SELF
+#define PCB__logTrace PCB_logTrace
+#else
+#define PCB__logTrace(...)
+#endif //PCB_DEBUG_SELF
+
+#if defined(PCB_DEBUG_SELF) && PCB_DEBUG_SELF+0
+#define PCB__logDebug PCB_logDebug
+#else
+#define PCB__logDebug(...)
+#endif //PCB_DEBUG_SELF
 
 #ifndef PCB_strcmp
 int PCB_strcmp(const char* s1, const char* s2) {
