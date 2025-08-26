@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 10
+#define PCB_VERSION_PATCH 11
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1020,6 +1020,331 @@ for(                                                                \
 #endif //C++
 #endif //PCB_CLITERAL
 
+
+//Section 1.6.4: Macros for views, slices
+#ifndef PCB_View_Vec_unchecked
+/**
+ * @brief Constructs a view on vector `vec` in the range of
+ * [`start`, `end`). If `vec->data == NULL` or `start > end` or
+ * `end > vec->length`, the behavior is undefined.
+ */
+#define PCB_View_Vec_unchecked(vec, start, end) \
+    { (vec)->data + (start), (end) - (start) }
+#endif //PCB_View_Vec_unchecked
+
+#ifndef PCB_View_Arr_unchecked
+/**
+ * @brief Constructs a view on array (!) `arr` in the range of [`start`, `end`).
+ * Used similarly to `PCB_View_Vec_unchecked`, except it's only valid for arrays,
+ * like `int arr[16];`.
+ * If `start > end`, the behavior is undefined.
+ */
+#define PCB_View_Arr_unchecked(arr, start, end) \
+    { &(arr)[start], (end) - (start) }
+#endif //PCB_View_Arr_unchecked
+
+#ifndef PCB_View_Ptr_unchecked
+/**
+ * @brief Constructs a view on a pointer `ptr` in the range of [`start`, `end`).
+ * If `ptr == NULL || start > end` or `end` goes out of bounds,
+ * the behavior is undefined.
+ */
+#define PCB_View_Ptr_unchecked(ptr, start, end) \
+    { (ptr) + (start), (end) - (start) }
+#endif //PCB_View_Ptr_unchecked
+
+#ifndef PCB_View_Vec
+#ifdef PCB_DISABLE_ASSERT
+#define PCB_View_Vec(vec, start, end) PCB_View_Vec_unchecked(vec, start, end)
+#else
+/**
+ * @brief Constructs a view on vector `vec` in the range of
+ * [`start`, `end`).
+ *
+ * Example:
+ * ```c
+ * typedef struct { int* data; size_t length; size_t capacity; } Ints;
+ * typedef struct { const int* data; size_t length; } Ints_view;
+ * ...
+ * Ints my_cool_integers = {0};
+ * ...
+ * Ints_view look_at_my_integers = PCB_View_Vec(&my_cool_integers, 6, 9);
+ * ```
+ */
+#define PCB_View_Vec(vec, start, end)  {                                \
+    ((end) - (start) != 0 ? PCB_assert((vec)->data != NULL) : (void)0,  \
+     (vec)->data + (start)),                                            \
+    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),                    \
+     PCB_assert((ssize_t)(end)   <= (ssize_t)(vec)->length),            \
+     (end) - (start))                                                   \
+}
+//For those wondering about casts to ssize_t: it's to suppress warnings about
+//"unsigned comparison with 0 is always <true/false>" when passing literals
+//to `start`/`end`. There is no other way around it.
+#endif //PCB_DISABLE_ASSERT
+#endif //PCB_View_Vec
+
+#ifndef PCB_View_Arr
+#ifdef PCB_DISABLE_ASSERT
+#define PCB_View_Arr(arr, start, end) PCB_View_Arr_unchecked(arr, start, end)
+#else
+/**
+ * @brief Constructs a view on array (!) `arr` in the range of [`start`, `end`).
+ * Used similarly to `PCB_View_Vec`, except it's only valid for arrays,
+ * like `int arr[16];`.
+ */
+#define PCB_View_Arr(arr, start, end) {                     \
+     &(arr)[start],                                         \
+    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),        \
+     PCB_assert((ssize_t)(end)   <= PCB_ARRAY_LEN(arr)),    \
+     (end) - (start))                                       \
+}
+#endif //PCB_DISABLE_ASSERT
+#endif //PCB_View_Arr
+
+#ifndef PCB_View_Ptr
+#ifdef PCB_DISABLE_ASSERT
+#define PCB_View_Ptr(ptr, start, end) PCB_View_Ptr_unchecked(ptr, start, end)
+#else
+/**
+ * @brief Constructs a view on pointer `ptr` in the range of [`start`, `end`).
+ * If `end` goes out of bounds, the behavior is undefined.
+ */
+#define PCB_View_Ptr(ptr, start, end) {                         \
+    ((end) - (start) != 0 ? PCB_assert((ptr) != NULL) : (void)0,\
+     (ptr) + (start)),                                          \
+    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),            \
+     (end) - (start))                                           \
+}
+#endif //PCB_DISABLE_ASSERT
+#endif //PCB_View_Ptr
+
+
+#ifndef PCB_View_Vec_T
+/**
+ * @brief Constructs a view of type `viewType` on vector `vec` in the range of
+ * [`start`, `end`).
+ * Primarily meant to be used when passing views by value to functions.
+ * Example:
+ * ```c
+ * typedef struct { int* data; size_t length; size_t capacity; } Ints;
+ * typedef struct { const int* data; size_t length; } Ints_view;
+ * void print_ints(Ints_view ints) {
+ *     for(size_t i = 0; i < ints.length; i++) {
+ *         printf("%d ", ints.data[i]);
+ *     }
+ *     printf("\n");
+ * }
+ * ...
+ * Ints my_cool_integers = {0};
+ * ...
+ * print_ints(PCB_View_Vec_T(&my_cool_integers, 6, 9, Ints_view));
+ * ```
+ */
+#define PCB_View_Vec_T(vec, start, end, viewType) \
+    (PCB_CLITERAL(viewType) PCB_View_Vec(vec, start, end))
+#endif //PCB_View_Vec_T
+
+#ifndef PCB_View_Arr_T
+/**
+ * @brief Constructs a view of type `viewType` on array (!) `arr` in the range of
+ * [`start`, `end`).
+ * Used similarly to `PCB_View_Vec_T`, except it's only valid for arrays,
+ * like `int arr[16];`.
+ */
+#define PCB_View_Arr_T(arr, start, end, viewType) \
+    (PCB_CLITERAL(viewType) PCB_View_Arr(arr, start, end))
+#endif //PCB_View_Arr_T
+
+#ifndef PCB_View_Ptr_T
+/**
+ * @brief Constructs a view of type `viewType` on pointer `ptr` in the range of
+ * [`start`, `end`).
+ * If `end` goes out of bounds, the behavior is undefined.
+ */
+#define PCB_View_Ptr_T(ptr, start, end, viewType) \
+    (PCB_CLITERAL(viewType) PCB_View_Ptr(ptr, start, end))
+#endif //PCB_View_Ptr_T
+
+
+
+#ifndef PCB_View_Vec_A
+/**
+ * @brief Constructs a view on the entire vector `vec`.
+ */
+#define PCB_View_Vec_A(vec) PCB_View_Vec(vec, 0, (vec)->length)
+#endif //PCB_View_Vec_A
+
+#ifndef PCB_View_Arr_A
+/**
+ * @brief Constructs a view on the entire array (!) `arr`.
+ * Used similarly to `PCB_View_Vec_A`, except it's only valid for arrays,
+ * like `int arr[16];`.
+ */
+#define PCB_View_Arr_A(arr) PCB_View_Arr(arr, 0, PCB_ARRAY_LEN(arr))
+#endif //PCB_View_Arr_A
+
+#ifndef PCB_View_Ptr_A
+/**
+ * @brief Constructs a view on pointer `ptr` in the range of [0, `end`).
+ * This differs from both `PCB_View_Vec_A` and `PCB_View_Arr_A` where `end` is
+ * known. In the case of pointers, you are the one that provides the upper bound.
+ *
+ * If `end` goes out of bounds, the behavior is undefined.
+ */
+#define PCB_View_Ptr_A(ptr, end) PCB_View_Ptr(ptr, 0, end)
+#endif //PCB_View_Ptr_A
+
+
+#ifndef PCB_View_Vec_A_T
+/**
+ * @brief Constructs a view of type `viewType` on the entire vector `vec`.
+ */
+#define PCB_View_Vec_A_T(vec, viewType) \
+    PCB_View_Vec_T(vec, 0, (vec)->length, viewType)
+#endif //PCB_View_Vec_A_T
+
+#ifndef PCB_View_Arr_A_T
+/**
+ * @brief Constructs a view of type `viewType` on the entire array (!) `arr`.
+ * Used similarly to `PCB_View_Vec_A_T`, except it's only valid for arrays,
+ * like `int arr[16];`.
+ */
+#define PCB_View_Arr_A_T(arr, viewType) \
+    PCB_View_Arr_T(arr, 0, PCB_ARRAY_LEN(arr), viewType)
+#endif //PCB_View_Arr_A_T
+
+#ifndef PCB_View_Ptr_A_T
+/**
+ * @brief Constructs a view of type `viewType` on a pointer `ptr`
+ * in the range of [0, `end`).
+ * This differs from both `PCB_View_Vec_A_T` and `PCB_View_Arr_A_T` where `end` is
+ * known. In the case of pointers, you are the one that provides the upper bound.
+ *
+ * If `end` goes out of bounds, the behavior is undefined.
+ */
+#define PCB_View_Ptr_A_T(ptr, viewType, end) PCB_View_Ptr_T(ptr, 0, end, viewType)
+#endif //PCB_View_Ptr_A_T
+
+
+
+#ifndef PCB_Slice_Vec
+/**
+ * @brief Constructs a slice of vector `vec` in the range of
+ * [`start`, `end`).
+ * Functionally identical to `PCB_View_Vec`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Vec(vec, start, end) PCB_View_Vec(vec, start, end)
+#endif //PCB_Slice_Vec
+
+#ifndef PCB_Slice_Arr
+/**
+ * @brief Constructs a slice of array (!) `arr` in the range of
+ * [`start`, `end`).
+ * Functionally identical to `PCB_View_Arr`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Arr(arr, start, end) PCB_View_Arr(arr, start, end)
+#endif //PCB_Slice_Arr
+
+#ifndef PCB_Slice_Ptr
+/**
+ * @brief Constructs a slice of pointer `ptr` in the range of
+ * [`start`, `end`).
+ * Functionally identical to `PCB_View_Ptr`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Ptr(ptr, start, end) PCB_View_Ptr(ptr, start, end)
+#endif //PCB_Slice_Ptr
+
+
+#ifndef PCB_Slice_Vec_T
+/**
+ * @brief Constructs a slice of type `sliceType` on vector `vec`
+ * in the range of [`start`, `end`).
+ * Functionally identical to `PCB_View_Vec_T`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Vec_T(vec, start, end, sliceType) \
+    PCB_View_Vec_T(vec, start, end, sliceType)
+#endif //PCB_Slice_Vec_T
+
+#ifndef PCB_Slice_Arr_T
+/**
+ * @brief Constructs a slice of type `sliceType` on array (!) `arr`
+ * in the range of [`start`, `end`).
+ * Functionally identical to `PCB_View_Arr_T`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Arr_T(arr, start, end, sliceType) \
+    PCB_View_Arr_T(arr, start, end, sliceType)
+#endif //PCB_Slice_Arr_T
+
+#ifndef PCB_Slice_Ptr_T
+/**
+ * @brief Constructs a slice of type `sliceType` on pointer `ptr`
+ * in the range of [`start`, `end`).
+ * Functionally identical to `PCB_View_Ptr_T`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Ptr_T(ptr, start, end, sliceType) \
+    PCB_View_Ptr_T(ptr, start, end, sliceType)
+#endif //PCB_Slice_Ptr_T
+
+
+#ifndef PCB_Slice_Vec_A
+/**
+ * @brief Constructs a slice on the entire vector `vec`.
+ * Functionally identical to `PCB_View_Vec_A`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Vec_A(vec) PCB_Slice_Vec(vec, 0, (vec)->length)
+#endif //PCB_Slice_Vec_A
+
+#ifndef PCB_Slice_Arr_A
+/**
+ * @brief Constructs a slice on the entire array (!) `arr`.
+ * Functionally identical to `PCB_View_Arr_A`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Arr_A(arr) PCB_Slice_Arr(arr, 0, PCB_ARRAY_LEN(arr))
+#endif //PCB_Slice_Arr_A
+
+#ifndef PCB_Slice_Ptr_A
+/**
+ * @brief Constructs a slice on pointer `ptr` in the range of [0, `end`).
+ * This differs from both `PCB_Slice_Vec_A` and `PCB_Slice_Arr_A` where `end` is
+ * known. In the case of pointers, you are the one that provides the upper bound.
+ *
+ * Functionally identical to `PCB_View_Ptr_A`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Ptr_A(ptr, end) PCB_Slice_Ptr(ptr, 0, end)
+#endif //PCB_Slice_Ptr_A
+
+
+#ifndef PCB_Slice_Vec_A_T
+/**
+ * @brief Constructs a slice of type `sliceType` on the entire vector `vec`.
+ * Functionally identical to `PCB_View_Vec_A_T`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Vec_A_T(vec, sliceType) \
+    PCB_Slice_Vec_T(vec, 0, (vec)->length, sliceType)
+#endif //PCB_Slice_Vec_A_T
+
+#ifndef PCB_Slice_Arr_A_T
+/**
+ * @brief Constructs a slice of type `sliceType` on the entire array (!) `arr`.
+ * Functionally identical to `PCB_View_Arr_A_T`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Arr_A_T(arr, sliceType) \
+    PCB_Slice_Arr_T(arr, 0, PCB_ARRAY_LEN(arr), sliceType)
+#endif //PCB_Slice_Arr_A_T
+
+#ifndef PCB_Slice_Ptr_A_T
+/**
+ * @brief Constructs a slice of type `viewType` on a pointer `ptr`
+ * in the range of [0, `end`).
+ * This differs from both `PCB_Slice_Vec_A_T` and `PCB_Slice_Arr_A_T` where `end` is
+ * known. In the case of pointers, you are the one that provides the upper bound.
+ *
+ * Functionally identical to `PCB_View_Ptr_A_T`. Use with slice types for clarity.
+ */
+#define PCB_Slice_Ptr_A_T(ptr, sliceType, end) \
+    PCB_Slice_Ptr_T(ptr, 0, end, sliceType)
+#endif //PCB_Slice_Ptr_A_T
 
 
 
