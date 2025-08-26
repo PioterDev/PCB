@@ -902,6 +902,69 @@ while((index) < (vec)->length) {                            \
         { expr(&(vec)->data[iINDex__]); }
 #endif //PCB_Vec_forEach
 
+#ifndef PCB_Vec_forEach_it
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
+//Starting from C23, specifying the iterator type is unnecessary due to `typeof`
+//being an operator.
+#define PCB_Vec_forEach_it(vec, itName, underlyingType) \
+    for(typeof((vec)->data) itName = (vec)->data; itName != (vec)->data + (vec)->length; itName++)
+#else
+/**
+ * @brief Traditional for-each with an iterator.
+ * Adding elements is not allowed as it may invalidate the iterator.
+ *
+ * An example usage is as follows:
+ * ```c
+ * Vec_int v_new = {0};
+ * ...
+ * PCB_Vec_forEach_it(&v, it, int) {
+ *  (*it) += 69;
+ * }
+ * ...
+ * ```
+ */
+#define PCB_Vec_forEach_it(vec, itName, underlyingType) \
+    for(underlyingType *itName = (vec)->data; itName != (vec)->data + (vec)->length; itName++)
+#endif //>=C23?
+#endif //PCB_Vec_forEach_it
+
+#ifndef PCB_Vec_enumerate
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
+#define PCB_Vec_enumerate(vec, i, it, enumPair, type)                           \
+for(                                                                            \
+    struct { size_t i; typeof((vec)->data) it; } enumPair = { 0, (vec)->data }; \
+    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++                     \
+)
+#else
+/**
+ * @brief Enumerate `vec` with index `i` and pointer-to-element `it`.
+ * Due to limitations of C, `i` and `it` have to be wrapped inside a struct
+ * named `enumPair`.
+ * Adding elements is not allowed as it may invalidate the iterator.
+ *
+ * An example usage is as follows
+ * ```c
+ * typedef struct {
+ *     const char* const* data;
+ *     size_t length;
+ *     size_t capacity;
+ * } CStrings;
+ * ...
+ * CStrings cstrs = {0};
+ * ...
+ * PCB_Vec_enumerate(&cstrs, i, it, iter, const char*) {
+ *     printf("%4lu | %s\n", iter.i, iter.it);
+ * }
+ * ```
+ */
+#define PCB_Vec_enumerate(vec, i, it, enumPair, type)               \
+for(                                                                \
+    struct { size_t i; type* it; } enumPair = { 0, (vec)->data };   \
+    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++         \
+)
+#endif //>=C23?
+#endif //PCB_Vec_enumerate
+
 //Section 1.6.3: Macros for C++ compatibility
 #ifndef PCB_ZEROED
 #if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
