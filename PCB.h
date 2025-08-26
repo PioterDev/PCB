@@ -687,9 +687,19 @@ static void f()
 #define PCB_ARRAY_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif //PCB_ARRAY_LEN
 
+#ifndef PCB_SHIFT_UNCHECKED
+//Bash-like shifting of `args` counted by `count`. If `count == 0`,
+//the behavior is undefined.
+#define PCB_SHIFT_UNCHECKED(count, args) (--(count), *(args)++)
+#endif //PCB_SHIFT_UNCHECKED
+
 #ifndef PCB_SHIFT
+#ifdef PCB_DISABLE_ASSERT
+#define PCB_SHIFT(count, args) PCB_SHIFT_UNCHECKED(count, args)
+#else
 //Bash-like shifting of `args` counted by `count`. Asserts that `count > 0`.
 #define PCB_SHIFT(count, args) (PCB_assert((count) > 0), --(count), *(args)++)
+#endif //PCB_DISABLE_ASSERT
 #endif //PCB_SHIFT
 
 #ifndef PCB__STRINGIFY
@@ -819,24 +829,44 @@ static void f()
 } while(0)
 #endif //PCB_Vec_append_variadic
 
-#ifndef PCB_Vec_pop
+#ifndef PCB_Vec_pop_unchecked
 /**
  * @brief Pops the last element from `vec`.
- *
- * If the length of `vec` is zero, the behavior is dependent on whether
- * `PCB_assert` is defined as an aborting assertion. 
- * If so, aborts. Otherwise the behavior is undefined.
+ * If `vec->length == 0`, the behavior is undefined.
+ */
+#define PCB_Vec_pop_unchecked(vec) ((vec)->data[--(vec)->length])
+#endif //PCB_Vec_pop_unchecked
+
+#ifndef PCB_Vec_pop
+#ifdef PCB_DISABLE_ASSERT
+#define PCB_Vec_pop(vec) PCB_Vec_pop_unchecked(vec)
+#else
+/**
+ * @brief Pops the last element from `vec`.
  */
 #define PCB_Vec_pop(vec) \
     (PCB_assert((vec)->length > 0), (vec)->data[--(vec)->length])
+#endif //PCB_DISABLE_ASSERT
 #endif //PCB_Vec_pop
 
+#ifndef PCB_Vec_last_unchecked
+/**
+ * @brief Returns a pointer to the last element of `vec`.
+ * If `vec->length == 0`, the behavior is undefined.
+ */
+#define PCB_Vec_last_unchecked(vec) (&(vec)->data[(vec)->length - 1])
+#endif //PCB_Vec_last_unchecked
+
 #ifndef PCB_Vec_last
+#ifdef PCB_DISABLE_ASSERT
+#define PCB_Vec_last(vec) PCB_Vec_last_unchecked(vec)
+#else
 /**
  * @brief Returns a pointer to the last element of `vec`.
  */
 #define PCB_Vec_last(vec) \
-    (PCB_assert((vec)->length > 0), &((vec)->data[(vec)->length - 1]))
+    (PCB_assert((vec)->length > 0), &(vec)->data[(vec)->length - 1])
+#endif //PCB_DISABLE_ASSERT
 #endif //PCB_Vec_last
 
 #ifndef PCB_Vec_clear
