@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 11
+#define PCB_VERSION_PATCH 12
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1517,6 +1517,12 @@ typedef struct {
     size_t capacity;
 } PCB_CStrings;
 
+typedef struct {
+    PCB_CStringPair* data;
+    size_t length;
+    size_t capacity;
+} PCB_CStringPairs;
+
 typedef PCB_CStrings PCB_ShellCommand;
 
 #ifndef PCB_CStrings_append
@@ -1626,25 +1632,27 @@ typedef struct {
      * to search for specified libraries.
      */
     PCB_CStrings librarySearchPaths;
-    //Vector of compiler optimization flags. Not a singular const char*
-    //since, for example in GCC, you can pass "-f" optimization flags
-    //on top of "-O" flags.
+    /* Vector of compiler optimization flags.
+     * Not a singular `const char*` since, for example in GCC,
+     * you can pass "-f*" optimization flags on top of "-O*" flags.
+     */
     PCB_CStrings optimizationFlags;
-    //Vector of debug flags. Put flags about sanitizers here.
+    //Vector of debug flags. Put your own sanitizer flags here.
     PCB_CStrings debugFlags;
-    //Vector of warning flags, as well as warning-as-error flags.
+    /* Vector of warning flags, as well as warning-as-error flags.
+     * Interpreted directly, a.k.a. if you add "1234",
+     * the compiler will receive "1234" as a flag.
+     */
     PCB_CStrings warningFlags;
     //Vector of flags for the preprocessor (defs and undefs).
     struct {
-        struct {
-            PCB_CStringPair* data;
-            size_t length;
-            size_t capacity;
-        } defines;
+        PCB_CStringPairs defines;
         PCB_CStrings undefines;
     } preprocessorFlags;
     //Vector of other compiler flags not covered by the rest of this struct.
-    PCB_CStrings otherFlags;
+    PCB_CStrings otherCompilerFlags;
+    //Vector of other linker flags not covered by the rest of this struct.
+    PCB_CStrings otherLinkerFlags;
     //Internal buffer used for enumerating source paths.
     PCB_String currentSourcePath;
     //Internal buffer used for enumerating build paths w.r.t. the source path.
