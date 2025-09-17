@@ -732,6 +732,50 @@ static void f()
 #define PCB_CONCAT(x, y) PCB__CONCAT(x, y)
 #endif //PCB_CONCAT
 
+//Macro controlling certain safety checks within the library.
+#ifndef PCB_SAFETY_CHECKS
+#define PCB_SAFETY_CHECKS 1
+#endif //PCB_SAFETY_CHECKS
+
+//Macro used for state validation within the library.
+//You may find this useful in your code, hence it's public.
+#ifndef PCB_CHECK
+#if PCB_SAFETY_CHECKS < 0
+//If a safety check fails, abort.
+#define PCB_CHECK(cond, retValOnTrue) PCB_assert(!(cond))
+#elif PCB_SAFETY_CHECKS <= 2
+//Fail gracefully (default).
+#define PCB_CHECK(cond, retValOnTrue) if(cond) return retValOnTrue
+#elif PCB_SAFETY_CHECKS > 2
+//Disable safety checks. Improves performance, but risks undefined behavior.
+#define PCB_CHECK(cond, retValOnTrue)
+#endif //different levels of `PCB_SAFETY_CHECKS`
+#endif //PCB_CHECK
+
+//Macro used in "methods" (in a C++ sense) to validate that the instance passed
+//is non-NULL. Disabled by default.
+#ifndef PCB_CHECK_SELF
+#if PCB_SAFETY_CHECKS <= 0
+//Verify the instance argument. Action taken depends on `PCB_SAFETY_CHECKS`.
+#define PCB_CHECK_SELF(self, retValOnTrue) PCB_CHECK((self) == NULL, retValOnTrue)
+#else
+//Do not verify the instance argument (default).
+#define PCB_CHECK_SELF(self, retValOnTrue)
+#endif //different levels of `PCB_SAFETY_CHECKS`
+#endif //PCB_CHECK_SELF
+
+//Macro used for pointer variables that should not point to the same memory,
+//but it might not be the case for safety reasons.
+#ifndef PCB_maybe_restrict
+#if PCB_SAFETY_CHECKS > 1
+//Assume the underlying thing is not aliased by any other pointer.
+//Improves performance, but risks undefined behavior.
+#define PCB_maybe_restrict PCB_restrict
+#else
+//Assume the underlying thing may be aliased by another pointer (default).
+#define PCB_maybe_restrict
+#endif //PCB_SAFETY_CHECKS > 1
+#endif //PCB_maybe_restrict
 
 //Section 1.6.2: template<*> struct vector in C let's goooo
 
