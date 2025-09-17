@@ -420,6 +420,16 @@ extern "C" {
 #endif //Compilers
 #endif //PCB_ForceInline
 
+#ifndef PCB_restrict
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 199901L
+#define PCB_restrict restrict
+#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG || PCB_COMPILER_MSVC
+#define PCB_restrict __restrict
+#else
+#define PCB_restrict
+#endif //why tf is there no "restrict" keyword in C++?!
+#endif //PCB_restrict
+
 #ifndef PCB_BeforeMain
 #ifdef __cplusplus
 //Using C++'s constructor trickery we can construct
