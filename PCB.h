@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 12
+#define PCB_VERSION_PATCH 13
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -1963,7 +1963,7 @@ PCBAPI bool PCBCALL PCB_FS_ReadEntireFile(const char* path, PCB_String* buf);
 /**
  * @brief Frees `str`'s buffer and resets fields to 0.
  */
-PCBAPI void PCBCALL PCB_String_destroy(PCB_String* str);
+PCBAPI void PCBCALL PCB_String_destroy(PCB_String* PCB_restrict str);
 #ifndef PCB_String_reset
 /**
  * @brief Resets `str` to hold no string. Does nothing if `str->data == NULL`.
@@ -1973,10 +1973,12 @@ PCBAPI void PCBCALL PCB_String_destroy(PCB_String* str);
 }
 #endif //PCB_String_reset
 /**
- * @brief Reserves `howMany` ASCII characters in `str`.
+ * @brief Reserves `howMany` *additional* bytes in `str`.
  * @return whether the operation succeeded: fails on realloc failure.
  */
-PCBAPI bool PCBCALL PCB_String_reserve(PCB_String* str, const size_t howMany);
+PCBAPI bool PCBCALL PCB_String_reserve(
+    PCB_String* PCB_restrict str, const size_t howMany
+);
 /**
  * @brief Resizes `str` to fit a string of `targetLength` length.
  * Truncates the string to `targetLength` if `targetLength < str->length`.
@@ -1984,68 +1986,107 @@ PCBAPI bool PCBCALL PCB_String_reserve(PCB_String* str, const size_t howMany);
  * Behaves identically to `PCB_String_reserve` otherwise.
  * @return whether the operation succeeded: fails on realloc failure.
  */
-PCBAPI bool PCBCALL PCB_String_resize(PCB_String* str, const size_t targetLength);
+PCBAPI bool PCBCALL PCB_String_resize(
+    PCB_String* PCB_restrict str, const size_t targetLength
+);
 /**
  * @brief Appends `other` to `str`.
+ *
+ * Note: it is permitted that `other == str`.
  * @return whether the operation succeeded:
  * fails on realloc failure or if `other == NULL`.
  */
 PCBAPI bool PCBCALL PCB_String_append(PCB_String* str, const PCB_String* other);
 /**
  * @brief Appends `cstr` to `str`.
+ *
+ * Note: it is NOT permitted that `cstr` overlaps with `str->data`, i.e. points to
+ * a range [`str->data`, `str->data + str->length`) as it may be
+ * invalidated by a realloc.
  * @return whether the operation succeeded:
- * fails on realloc failure or if `str == NULL`.
+ * fails on realloc failure or if `cstr == NULL` or the note above.
  */
-PCBAPI bool PCBCALL PCB_String_append_cstr(PCB_String* str, const char* cstr);
+PCBAPI bool PCBCALL PCB_String_append_cstr(
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict cstr
+);
 /**
  * @brief Appends `c` to `str` `howManyTimes` times.
- * @return whether the operation succeeded: can only fail on realloc failure.
+ * `c == '\0'` is treated as a no-op.
+ * @return whether the operation succeeded: can fail on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_append_chars(
-    PCB_String* str, const char c, const size_t howManyTimes
+    PCB_String* PCB_restrict str, const char c, const size_t howManyTimes
 );
 /**
  * @brief Appends a `printf`-like formatted string to `str`.
- * @return whether the operation succeeded: can only fail on realloc failure.
+ *
+ * Note: it is NOT permitted to append a formatted string to `str` based on
+ * `str` itself, i.e.`fmt` cannot overlap with `[str->data, str->data + str->length`).
+ *
+ * This function is only available if PCB was compiled with stdio.h present.
+ * Otherwise it does nothing and always returns `false`.
+ *
+ * @return whether the operation succeeded: can fail on realloc failure.
  */
-PCBAPI bool PCBCALL PCB_String_appendf(PCB_String* str, const char* fmt, ...) PCB_Printf_Format(2, 3);
+PCBAPI bool PCBCALL PCB_String_appendf(
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt, ...
+) PCB_Printf_Format(2, 3);
 /**
- * @brief Inserts `other` into `str` at `position`.
+ * @brief Inserts `other` into `str` at position `position`.
+ * Inserting `str` into itself (`str == other`) is not allowed.
  * @return whether the operation succeeded:
  * fails on invalid arguments passed or if realloc failed.
  */
 PCBAPI bool PCBCALL PCB_String_insert(
-    PCB_String* str, const PCB_String* other, size_t position
+    PCB_String* PCB_maybe_restrict str,
+    const PCB_String* PCB_maybe_restrict other,
+    size_t position
 );
 /**
- * @brief Inserts `str` into `str` at `position`.
- * @return whether the operation succeeded: fails on invalid arguments passed or if realloc failed.
+ * @brief Inserts `cstr` into `str` at `position`.
+ *
+ * Note: it is NOT permitted that `cstr` overlaps with `str->data`, i.e. points to
+ * a range [`str->data`, `str->data + str->length`) as it may be
+ * invalidated by a realloc.
+ * @return whether the operation succeeded: fails on
+ * invalid arguments passed or if realloc failed.
  */
 PCBAPI bool PCBCALL PCB_String_insert_cstr(
-    PCB_String* str, size_t position, const char* cstr
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict cstr,
+    size_t position
 );
 /**
- * @brief Inserts `c` into `str` at `position` `howManyTimes` times.
+ * @brief Inserts `c` into `str` at position `position` `howManyTimes` times.
+ * Inserting '\0' is not allowed.
  * @return whether the operation succeeded:
  * fails on invalid arguments passed or if realloc failed.
  */
 PCBAPI bool PCBCALL PCB_String_insert_chars(
-    PCB_String* str, size_t position, const char c, size_t howManyTimes
+    PCB_String* PCB_restrict str, const char c,
+    size_t howManyTimes, size_t position
 );
 /**
- * @brief Inserts a `printf`-like formatted string into `str` at `position`.
+ * @brief Inserts a `printf`-like formatted string into `str` at position `position`.
+ *
+ * Note: it is NOT permitted to insert a formatted string to `str` based on
+ * `str` itself, i.e.`fmt` cannot overlap with `str->data`.
+ *
+ * This function is only available if the library was compiled with stdio.h present.
+ * Otherwise it does nothing and always returns `false`.
+ *
  * @return whether the operation succeeded:
  * fails on invalid arguments passed or if realloc failed.
  */
 PCBAPI bool PCBCALL PCB_String_insertf(
-    PCB_String* str, size_t position, const char* fmt, ...
-) PCB_Printf_Format(3, 4);
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt,
+    size_t position, ...
+) PCB_Printf_Format(2, 4);
 /**
- * @brief Removes characters in a range of `[start, start + length)`.
+ * @brief Removes characters in the range `[start, start + length)`.
  * @return whether the operation succeded: can only fail on invalid range passed
  */
 PCBAPI bool PCBCALL PCB_String_remove_range(
-    PCB_String* str, size_t start, size_t length
+    PCB_String* PCB_restrict str, size_t start, size_t length
 );
 /**
  * @brief Makes `c` the last character in `str`.
@@ -2053,18 +2094,22 @@ PCBAPI bool PCBCALL PCB_String_remove_range(
  * Otherwise does nothing.
  * @return `false` if reallocation failed, `true` otherwise
  */
-PCBAPI bool PCBCALL PCB_String_setSuffix_char(PCB_String* str, const char c);
+PCBAPI bool PCBCALL PCB_String_setSuffix_char(
+    PCB_String* PCB_restrict str, const char c
+);
 /**
  * @brief Truncate `str` until `c` is found. If `c` is not found, `str` is *not*
  * truncated.
  * @return `true` if successfully truncated,`false` if `c` was not found
  */
-PCBAPI bool PCBCALL PCB_String_truncate_until_char(PCB_String* str, const char c);
+PCBAPI bool PCBCALL PCB_String_truncate_until_char(
+    PCB_String* PCB_restrict str, const char c
+);
 /**
  * @brief Clones `str`.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
-PCBAPI PCB_String PCBCALL PCB_String_clone(const PCB_String* str);
+PCBAPI PCB_String PCBCALL PCB_String_clone(const PCB_String* PCB_restrict str);
 /**
  * @brief Compares `a` and `b` lexicographically.
  * @return
@@ -2078,8 +2123,11 @@ PCBAPI int PCBCALL PCB_String_compare(
     const PCB_String* a, const PCB_String* b
 );
 /**
- * @brief Compares `a` and `b`, case insensitive version.
+ * @brief Compares `a` and `b`, case insensitive version*.
  * @return same as `PCB_String_compare`.
+ *
+ * * - the comparison is done as if `a` and `b` are ASCII strings and ignores
+ * Unicode
  */
 PCBAPI int PCBCALL PCB_String_compare_ci(
     const PCB_String* a, const PCB_String* b
@@ -2088,15 +2136,22 @@ PCBAPI int PCBCALL PCB_String_compare_ci(
  * @brief Compares `a` and `b` lexicographically, version with a C string.
  * @return same as `PCB_String_compare`.
  */
-PCBAPI int PCBCALL PCB_String_compare_cstr(const PCB_String* a, const char* b);
+PCBAPI int PCBCALL PCB_String_compare_cstr(
+    const PCB_String* PCB_restrict a, const char* PCB_restrict b
+);
 /**
- * @brief Compares `a` and `b`, case insensitive version with a C string.
+ * @brief Compares `a` and `b`, case insensitive version* with a C string.
  * @return same as `PCB_String_compare`.
+ *
+ * * - the comparison is done as if `a` and `b` are ASCII strings and ignores
+ * Unicode
  */
-PCBAPI int PCBCALL PCB_String_compare_cstr_ci(const PCB_String* a, const char* b);
+PCBAPI int PCBCALL PCB_String_compare_cstr_ci(
+    const PCB_String* PCB_restrict a, const char* PCB_restrict b
+);
 /**
  * @brief Checks if `str` starts with `other`.
- * If any of them doesn't exist (i.e. `data == NULL`), returns false.
+ * If any of them are empty, returns false.
  * @return whether `str` starts with `other`
  */
 PCBAPI bool PCBCALL PCB_String_startsWith(
@@ -2104,15 +2159,15 @@ PCBAPI bool PCBCALL PCB_String_startsWith(
 );
 /**
  * @brief Checks if `str` starts with `other`.
- * If `str` doesn't exist (i.e. `data == NULL`), returns false.
+ * If `str` is empty, returns false.
  * @return whether `str` starts with `other`
  */
 PCBAPI bool PCBCALL PCB_String_startsWith_cstr(
-    const PCB_String* str, const char* other
+    const PCB_String* PCB_restrict str, const char* PCB_restrict other
 );
 /**
  * @brief Checks if `str` ends with `other`.
- * If any of them doesn't exist (i.e. `data == NULL`), returns false.
+ * If any of them are empty, returns false.
  * @return whether `str` ends with `other`
  */
 PCBAPI bool PCBCALL PCB_String_endsWith(
@@ -2120,51 +2175,62 @@ PCBAPI bool PCBCALL PCB_String_endsWith(
 );
 /**
  * @brief Checks if `str` ends with `other`.
- * If `str` doesn't exist (i.e. `data == NULL`), returns false.
+ * If `str` is empty, returns false.
  * @return whether `str` ends with `other`
  */
 PCBAPI bool PCBCALL PCB_String_endsWith_cstr(
-    const PCB_String* str, const char* other
+    const PCB_String* PCB_restrict str, const char* PCB_restrict other
 );
 #ifndef PCB_String_isEmpty
 #define PCB_String_isEmpty(str) ((str)->data == NULL || (str)->length == 0)
 #endif //PCB_String_isEmpty
 /**
  * @brief Converts `str` to uppercase.
+ *
+ * Note: ignores Unicode.
  */
-PCBAPI void PCBCALL PCB_String_toUpperCase(PCB_String* str);
+PCBAPI void PCBCALL PCB_String_toUpperCase(PCB_String* PCB_restrict str);
 /**
  * @brief Converts `str` to lowercase.
+ *
+ * Note: ignores Unicode.
  */
-PCBAPI void PCBCALL PCB_String_toLowerCase(PCB_String* str);
+PCBAPI void PCBCALL PCB_String_toLowerCase(PCB_String* PCB_restrict str);
 /**
  * @brief Converts a clone of `str` to uppercase.
+ *
+ * Note: ignores Unicode.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
 PCBAPI PCB_String PCBCALL PCB_String_toUpperCase_copy(const PCB_String* str);
 /**
  * @brief Converts a clone of `str` to lowercase.
+ *
+ * Note: ignores Unicode.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
-PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(const PCB_String* str);
+PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(const PCB_String* PCB_restrict str);
 /**
  * @brief Pops the last character in `str`.
  * If `str` is empty, returns `\0` without modification.
  */
-PCBAPI char PCBCALL PCB_String_pop(PCB_String* str);
+PCBAPI char PCBCALL PCB_String_pop(PCB_String* PCB_restrict str);
 /**
  * @brief Pops `howMany` characters from `str` into `out`.
  * If `howMany > str->length`, `howMany` is clamped to `str->length`.
  * If `out` is NULL, characters are discarded.
  * The caller must ensure that `out` can hold at least `howMany` bytes.
+ * Note: it is NOT permitted that `out` overlaps with `str->data`, i.e. points to
+ * a range [`str->data`, `str->data + str->length`) as it may trigger undefined
+ * behavior.
  * @return number of characters popped
  */
 PCBAPI size_t PCBCALL PCB_String_pop_many(
-    PCB_String* str, size_t howMany, char* out
+    PCB_String* PCB_restrict str, size_t howMany, char* PCB_restrict out
 );
 /**
  * @brief Removes `other->length` characters from `str` if they match.
- * @return new length
+ * @return new length, 0 on error
  */
 PCBAPI size_t PCBCALL PCB_String_removeSuffix(
     PCB_String* str, const PCB_String* other
@@ -2904,16 +2970,18 @@ bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
     end:
     if(f != NULL) fclose(f);
     return success;
-}
 
 #endif //PCB_IMPLEMENTATION_FS
 
 
 //Section 2.3: Strings, string views, vectors of strings...
 #ifdef PCB_IMPLEMENTATION_STRING
-void PCB_String_destroy(PCB_String* str) { PCB_Vec_destroy(str); }
+void PCB_String_destroy(PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str,);
+    PCB_Vec_destroy(str);
 
-bool PCB_String_reserve(PCB_String* str, const size_t howMany) {
+bool PCB_String_reserve(PCB_String* PCB_restrict str, const size_t howMany) {
+    PCB_CHECK_SELF(str, false);
     const size_t newSize = str->length + howMany + 1; //'\0'
     if(newSize <= str->capacity) return true;
     size_t newCapacity = str->capacity == 0 ? PCB_VEC_INITIAL_CAPACITY : str->capacity;
@@ -2924,7 +2992,8 @@ bool PCB_String_reserve(PCB_String* str, const size_t howMany) {
     return true;
 }
 
-bool PCB_String_resize(PCB_String* str, const size_t targetLength) {
+bool PCB_String_resize(PCB_String* PCB_restrict str, const size_t targetLength) {
+    PCB_CHECK_SELF(str, false);
     if(targetLength == str->length) return true;
     else if(targetLength < str->length) {
         str->data[targetLength] = '\0';
@@ -2935,7 +3004,9 @@ bool PCB_String_resize(PCB_String* str, const size_t targetLength) {
 }
 
 bool PCB_String_append(PCB_String* str, const PCB_String* other) {
-    if(other == NULL || other->data == NULL) return false;
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(other == NULL, false);
+    if(PCB_String_isEmpty(other)) return true;
     if(!PCB_String_reserve(str, other->length)) return false; //with '\0'
     PCB_memcpy(str->data + str->length, other->data, other->length + 1);
     str->length += other->length;
@@ -2951,64 +3022,103 @@ bool PCB_String_append_cstr(PCB_String* str, const char* cstr) {
     return true;
 }
 
-bool PCB_String_append_chars(PCB_String* str, const char c, const size_t howManyTimes) {
+bool PCB_String_append_chars(
+    PCB_String* PCB_restrict str, const char c, const size_t howManyTimes
+) {
+    PCB_CHECK_SELF(str, false);
+    if(c == '\0') return true;
     if(!PCB_String_reserve(str, howManyTimes)) return false;
     PCB_memset(str->data + str->length, c, howManyTimes);
-    str->length += howManyTimes; str->data[str->length] = '\0';
+    str->data[str->length += howManyTimes] = '\0';
     return true;
 }
 
-bool PCB_String_appendf(PCB_String* str, const char* fmt, ...) {
+bool PCB_String_appendf(
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt, ...
+) {
+#ifdef PCB_HAS_STDIO_H
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(fmt == NULL, false);
+    PCB_CHECK(str->data <= fmt && fmt <= str->data + str->length, false);
+
     va_list args;
     va_start(args, fmt);
     //'\0' is implicitly stored at the end
     const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args);
     va_end(args);
+
     if(!PCB_String_reserve(str, lengthRequired)) return false;
-    va_start(args, fmt); //                             '\0'
+
+    va_start(args, fmt); //                               '\0'
     PCB_vsnprintf(str->data + str->length, lengthRequired + 1, fmt, args);
     va_end(args);
     str->length += lengthRequired;
     return true;
+#else
+    (void)str; (void)fmt;
+    return false;
+#endif //PCB_HAS_STDIO_H
 }
 
-bool PCB_String_insert(PCB_String* str, const PCB_String* other, size_t position) {
-    if(other == NULL || other->data == NULL || position > str->length) return false;
-    if(other->length == 0) return true; //minor optimization
+bool PCB_String_insert(
+    PCB_String* PCB_maybe_restrict str, const PCB_String* PCB_maybe_restrict other,
+    size_t position
+) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(position > str->length, false);
+    if(PCB_String_isEmpty(other)) return true; //the latter should be impossible
+    PCB_CHECK(str == other || str->data == other->data, false); // <---
+
     if(!PCB_String_reserve(str, other->length)) return false;
     PCB_memmove(str->data + position + other->length, str->data + position, str->length - position);
     PCB_memcpy(str->data + position, other->data, other->length);
-    str->length += other->length; str->data[str->length] = '\0';
+    str->data[str->length += other->length] = '\0';
     return true;
 }
 
-bool PCB_String_insert_cstr(PCB_String* str, size_t position, const char* cstr) {
-    if(cstr == NULL || position > str->length) return false;
+bool PCB_String_insert_cstr(
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict cstr,
+    size_t position
+) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(cstr == NULL, false);
+    PCB_CHECK(position > str->length, false);
+    PCB_CHECK(str->data <= cstr && cstr <= str->data + str->length, false);
+
     size_t len = PCB_strlen(cstr);
     if(len == 0) return true;
     if(!PCB_String_reserve(str, len)) return false;
     PCB_memmove(str->data + position + len, str->data + position, str->length - position);
     PCB_memcpy(str->data + position, cstr, len);
-    str->length += len; str->data[str->length] = '\0';
+    str->data[str->length += len] = '\0';
     return true;
 }
 
 bool PCB_String_insert_chars(
-    PCB_String* str, size_t position, const char c, size_t howManyTimes
+    PCB_String* PCB_restrict str, const char c,
+    size_t howManyTimes, size_t position
 ) {
-    if(position > str->length) return false;
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(position > str->length, false); PCB_CHECK(c == '\0', false);
     if(howManyTimes == 0) return true;
     if(!PCB_String_reserve(str, howManyTimes)) return false;
     PCB_memmove(str->data + position + howManyTimes, str->data + position, str->length - position);
     PCB_memset(str->data + position, c, howManyTimes);
-    str->length += howManyTimes; str->data[str->length] = '\0';
+    str->data[str->length += howManyTimes] = '\0';
     return true;
 }
 
-bool PCB_String_insertf(PCB_String* str, size_t position, const char* fmt, ...) {
-    if(position > str->length) return false;
+bool PCB_String_insertf(
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt,
+    size_t position, ...
+) {
+#ifdef PCB_HAS_STDIO_H
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(position > str->length, false);
+    PCB_CHECK(str->data <= fmt && fmt <= str->data + str->length, false);
+
     va_list args;
-    va_start(args, fmt);
+    va_start(args, position);
     const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args);
     va_end(args);
     if(!PCB_String_reserve(str, lengthRequired)) return false;
@@ -3016,24 +3126,38 @@ bool PCB_String_insertf(PCB_String* str, size_t position, const char* fmt, ...) 
     //PCB_vsnprintf will override the last character with '\0', so we need to save it
     char overridden = str->data[position];
     PCB_memmove(str->data + position + lengthRequired, str->data + position, str->length - position);
-    va_start(args, fmt);
+    va_start(args, position);
     PCB_vsnprintf(str->data + position, lengthRequired + 1, fmt, args);
     va_end(args);
     str->data[position + lengthRequired] = overridden;
-    str->length += lengthRequired; str->data[str->length] = '\0';
+    str->data[str->length += lengthRequired] = '\0';
     return true;
+#else
+    (void)str; (void)fmt; (void)position;
+    return false;
+#endif //PCB_HAS_STDIO_H
 }
 
-bool PCB_String_remove_range(PCB_String* str, size_t start, size_t length) {
-    if(start >= str->length || start + length > str->length) return false;
+bool PCB_String_remove_range(
+    PCB_String* PCB_restrict str, size_t start, size_t length
+) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(start >= str->length, false);
+    PCB_CHECK(start + length > str->length, false);
     if(length == 0) return true; //would cause a redundant memmove
-    if(str->data == NULL) return true; //debatable whether to treat as a success, but eh
-    PCB_memmove(str->data + start, str->data + start + length, str->length - (start + length) + 1);
+    PCB_memmove(
+        str->data + start,
+        str->data + start + length,
+        str->length - (start + length) + 1 //'\0'
+    );
     str->length -= length; return true;
 }
 
-bool PCB_String_setSuffix_char(PCB_String* str, const char c) {
-    if(str->data == NULL && !PCB_String_reserve(str, 1)) return false;
+bool PCB_String_setSuffix_char(
+    PCB_String* PCB_restrict str, const char c
+) {
+    PCB_CHECK_SELF(str, false);
+    if(str->capacity == 0 && !PCB_String_reserve(str, 1)) return false;
     if(str->length == 0) {
         str->data[0] = c; str->data[++str->length] = '\0';
         return true;
@@ -3046,8 +3170,11 @@ bool PCB_String_setSuffix_char(PCB_String* str, const char c) {
     return true;
 }
 
-bool PCB_String_truncate_until_char(PCB_String* str, const char c) {
-    if(str->data == NULL || str->length == 0) return false;
+bool PCB_String_truncate_until_char(
+    PCB_String* PCB_restrict str, const char c
+) {
+    PCB_CHECK_SELF(str, false);
+    if(PCB_String_isEmpty(str)) return true;
     if(str->data[str->length - 1] == c) return true;
     const char* cursor = str->data + str->length - 1;
     while(cursor != str->data && *cursor != c) { --cursor; }
@@ -3061,9 +3188,9 @@ bool PCB_String_truncate_until_char(PCB_String* str, const char c) {
     return true;
 }
 
-PCB_String PCB_String_clone(const PCB_String* str) {
-    if(str->data == NULL || str->length == 0)
-        return PCB_ZEROED_T(PCB_String);
+PCB_String PCB_String_clone(const PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(PCB_String_isEmpty(str), PCB_ZEROED_T(PCB_String));
     PCB_String s = PCB_ZEROED;
     s.data = (char*)PCB_realloc(NULL, str->length + 1);
     if(s.data == NULL) return s;
@@ -3074,6 +3201,7 @@ PCB_String PCB_String_clone(const PCB_String* str) {
 }
 
 int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
+    PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
     // if(a->data == NULL && b->data == NULL) return 0;
     // else if(a->data == NULL) return 1;
     // else if(b->data == NULL) return -1;
@@ -3085,38 +3213,58 @@ int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
 }
 
 int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
+    PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
     if(a->data == NULL) return b->data != NULL;
     else if(b->data == NULL) return -1;
     return strncasecmp(a->data, b->data, a->length);
 }
 
-int PCB_String_compare_cstr(const PCB_String* a, const char* b) {
+int PCB_String_compare_cstr(
+    const PCB_String* PCB_restrict a, const char* PCB_restrict b
+) {
+    PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
     if(a->data == NULL) return b != NULL;
     else if(b == NULL) return -1;
     return PCB_strcmp(a->data, b);
 }
 
-int PCB_String_compare_cstr_ci(const PCB_String* a, const char* b) {
+int PCB_String_compare_cstr_ci(
+    const PCB_String* PCB_restrict a, const char* PCB_restrict b
+) {
+    PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
     if(a->data == NULL) return b != NULL;
     else if(b == NULL) return -1;
     return strncasecmp(a->data, b, a->length);
 }
 
 bool PCB_String_startsWith(const PCB_String* str, const PCB_String* other) {
-    if(str->data == NULL || other == NULL || other->data == NULL) return false;
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(other == NULL, false);
+
+    if(str == other) return true;
+    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(other)) return false;
     if(other->length > str->length) return false;
     return !PCB_memcmp(str->data, other->data, other->length);
 }
 
-bool PCB_String_startsWith_cstr(const PCB_String* str, const char* other) {
-    if(str->data == NULL || other == NULL) return false;
+bool PCB_String_startsWith_cstr(
+    const PCB_String* PCB_restrict str, const char* PCB_restrict other
+) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(other == NULL, false);
+
+    if(PCB_String_isEmpty(str)) return false;
     const size_t len = PCB_strlen(other);
     if(len > str->length) return false;
     return !PCB_memcmp(str->data, other, len);
 }
 
 bool PCB_String_endsWith(const PCB_String* str, const PCB_String* other) {
-    if(str->data == NULL || other == NULL || other->data == NULL) return false;
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(other == NULL, false);
+
+    if(str == other) return true;
+    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(other)) return false;
     if(other->length > str->length) return false;
     return !PCB_memcmp(
         str->data + str->length - other->length,
@@ -3124,15 +3272,20 @@ bool PCB_String_endsWith(const PCB_String* str, const PCB_String* other) {
     );
 }
 
-bool PCB_String_endsWith_cstr(const PCB_String* str, const char* other) {
-    if(str->data == NULL || other == NULL) return false;
+bool PCB_String_endsWith_cstr(
+    const PCB_String* PCB_restrict str, const char* PCB_restrict other
+) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(other == NULL, false);
+
+    if(PCB_String_isEmpty(str)) return false;
     const size_t len = PCB_strlen(other);
     if(len > str->length) return false;
     return !PCB_memcmp(str->data + str->length - len, other, len);
 }
 
-void PCB_String_toUpperCase(PCB_String* str) {
-    if(str->data == NULL) return;
+void PCB_String_toUpperCase(PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str,);
     for(size_t i = 0; i < str->length; i++) {
         if(str->data[i] >= 'a' && str->data[i] <= 'z') {
             str->data[i] -= 'a' - 'A';
@@ -3140,8 +3293,8 @@ void PCB_String_toUpperCase(PCB_String* str) {
     }
 }
 
-void PCB_String_toLowerCase(PCB_String* str) {
-    if(str->data == NULL) return;
+void PCB_String_toLowerCase(PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str,);
     for(size_t i = 0; i < str->length; i++) {
         if(str->data[i] >= 'A' && str->data[i] <= 'Z') {
             str->data[i] += 'a' - 'A';
@@ -3149,39 +3302,48 @@ void PCB_String_toLowerCase(PCB_String* str) {
     }
 }
 
-PCB_String PCB_String_toUpperCase_copy(const PCB_String* str) {
+PCB_String PCB_String_toUpperCase_copy(const PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str, PCB_ZEROED_T(PCB_String));
     PCB_String copy = PCB_String_clone(str);
     PCB_String_toUpperCase(&copy);
     return copy;
 }
 
-PCB_String PCB_String_toLowerCase_copy(const PCB_String* str) {
+PCB_String PCB_String_toLowerCase_copy(const PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str, PCB_ZEROED_T(PCB_String));
     PCB_String copy = PCB_String_clone(str);
     PCB_String_toLowerCase(&copy);
     return copy;
 }
 
-char PCB_String_pop(PCB_String* str) {
+char PCB_String_pop(PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str, 0x15); //NAK, as if "Why are you passing NULL here? I'm disappointed."
     if(str->length == 0) return '\0';
     char c = str->data[str->length - 1];
     str->data[--str->length] = '\0';
     return c;
 }
 
-size_t PCB_String_pop_many(PCB_String* str, size_t howMany, char* out) {
+size_t PCB_String_pop_many(
+    PCB_String* PCB_restrict str, size_t howMany, char* PCB_restrict out
+) {
+    PCB_CHECK_SELF(str, 0);
     if(howMany == 0) return 0;
-    if(str->data == NULL || str->length == 0) return 0;
+    if(PCB_String_isEmpty(str)) return 0;
     if(howMany > str->length) howMany = str->length;
-    if(out != NULL) PCB_memcpy(out, str->data + str->length - howMany, howMany + 1);
+    if(out != NULL) {
+        PCB_CHECK(str->data <= out && out <= str->data + str->length, 0);
+        PCB_memcpy(out, str->data + str->length - howMany, howMany + 1);
+    }
     str->data[str->length -= howMany] = '\0';
     return howMany;
 }
 
 size_t PCB_String_removeSuffix(PCB_String* str, const PCB_String* other) {
-    if(PCB_String_endsWith(str, other)) {
-        str->data[str->length - other->length] = '\0';
-        return str->length -= other->length;
-    }
+    PCB_CHECK_SELF(str, 0);
+    PCB_CHECK(other == NULL, 0);
+    if(PCB_String_endsWith(str, other))
+        str->data[str->length -= other->length] = '\0';
     return str->length;
 }
 
