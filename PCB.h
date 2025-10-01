@@ -964,6 +964,10 @@ while((index) < (vec)->length) {                            \
 }
 #endif //PCB_Vec_erase
 
+#ifndef PCB_Vec_isEmpty
+#define PCB_Vec_isEmpty(vec) ((vec)->data == NULL || (vec)->length == 0)
+#endif //PCB_Vec_isEmpty
+
 #ifndef PCB_Vec_forEach
 /**
  * @brief Executes an expression on every element of `vec`.
@@ -1402,6 +1406,18 @@ for(                                                                \
 
 
 
+//Section 1.6.5: Other macros
+#ifndef PCB_VA_forEach_until
+#define PCB_VA_forEach_until(args, argType, end, name)      \
+for(                                                        \
+    argType name = va_arg((args), argType);                 \
+    name != (end);                                          \
+    name = va_arg((args), argType)                          \
+)
+#endif //PCB_VA_forEach_until
+
+
+
 //Section 1.7: Import platform-specific header files
 #if PCB_PLATFORM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
@@ -1570,6 +1586,11 @@ typedef struct {
     size_t length;
     size_t capacity;
 } PCB_CStrings;
+
+typedef struct {
+    const char* const* data;
+    size_t length;
+} PCB_CStringsView;
 
 typedef struct {
     PCB_CStringPair* data;
@@ -2010,6 +2031,29 @@ PCBAPI bool PCBCALL PCB_String_append_cstr(
     PCB_String* PCB_restrict str, const char* PCB_maybe_restrict cstr
 );
 /**
+ * @brief Appends C-strings from `cstrs` to `str`.
+ *
+ * If all entries in `cstrs` are empty C-strings or if `cstrs` is empty,
+ * nothing is appended.
+ * NULL entries and entries that overlap with `str` (see above)
+ * in `cstrs` are skipped.
+ * @return number of entries in `cstrs` appended, -1 on error.
+ */
+PCBAPI ssize_t PCBCALL PCB_String_append_cstrs(
+    PCB_String* PCB_restrict str, PCB_CStringsView cstrs
+);
+/**
+ * @brief Appends variable number of C-strings to `str`.
+ *
+ * C-strings overlapping with `str->data` are skipped.
+ *
+ * The last argument MUST be `NULL`. Otherwise the behavior is undefined.
+ * @return number of C-strings appended, 0 on error.
+ */
+PCBAPI ssize_t PCBCALL PCB_String_append_cstr_v(
+    PCB_String* PCB_restrict str, ...
+);
+/**
  * @brief Appends `c` to `str` `howManyTimes` times.
  * `c == '\0'` is treated as a no-op.
  * @return whether the operation succeeded: can fail on realloc failure.
@@ -2054,6 +2098,29 @@ PCBAPI bool PCBCALL PCB_String_insert(
 PCBAPI bool PCBCALL PCB_String_insert_cstr(
     PCB_String* PCB_restrict str, const char* PCB_maybe_restrict cstr,
     size_t position
+);
+/**
+ * @brief Inserts C-string from `cstrs` into `str` at position `position`.
+ *
+ * If all entries in `cstrs` are empty C-strings or if `cstrs` is empty,
+ * nothing is appended.
+ * NULL entries and entries that overlap with `str->data` (see above)
+ * in `cstrs` are skipped.
+ * @return number of entries in `cstrs` inserted, -1 on error.
+ */
+PCBAPI ssize_t PCBCALL PCB_String_insert_cstrs(
+    PCB_String* PCB_restrict str, PCB_CStringsView cstrs, size_t position
+);
+/**
+ * @brief Inserts variable number of C-strings into `str` at position `position`.
+ * The last argument MUST be `NULL`.
+ *
+ * C-strings overlapping with `str->data` are skipped.
+ *
+ * @return number of entries in `cstrs` inserted, -1 on error.
+ */
+PCBAPI ssize_t PCBCALL PCB_String_insert_cstr_v(
+    PCB_String* PCB_restrict str, size_t position, ...
 );
 /**
  * @brief Inserts `c` into `str` at position `position` `howManyTimes` times.
@@ -3022,6 +3089,63 @@ bool PCB_String_append_cstr(PCB_String* str, const char* cstr) {
     return true;
 }
 
+ssize_t PCB_String_append_cstrs(
+    PCB_String* PCB_restrict str, PCB_CStringsView cstrs
+) {
+    PCB_CHECK_SELF(str, -1);
+    if(PCB_Vec_isEmpty(&cstrs)) return 0;
+    size_t cstrsLength = 0;
+    PCB_Vec_forEach_it(&cstrs, it, const char* const) {
+        if(*it == NULL) continue;
+        if(str->data <= *it && *it <= str->data + str->length) continue;
+        cstrsLength += PCB_strlen(*it);
+        if((cstrsLength + str->length) * sizeof(*str->data) > SIZE_MAX/2) return -1;
+    }
+    if(cstrsLength == 0) return 0;
+    if(!PCB_String_reserve(str, cstrsLength)) return -1;
+    char* cursor = str->data + str->length;
+    ssize_t appended = 0;
+    PCB_Vec_forEach_it(&cstrs, it, const char* const) {
+        if(*it == NULL) continue;
+        if(str->data <= *it && *it <= str->data + str->length) continue;
+        size_t l = PCB_strlen(*it);
+        PCB_memcpy(cursor, *it, l);
+        cursor += l; ++appended;
+    }
+    str->data[str->length += cstrsLength] = '\0';
+    return appended;
+}
+
+ssize_t PCB_String_append_cstr_v(PCB_String* PCB_restrict str, ...) {
+    PCB_CHECK_SELF(str, -1);
+    va_list args;
+    size_t argsLength = 0;
+    va_start(args, str);
+    PCB_VA_forEach_until(args, const char*, NULL, arg) {
+        if(str->data <= arg && arg <= str->data + str->length) continue;
+        argsLength += PCB_strlen(arg);
+        if(argsLength + str->length > SIZE_MAX/2) return -1;
+    }
+    va_end(args);
+    if(argsLength == 0) return 0;
+
+    if(!PCB_String_reserve(str, argsLength)) return -1;
+
+    ssize_t appended = 0;
+    char* cursor = str->data + str->length;
+    va_start(args, str);
+    PCB_VA_forEach_until(args, const char*, NULL, arg) {
+        if(str->data <= arg && arg <= str->data + str->length) continue;
+        size_t l = PCB_strlen(arg);
+        PCB_memcpy(cursor, arg, l);
+        cursor += l; ++appended;
+    }
+    va_end(args);
+
+    str->data[str->length += argsLength] = '\0';
+    return appended;
+}
+
 bool PCB_String_append_chars(
     PCB_String* PCB_restrict str, const char c, const size_t howManyTimes
 ) {
@@ -3092,6 +3216,78 @@ bool PCB_String_insert_cstr(
     PCB_memcpy(str->data + position, cstr, len);
     str->data[str->length += len] = '\0';
     return true;
+}
+
+ssize_t PCB_String_insert_cstrs(
+    PCB_String* PCB_restrict str, PCB_CStringsView cstrs, size_t position
+) {
+    PCB_CHECK_SELF(str, -1);
+    PCB_CHECK(position > str->length, -1);
+    if(PCB_Vec_isEmpty(&cstrs)) return 0;
+
+    size_t cstrsLength = 0;
+    PCB_Vec_forEach_it(&cstrs, it, const char* const) {
+        if(*it == NULL) continue;
+        if(str->data <= *it && *it <= str->data + str->length) continue;
+        cstrsLength += PCB_strlen(*it);
+        if(cstrsLength + str->length > SIZE_MAX/2) return -1;
+    }
+    if(cstrsLength == 0) return 0;
+
+    if(!PCB_String_reserve(str, cstrsLength)) return -1;
+    PCB_memmove(
+        str->data + position + cstrsLength,
+        str->data + position,
+        str->length - position
+    );
+
+    char* cursor = str->data + position;
+    ssize_t appended = 0;
+    PCB_Vec_forEach_it(&cstrs, it, const char* const) {
+        if(*it == NULL) continue;
+        if(str->data <= *it && *it <= str->data + str->length) continue;
+        size_t l = PCB_strlen(*it);
+        PCB_memcpy(cursor, *it, l);
+        cursor += l; ++appended;
+    }
+    str->data[str->length += cstrsLength] = '\0';
+    return appended;
+}
+
+ssize_t PCB_String_insert_cstr_v(
+    PCB_String* PCB_restrict str, size_t position, ...
+) {
+    PCB_CHECK_SELF(str, -1);
+    va_list args;
+    size_t argsLength = 0;
+    va_start(args, position);
+    PCB_VA_forEach_until(args, const char*, NULL, arg) {
+        if(str->data <= arg && arg <= str->data + str->length) continue;
+        argsLength += PCB_strlen(arg);
+        if(argsLength + str->length > SIZE_MAX/2) return -1;
+    }
+    va_end(args);
+    if(argsLength == 0) return 0;
+
+    if(!PCB_String_reserve(str, argsLength)) return -1;
+    PCB_memmove(
+        str->data + position + argsLength,
+        str->data + position,
+        str->length - position
+    );
+
+    ssize_t inserted = 0;
+    char* cursor = str->data + position;
+    va_start(args, position);
+    PCB_VA_forEach_until(args, const char*, NULL, arg) {
+        if(str->data <= arg && arg <= str->data + str->length) continue;
+        size_t l = PCB_strlen(arg);
+        PCB_memcpy(cursor, arg, l);
+        cursor += l; ++inserted;
+    }
+    va_end(args);
+    str->data[str->length += argsLength] = '\0';
+    return inserted;
 }
 
 bool PCB_String_insert_chars(
