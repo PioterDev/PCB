@@ -491,6 +491,34 @@ static void f()
 #endif //PCB_WANT_CLEANUP
 #endif //PCB_Cleanup
 
+//Get type of expression.
+//Portable applications must check whether `PCB_Typeof` is #defined before use.
+//In C++11+, `PCB_Typeof` expands to `decltype`
+//NOTE: Be *very* careful when using in external-facing declarations. This WILL cause problems!
+#ifndef PCB_Typeof
+#if defined(__cplusplus) && defined(__cpp_decltype) && __cpp_decltype+0 >= 200707L
+#define PCB_Typeof(expr) decltype(expr)
+#elif defined(__STDC_VERSION__)
+#if PCB_COMPILER_GCC
+#if PCB_COMPILER_GCC >= 130000 && __STDC_VERSION__ >= 202311L
+#define PCB_Typeof(expr) typeof(expr)
+#else
+#define PCB_Typeof(expr) __typeof__(expr)
+#endif //GCC 13+ && C23
+#elif PCB_COMPILER_CLANG
+#if PCB_COMPILER_CLANG >= 160000 && __STDC_VERSION__ >= 202311L
+#define PCB_Typeof(expr) typeof(expr)
+#else
+#define PCB_Typeof(expr) __typeof__(expr)
+#endif //Clang 16+ && C23
+#elif PCB_COMPILER_MSVC
+#if PCB_COMPILER_MSVC >= 1939 && __STDC_VERSION__ >= 202311L
+#define PCB_Typeof(expr) typeof(expr)
+#endif //VS 2022 17.9 && C23
+#endif //compilers
+#endif //C++ && __cpp_decltype || C
+#endif //PCB_Typeof
+
 
 
 
@@ -991,11 +1019,12 @@ while((index) < (vec)->length) {                            \
 #endif //PCB_Vec_forEach
 
 #ifndef PCB_Vec_forEach_it
-#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
-//Starting from C23, specifying the iterator type is unnecessary due to `typeof`
-//being an operator.
-#define PCB_Vec_forEach_it(vec, itName, underlyingType) \
-    for(typeof((vec)->data) itName = (vec)->data; itName != (vec)->data + (vec)->length; itName++)
+#ifdef PCB_Typeof
+#define PCB_Vec_forEach_it(vec, itName, ...)        \
+for(                                                \
+    PCB_Typeof((vec)->data) itName = (vec)->data;   \
+    itName != (vec)->data + (vec)->length; itName++ \
+)
 #else
 /**
  * @brief Traditional for-each with an iterator.
@@ -1012,16 +1041,19 @@ while((index) < (vec)->length) {                            \
  * ```
  */
 #define PCB_Vec_forEach_it(vec, itName, underlyingType) \
-    for(underlyingType *itName = (vec)->data; itName != (vec)->data + (vec)->length; itName++)
-#endif //>=C23?
+for(                                                    \
+    underlyingType *itName = (vec)->data;               \
+    itName != (vec)->data + (vec)->length; itName++     \
+)
+#endif //PCB_Typeof?
 #endif //PCB_Vec_forEach_it
 
 #ifndef PCB_Vec_enumerate
-#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
-#define PCB_Vec_enumerate(vec, i, it, enumPair, type)                           \
-for(                                                                            \
-    struct { size_t i; typeof((vec)->data) it; } enumPair = { 0, (vec)->data }; \
-    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++                     \
+#ifdef PCB_Typeof
+#define PCB_Vec_enumerate(vec, i, it, enumPair, ...)                                \
+for(                                                                                \
+    struct { size_t i; PCB_Typeof((vec)->data) it; } enumPair = { 0, (vec)->data }; \
+    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++                         \
 )
 #else
 /**
@@ -1047,10 +1079,10 @@ for(                                                                            
  */
 #define PCB_Vec_enumerate(vec, i, it, enumPair, type)               \
 for(                                                                \
-    struct { size_t i; type* it; } enumPair = { 0, (vec)->data };   \
+    struct { size_t i; type *it; } enumPair = { 0, (vec)->data };   \
     enumPair.i < (vec)->length; enumPair.i++, enumPair.it++         \
 )
-#endif //>=C23?
+#endif //PCB_Typeof?
 #endif //PCB_Vec_enumerate
 
 //Section 1.6.3: Macros for C++ compatibility
