@@ -3877,54 +3877,57 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
 #ifdef PCB_HAS_VFORK
     child.handle = vfork();
 #else
-    struct shmid_ds d;
-    //checking what error has occured in the child is impossible with fork() without some IPC
-    int tmpRegionID = 1;
-    int* tmpRegion = (int*)-1;
-    tmpRegionID = shmget(IPC_PRIVATE, sizeof(errno), 0600 | IPC_CREAT);
-    if(tmpRegionID == -1) {
-        PCB_logLatestError("Failed to create a temporary shared memory segment");
+    //TODO: maybe the exit code is sufficient to pass error codes?
+    //checking what error has occured in the child is impossible with fork(2) without some IPC
+    int tmpPipe[2] = { -1, -1 };
+    ssize_t r = -1;
+    if(pipe(tmpPipe) < 0) {
+        PCB_logLatestError("Failed to create a temporary pipe");
         code = -errno; goto end;
     }
-    //this region will be automatically detached in the child if `exec` succeeds or it exits
-    tmpRegion = (int*)shmat(tmpRegionID, NULL, 0);
-    if(tmpRegion == (void*)-1) {
-        PCB_logLatestError("Failed to attach a temporary shared memory segment");
+    if(fcntl(tmpPipe[1], F_SETFD, FD_CLOEXEC) < 0) {
+        PCB_logLatestError("Failed to set the temporary pipe to 'close-on-exec'");
         code = -errno; goto end;
     }
-    *tmpRegion = 0; //not actually needed, but we're being paranoid
     child.handle = fork();
 #endif //PCB_HAS_VFORK?
     if(child.handle == -1) {
-        code = errno;
         PCB_logLatestError("Failed to create a child process");
+        code = -errno; goto end;
     }
     else if(child.handle == 0) {
+        close(tmpPipe[0]);
         execvp(command->data[0], (char* const*)command->data);
         code = errno;
 #ifdef PCB_HAS_VFORK
         PCB_logLatestError("Failed to execute shell command");
 #else
-        *tmpRegion = errno;
-        shmdt(tmpRegion);
+        write(tmpPipe[1], &code, sizeof(code));
+        close(tmpPipe[1]);
 #endif //PCB_HAS_VFORK?
         _exit(255);
     }
 #ifndef PCB_HAS_VFORK
-    for(;;) { //spin until child detaches the region
-        shmctl(tmpRegionID, IPC_STAT, &d);
-        if(d.shm_nattch == 1) break;
-    }
-    if(*tmpRegion != 0) {
-        code = -*tmpRegion;
-        errno = *tmpRegion;
-        PCB_logLatestError("Failed to execute shell command");
-    }
-    end:
-    if(tmpRegion != (void*)-1) shmdt(tmpRegion);
-    if(tmpRegionID != -1)      shmctl(tmpRegionID, IPC_RMID, NULL);
+    close(tmpPipe[1]); tmpPipe[1] = -1;
+repeat:
+    r = read(tmpPipe[0], &code, sizeof(code));
+    if(r < 0) {
+        if(errno == EINTR) goto repeat;
+        PCB_Unreachable; //at least it should be...
+    } else if(r > 0) {
+        errno = code;
+        code = -code;
+    } //0 means nothing was written and no error has occured
+#endif //PCB_HAS_VFORK
+end:
+#ifndef PCB_HAS_VFORK
+    if(tmpPipe[1] >= 0) close(tmpPipe[1]);
+    if(tmpPipe[0] >= 0) close(tmpPipe[0]);
 #endif //!PCB_HAS_VFORK?
-    if(code != 0) child.handle = -code;
+    if(code != 0) {
+        if(child.handle > 0) waitpid(child.handle, NULL, 0); //reap the child on error
+        child.handle = -code;
+    }
     if(!hadNullLast) --command->length;
     return child;
 #endif //platform-dependent way of running a shell command
