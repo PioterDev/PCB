@@ -215,8 +215,9 @@ extern "C" {
 //Section 1.2: Identify the compiler used to compile this code
 
 #ifndef PCB_COMPILER
-#if defined(__GNUC__) && !defined(__llvm__) && !defined(__INTEL_COMPILER)
-#define PCB_COMPILER_GCC 1
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+//https://gcc.gnu.org/onlinedocs/cpp/Common-Predefined-Macros.html
+#define PCB_COMPILER_GCC (__GNUC__*100*100 + __GNUC_MINOR__*100 + __GNUC_PATCHLEVEL__)
 #define PCB_COMPILER_CLANG 0
 #define PCB_COMPILER_MSVC 0
 #if PCB_PLATFORM_WINDOWS
@@ -245,7 +246,8 @@ extern "C" {
 #endif //platform
 #elif defined(__clang__)
 #define PCB_COMPILER_GCC 0
-#define PCB_COMPILER_CLANG 1
+//same schema as GCC
+#define PCB_COMPILER_CLANG (__clang_major__*100*100 + __clang_minor__*100 + __clang_patchlevel__)
 #define PCB_COMPILER_MSVC 0
 #define PCB_COMPILER "Clang"
 #ifdef __cplusplus
@@ -256,7 +258,8 @@ extern "C" {
 #elif defined(_MSC_VER) && !defined(__clang__)
 #define PCB_COMPILER_GCC 0
 #define PCB_COMPILER_CLANG 0
-#define PCB_COMPILER_MSVC 1
+//MSVC uses a different versioning scheme, https://learn.microsoft.com/en-us/cpp/overview/compiler-versions
+#define PCB_COMPILER_MSVC (_MSC_VER)
 #define PCB_COMPILER "MSVC"
 #define PCB_COMPILER_PATH "cl"
 #else
