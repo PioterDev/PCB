@@ -413,8 +413,8 @@ extern "C" {
 #endif //C++?
 #endif //PCB_NoReturn
 
-#ifndef PCB_ForceInline //TODO: assess whether the check below is correct
-#if (PCB_COMPILER_GCC && __GNUC__ >= 4) || PCB_COMPILER_CLANG
+#ifndef PCB_ForceInline
+#if (PCB_COMPILER_GCC >= 30101) || PCB_COMPILER_CLANG
 #define PCB_ForceInline inline __attribute__((always_inline))
 #elif PCB_COMPILER_MSVC
 #define PCB_ForceInline __forceinline
@@ -438,39 +438,44 @@ extern "C" {
 //Using C++'s constructor trickery we can construct
 //an empty object with a static lifetime, which means
 //running a function at startup.
-#define PCB_BeforeMain(f) static void f(); \
-struct __##f##__ { __##f##__() { f(); } }; static __##f##__ __##f##_; \
-static void f()
+#define PCB_BeforeMain(f) static void f(void); \
+struct f##__ { f##__() { f(); } }; static f##__ f##_; \
+static void f(void)
 #else //C
 #if PCB_COMPILER_MSVC
 //https://stackoverflow.com/questions/1113409/attribute-constructor-equivalent-in-vc
-#pragma section(".CRT$XCU",read)
-#define PCB_INITIALIZER_(f,p) static void f(); \
-__declspec(allocate(".CRT$XCU")) void (*f##_)() = f; \
+//https://github.com/nodejs/node/issues/41852
+#define PCB_INITIALIZER_(f,p) PCB_DO_PRAGMA(section(".CRT$XCU",read)) \
+static void f(void); \
+__declspec(allocate(".CRT$XCU")) void (*f##_)(void) = f; \
 __pragma(comment(linker,"/include:" p #f "_")) \
-static void f()
+static void f(void)
 #ifdef _WIN64
 #define PCB_BeforeMain(f) PCB_INITIALIZER_(f,"")
 #else
 #define PCB_BeforeMain(f) PCB_INITIALIZER_(f,"_")
 #endif
 #elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-#define PCB_BeforeMain(f) static void f() __attribute__((constructor))
+#define PCB_BeforeMain(f) static __attribute__((constructor)) void f(void)
 #else
 #define PCB_BeforeMain(f) \
 _Pragma("PCB Warning: function '" #f "' will not run before main because the compiler used does not support it") \
-static void f()
+static void f(void)
 #endif //Compilers
 #endif //C++?
 #endif //PCB_BeforeMain
 
 #ifndef PCB_Unreachable
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#if PCB_COMPILER_GCC >= 40500 || PCB_COMPILER_CLANG >= 30400
 #define PCB_Unreachable __builtin_unreachable()
 #elif PCB_COMPILER_MSVC
 #define PCB_Unreachable (__assume(false))
 #else
-#pragma "PCB Warning: PCB_Unreachable does not mark unreachability"
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#warning "PCB Warning: PCB_Unreachable does not mark unreachability"
+#elif PCB_COMPILER_MSVC
+#pragma message "PCB Warning: PCB_Unreachable does not mark unreachability"
+#endif //compilers
 #define PCB_Unreachable
 #endif //Compilers
 #endif //PCB_Unreachable
