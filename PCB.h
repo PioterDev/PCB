@@ -1887,7 +1887,9 @@ typedef enum {
  * otherwise logs to stdout
  */
 PCBAPI void PCBCALL PCB_log(
-    PCB_LogLevel level, const char* fmt, ...
+    PCB_LogLevel level,
+    const char* fmt,
+    ...
 ) PCB_Printf_Format(2, 3);
 
 #ifndef PCB_logTrace
@@ -1961,14 +1963,21 @@ PCBAPI void PCBCALL PCB_ClearError(void);
  * otherwise an error code according to the schema above is returned and
  * the previous error code is preserved.
  */
-PCBAPI int PCBCALL PCB_GetErrorString(int errnum, char* buf, size_t bufSize);
+PCBAPI int PCBCALL PCB_GetErrorString(
+    int errnum,
+    char* buf,
+    size_t bufSize
+);
 /**
  * @brief Log the latest error obtained from `PCB_GetError()` to stderr.
  * Otherwise functions similarly to `printf`.
  *
  * @param fmt `printf`-like format string
  */
-PCBAPI void PCBCALL PCB_logLatestError(const char* fmt, ...) PCB_Printf_Format(1, 2);
+PCBAPI void PCBCALL PCB_logLatestError(
+    const char* fmt,
+    ...
+) PCB_Printf_Format(1, 2);
 
 /**
  * @brief Creates a directory in the given `path`.
@@ -2009,7 +2018,10 @@ PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path);
 * @return `true` on success, `false` on error; to get the error
 * code call `PCB_GetError()`.
 */
-PCBAPI bool PCBCALL PCB_FS_ReadEntireFile(const char* path, PCB_String* buf);
+PCBAPI bool PCBCALL PCB_FS_ReadEntireFile(
+    const char* path,
+    PCB_String* buf
+);
 
 
 
@@ -2030,7 +2042,8 @@ PCBAPI void PCBCALL PCB_String_destroy(PCB_String* PCB_restrict str);
  * @return whether the operation succeeded: fails on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_reserve(
-    PCB_String* PCB_restrict str, const size_t howMany
+    PCB_String* PCB_restrict str,
+    const size_t howMany
 );
 /**
  * @brief Resizes `str` to fit a string of `targetLength` length.
@@ -2040,7 +2053,8 @@ PCBAPI bool PCBCALL PCB_String_reserve(
  * @return whether the operation succeeded: fails on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_resize(
-    PCB_String* PCB_restrict str, const size_t targetLength
+    PCB_String* PCB_restrict str,
+    const size_t targetLength
 );
 /**
  * @brief Appends `other` to `str`.
@@ -2049,7 +2063,10 @@ PCBAPI bool PCBCALL PCB_String_resize(
  * @return whether the operation succeeded:
  * fails on realloc failure or if `other == NULL`.
  */
-PCBAPI bool PCBCALL PCB_String_append(PCB_String* str, const PCB_String* other);
+PCBAPI bool PCBCALL PCB_String_append(
+    PCB_String* str,
+    const PCB_String* other
+);
 /**
  * @brief Appends `cstr` to `str`.
  *
@@ -2060,7 +2077,8 @@ PCBAPI bool PCBCALL PCB_String_append(PCB_String* str, const PCB_String* other);
  * fails on realloc failure or if `cstr == NULL` or the note above.
  */
 PCBAPI bool PCBCALL PCB_String_append_cstr(
-    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict cstr
+    PCB_String* PCB_restrict str,
+    const char* PCB_maybe_restrict cstr
 );
 /**
  * @brief Appends C-strings from `cstrs` to `str`.
@@ -2072,7 +2090,8 @@ PCBAPI bool PCBCALL PCB_String_append_cstr(
  * @return number of entries in `cstrs` appended, -1 on error.
  */
 PCBAPI ssize_t PCBCALL PCB_String_append_cstrs(
-    PCB_String* PCB_restrict str, PCB_CStringsView cstrs
+    PCB_String* PCB_restrict str,
+    PCB_CStringsView cstrs
 );
 /**
  * @brief Appends variable number of C-strings to `str`.
@@ -2083,7 +2102,8 @@ PCBAPI ssize_t PCBCALL PCB_String_append_cstrs(
  * @return number of C-strings appended, 0 on error.
  */
 PCBAPI ssize_t PCBCALL PCB_String_append_cstr_v(
-    PCB_String* PCB_restrict str, ...
+    PCB_String* PCB_restrict str,
+    ...
 );
 /**
  * @brief Appends `c` to `str` `howManyTimes` times.
@@ -2091,7 +2111,9 @@ PCBAPI ssize_t PCBCALL PCB_String_append_cstr_v(
  * @return whether the operation succeeded: can fail on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_append_chars(
-    PCB_String* PCB_restrict str, const char c, const size_t howManyTimes
+    PCB_String* PCB_restrict str,
+    const char c,
+    const size_t howManyTimes
 );
 /**
  * @brief Appends a `printf`-like formatted string to `str`.
@@ -2105,7 +2127,9 @@ PCBAPI bool PCBCALL PCB_String_append_chars(
  * @return whether the operation succeeded: can fail on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_appendf(
-    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt, ...
+    PCB_String* PCB_restrict str,
+    const char* PCB_maybe_restrict fmt,
+    ...
 ) PCB_Printf_Format(2, 3);
 /**
  * @brief Inserts `other` into `str` at position `position`.
@@ -2128,7 +2152,8 @@ PCBAPI bool PCBCALL PCB_String_insert(
  * invalid arguments passed or if realloc failed.
  */
 PCBAPI bool PCBCALL PCB_String_insert_cstr(
-    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict cstr,
+    PCB_String* PCB_restrict str,
+    const char* PCB_maybe_restrict cstr,
     size_t position
 );
 /**
@@ -2141,7 +2166,9 @@ PCBAPI bool PCBCALL PCB_String_insert_cstr(
  * @return number of entries in `cstrs` inserted, -1 on error.
  */
 PCBAPI ssize_t PCBCALL PCB_String_insert_cstrs(
-    PCB_String* PCB_restrict str, PCB_CStringsView cstrs, size_t position
+    PCB_String* PCB_restrict str,
+    PCB_CStringsView cstrs,
+    size_t position
 );
 /**
  * @brief Inserts variable number of C-strings into `str` at position `position`.
@@ -2152,7 +2179,9 @@ PCBAPI ssize_t PCBCALL PCB_String_insert_cstrs(
  * @return number of entries in `cstrs` inserted, -1 on error.
  */
 PCBAPI ssize_t PCBCALL PCB_String_insert_cstr_v(
-    PCB_String* PCB_restrict str, size_t position, ...
+    PCB_String* PCB_restrict str,
+    size_t position,
+    ...
 );
 /**
  * @brief Inserts `c` into `str` at position `position` `howManyTimes` times.
@@ -2161,8 +2190,10 @@ PCBAPI ssize_t PCBCALL PCB_String_insert_cstr_v(
  * fails on invalid arguments passed or if realloc failed.
  */
 PCBAPI bool PCBCALL PCB_String_insert_chars(
-    PCB_String* PCB_restrict str, const char c,
-    size_t howManyTimes, size_t position
+    PCB_String* PCB_restrict str,
+    const char c,
+    size_t howManyTimes,
+    size_t position
 );
 /**
  * @brief Inserts a `printf`-like formatted string into `str` at position `position`.
@@ -2177,15 +2208,19 @@ PCBAPI bool PCBCALL PCB_String_insert_chars(
  * fails on invalid arguments passed or if realloc failed.
  */
 PCBAPI bool PCBCALL PCB_String_insertf(
-    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt,
-    size_t position, ...
+    PCB_String* PCB_restrict str,
+    const char* PCB_maybe_restrict fmt,
+    size_t position,
+    ...
 ) PCB_Printf_Format(2, 4);
 /**
  * @brief Removes characters in the range `[start, start + length)`.
  * @return whether the operation succeded: can only fail on invalid range passed
  */
 PCBAPI bool PCBCALL PCB_String_remove_range(
-    PCB_String* PCB_restrict str, size_t start, size_t length
+    PCB_String* PCB_restrict str,
+    size_t start,
+    size_t length
 );
 /**
  * @brief Makes `c` the last character in `str`.
@@ -2194,7 +2229,8 @@ PCBAPI bool PCBCALL PCB_String_remove_range(
  * @return `false` if reallocation failed, `true` otherwise
  */
 PCBAPI bool PCBCALL PCB_String_setSuffix_char(
-    PCB_String* PCB_restrict str, const char c
+    PCB_String* PCB_restrict str,
+    const char c
 );
 /**
  * @brief Truncate `str` until `c` is found. If `c` is not found, `str` is *not*
@@ -2202,13 +2238,16 @@ PCBAPI bool PCBCALL PCB_String_setSuffix_char(
  * @return `true` if successfully truncated,`false` if `c` was not found
  */
 PCBAPI bool PCBCALL PCB_String_truncate_until_char(
-    PCB_String* PCB_restrict str, const char c
+    PCB_String* PCB_restrict str,
+    const char c
 );
 /**
  * @brief Clones `str`.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
-PCBAPI PCB_String PCBCALL PCB_String_clone(const PCB_String* PCB_restrict str);
+PCBAPI PCB_String PCBCALL PCB_String_clone(
+    const PCB_String* PCB_restrict str
+);
 /**
  * @brief Compares `a` and `b` lexicographically.
  * @return
@@ -2219,7 +2258,8 @@ PCBAPI PCB_String PCBCALL PCB_String_clone(const PCB_String* PCB_restrict str);
  * a positive value if `a` > `b` or `a` is invalid.
  */
 PCBAPI int PCBCALL PCB_String_compare(
-    const PCB_String* a, const PCB_String* b
+    const PCB_String* a,
+    const PCB_String* b
 );
 /**
  * @brief Compares `a` and `b`, case insensitive version*.
@@ -2229,14 +2269,16 @@ PCBAPI int PCBCALL PCB_String_compare(
  * Unicode
  */
 PCBAPI int PCBCALL PCB_String_compare_ci(
-    const PCB_String* a, const PCB_String* b
+    const PCB_String* a,
+    const PCB_String* b
 );
 /**
  * @brief Compares `a` and `b` lexicographically, version with a C string.
  * @return same as `PCB_String_compare`.
  */
 PCBAPI int PCBCALL PCB_String_compare_cstr(
-    const PCB_String* PCB_restrict a, const char* PCB_restrict b
+    const PCB_String* PCB_restrict a,
+    const char* PCB_restrict b
 );
 /**
  * @brief Compares `a` and `b`, case insensitive version* with a C string.
@@ -2246,7 +2288,8 @@ PCBAPI int PCBCALL PCB_String_compare_cstr(
  * Unicode
  */
 PCBAPI int PCBCALL PCB_String_compare_cstr_ci(
-    const PCB_String* PCB_restrict a, const char* PCB_restrict b
+    const PCB_String* PCB_restrict a,
+    const char* PCB_restrict b
 );
 /**
  * @brief Checks if `str` starts with `other`.
@@ -2254,7 +2297,8 @@ PCBAPI int PCBCALL PCB_String_compare_cstr_ci(
  * @return whether `str` starts with `other`
  */
 PCBAPI bool PCBCALL PCB_String_startsWith(
-    const PCB_String* str, const PCB_String* other
+    const PCB_String* str,
+    const PCB_String* other
 );
 /**
  * @brief Checks if `str` starts with `other`.
@@ -2262,7 +2306,8 @@ PCBAPI bool PCBCALL PCB_String_startsWith(
  * @return whether `str` starts with `other`
  */
 PCBAPI bool PCBCALL PCB_String_startsWith_cstr(
-    const PCB_String* PCB_restrict str, const char* PCB_restrict other
+    const PCB_String* PCB_restrict str,
+    const char* PCB_restrict other
 );
 /**
  * @brief Checks if `str` ends with `other`.
@@ -2270,7 +2315,8 @@ PCBAPI bool PCBCALL PCB_String_startsWith_cstr(
  * @return whether `str` ends with `other`
  */
 PCBAPI bool PCBCALL PCB_String_endsWith(
-    const PCB_String* str, const PCB_String* other
+    const PCB_String* str,
+    const PCB_String* other
 );
 /**
  * @brief Checks if `str` ends with `other`.
@@ -2278,7 +2324,8 @@ PCBAPI bool PCBCALL PCB_String_endsWith(
  * @return whether `str` ends with `other`
  */
 PCBAPI bool PCBCALL PCB_String_endsWith_cstr(
-    const PCB_String* PCB_restrict str, const char* PCB_restrict other
+    const PCB_String* PCB_restrict str,
+    const char* PCB_restrict other
 );
 #ifndef PCB_String_isEmpty
 #define PCB_String_isEmpty(str) ((str)->data == NULL || (str)->length == 0)
@@ -2288,32 +2335,42 @@ PCBAPI bool PCBCALL PCB_String_endsWith_cstr(
  *
  * Note: ignores Unicode.
  */
-PCBAPI void PCBCALL PCB_String_toUpperCase(PCB_String* PCB_restrict str);
+PCBAPI void PCBCALL PCB_String_toUpperCase(
+    PCB_String* PCB_restrict str
+);
 /**
  * @brief Converts `str` to lowercase.
  *
  * Note: ignores Unicode.
  */
-PCBAPI void PCBCALL PCB_String_toLowerCase(PCB_String* PCB_restrict str);
+PCBAPI void PCBCALL PCB_String_toLowerCase(
+    PCB_String* PCB_restrict str
+);
 /**
  * @brief Converts a clone of `str` to uppercase.
  *
  * Note: ignores Unicode.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
-PCBAPI PCB_String PCBCALL PCB_String_toUpperCase_copy(const PCB_String* str);
+PCBAPI PCB_String PCBCALL PCB_String_toUpperCase_copy(
+    const PCB_String* PCB_restrict str
+);
 /**
  * @brief Converts a clone of `str` to lowercase.
  *
  * Note: ignores Unicode.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
-PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(const PCB_String* PCB_restrict str);
+PCBAPI PCB_String PCBCALL PCB_String_toLowerCase_copy(
+    const PCB_String* PCB_restrict str
+);
 /**
  * @brief Pops the last character in `str`.
  * If `str` is empty, returns `\0` without modification.
  */
-PCBAPI char PCBCALL PCB_String_pop(PCB_String* PCB_restrict str);
+PCBAPI char PCBCALL PCB_String_pop(
+    PCB_String* PCB_restrict str
+);
 /**
  * @brief Pops `howMany` characters from `str` into `out`.
  * If `howMany > str->length`, `howMany` is clamped to `str->length`.
@@ -2325,14 +2382,17 @@ PCBAPI char PCBCALL PCB_String_pop(PCB_String* PCB_restrict str);
  * @return number of characters popped
  */
 PCBAPI size_t PCBCALL PCB_String_pop_many(
-    PCB_String* PCB_restrict str, size_t howMany, char* PCB_restrict out
+    PCB_String* PCB_restrict str,
+    size_t howMany,
+    char* PCB_restrict out
 );
 /**
  * @brief Removes `other->length` characters from `str` if they match.
  * @return new length, 0 on error
  */
 PCBAPI size_t PCBCALL PCB_String_removeSuffix(
-    PCB_String* str, const PCB_String* other
+    PCB_String* str,
+    const PCB_String* other
 );
 /**
  * @brief Creates a new `PCB_String` from `sv`.
@@ -2344,7 +2404,8 @@ PCBAPI PCB_String PCBCALL PCB_String_from_StringView(const PCB_StringView* sv);
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
 PCBAPI PCB_String PCBCALL PCB_String_from_CStrings(
-    const PCB_CStrings* cstrs, const char* delimiter
+    const PCB_CStrings* PCB_restrict cstrs,
+    const char* PCB_restrict delimiter
 );
 
 
@@ -2422,7 +2483,9 @@ PCBAPI int PCBCALL PCB_Processes_waitForAny(PCB_Processes* processes);
  * the caller must retry waiting on the rest.
  */
 PCBAPI int PCBCALL PCB_Processes_waitForRange(
-    PCB_Processes* processes, size_t start, size_t end
+    PCB_Processes* PCB_restrict processes,
+    size_t start,
+    size_t end
 );
 /**
  * @brief Waits for all processes in `processes` to exit.
@@ -2491,20 +2554,28 @@ PCBAPI void PCBCALL PCB_Arena_destroy(PCB_Arena* arena);
  * Otherwise it always returns NULL.
  */
 PCBAPI char* PCBCALL PCB_Arena_asprintf(
-    PCB_Arena* arena, const char* fmt, ...
+    PCB_Arena* arena,
+    const char* fmt, ...
 ) PCB_Printf_Format(2, 3);
 /**
  * @brief Duplicates `str` in `arena`.
  * @return pointer to the duplicated string or NULL if `str == NULL` or if
  * allocation failed.
  */
-PCBAPI char* PCBCALL PCB_Arena_strdup(PCB_Arena* arena, const char* str);
+PCBAPI char* PCBCALL PCB_Arena_strdup(
+    PCB_Arena* arena,
+    const char* str
+);
 /**
  * @brief Duplicates `str` in `arena`, copying at most `n` bytes.
  * @return pointer to the duplicated string or NULL if `str == NULL` or if
  * allocation failed.
  */
-PCBAPI char* PCBCALL PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n);
+PCBAPI char* PCBCALL PCB_Arena_strndup(
+    PCB_Arena* arena,
+    const char* str,
+    size_t n
+);
 
 
 /**
@@ -3069,6 +3140,7 @@ bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
     end:
     if(f != NULL) fclose(f);
     return success;
+}
 
 #endif //PCB_IMPLEMENTATION_FS
 
@@ -3078,6 +3150,7 @@ bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
 void PCB_String_destroy(PCB_String* PCB_restrict str) {
     PCB_CHECK_SELF(str,);
     PCB_Vec_destroy(str);
+}
 
 bool PCB_String_reserve(PCB_String* PCB_restrict str, const size_t howMany) {
     PCB_CHECK_SELF(str, false);
@@ -3112,7 +3185,10 @@ bool PCB_String_append(PCB_String* str, const PCB_String* other) {
     return true;
 }
 
-bool PCB_String_append_cstr(PCB_String* str, const char* cstr) {
+bool PCB_String_append_cstr(
+    PCB_String* PCB_restrict str,
+    const char* PCB_maybe_restrict cstr
+) {
     if(cstr == NULL) return false;
     size_t len = PCB_strlen(cstr);
     if(!PCB_String_reserve(str, len)) return false; //again, with '\0'
@@ -3589,7 +3665,10 @@ PCB_String PCB_String_from_StringView(const PCB_StringView* sv) {
     return s;
 }
 
-PCB_String PCB_String_from_CStrings(const PCB_CStrings* cstrs, const char* delimiter) {
+PCB_String PCB_String_from_CStrings(
+    const PCB_CStrings* PCB_restrict cstrs,
+    const char* PCB_restrict delimiter
+) {
     if(cstrs == NULL || cstrs->data == NULL || cstrs->length == 0 || delimiter == NULL)
         return PCB_ZEROED_T(PCB_String);
     size_t totalLength = 0;
@@ -3748,7 +3827,11 @@ int PCB_Processes_waitForAny(PCB_Processes* processes) {
 }
 
 //TODO: untested
-int PCB_Processes_waitForRange(PCB_Processes* processes, size_t start, size_t end) {
+int PCB_Processes_waitForRange(
+    PCB_Processes* PCB_restrict processes,
+    size_t start,
+    size_t end
+) {
     if(processes == NULL) {
 #if PCB_PLATFORM_WINDOWS
         SetLastError(0);
