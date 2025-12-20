@@ -26,11 +26,11 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 4
+#define PCB_VERSION_MINOR 5
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 13
+#define PCB_VERSION_PATCH 0
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION
@@ -150,6 +150,7 @@ extern "C" {
 #define PCB_PLATFORM_BSD 0
 #define PCB_PLATFORM_MACOS 0
 #define PCB_PLATFORM_IOS 0
+#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "Windows"
 #elif defined(__linux__)
 #define PCB_PLATFORM_WINDOWS 0
@@ -157,6 +158,7 @@ extern "C" {
 #define PCB_PLATFORM_BSD 0
 #define PCB_PLATFORM_MACOS 0
 #define PCB_PLATFORM_IOS 0
+#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "Linux"
 #elif defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -164,21 +166,33 @@ extern "C" {
 #define PCB_PLATFORM_WINDOWS 0
 #define PCB_PLATFORM_LINUX 0
 #define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM_MACOS 0
 #define PCB_PLATFORM_IOS 1
+#define PCB_PLATFORM_MACOS 0
+#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "iOS"
 #elif TARGET_OS_MAC
 #define PCB_PLATFORM_WINDOWS 0
 #define PCB_PLATFORM_LINUX 0
 #define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM_MACOS 1
 #define PCB_PLATFORM_IOS 0
+#define PCB_PLATFORM_MACOS 1
+#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "Mac OS"
 #else
 #error PCB Error: Unsupported Apple platform
 #endif //Apple platforms
+#elif defined(__wasm__)
+#define PCB_PLATFORM_WINDOWS 0
+#define PCB_PLATFORM_LINUX 0
+#define PCB_PLATFORM_BSD 0
+#define PCB_PLATFORM_IOS 0
+#define PCB_PLATFORM_MACOS 0
+#define PCB_PLATFORM_WASM 1
+#define PCB_PLATFORM "WebAssembly"
+#error PCB Error: WebAssembly target is currently not supported
 #else
 #error PCB Error: Unsupported platform
+#define PCB_PLATFORM "Unknown"
 #endif //platform
 #endif //PCB_PLATFORM
 
@@ -527,39 +541,72 @@ static void f(void)
 #endif //C++ && __cpp_decltype || C
 #endif //PCB_Typeof
 
+#ifndef PCB_HAS_INCLUDE
+#if (PCB_COMPILER_GCC >= 50000) || \
+    (PCB_COMPILER_CLANG >= 30100) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L) || \
+    (defined(__cplusplus) && __cplusplus+0 >= 201703L)
+#define PCB_HAS_INCLUDE __has_include
+#else
+#define PCB_HAS_INCLUDE 1 //assume that #include is available
+#endif //whether __has_include is available
+#endif //PCB_HAS_INCLUDE
 
 
 
 //Section 1.4: Import libc, unless this macro is defined as 0
-#ifndef PCB_USE_CSTDLIB
-#define PCB_USE_CSTDLIB 1
-#endif //PCB_USE_CSTDLIB
+#ifndef PCB_USE_LIBC
+#define PCB_USE_LIBC 1
+#endif //PCB_USE_LIBC
 
-#if defined(PCB_USE_CSTDLIB) && PCB_USE_CSTDLIB
+//TODO: only #include things that are actually required
+#if defined(PCB_USE_LIBC) && PCB_USE_LIBC+0
 //for "_s" functions
 #ifndef __STDC_WANT_LIB_EXT1__
 #define __STDC_WANT_LIB_EXT1__ 1
 #endif //__STDC_WANT_LIB_EXT1__
 
 #ifndef PCB_HAS_STDIO_H
+#if PCB_HAS_INCLUDE(<stdio.h>)
 #include <stdio.h>
 #define PCB_HAS_STDIO_H
+#endif //has stdio.h
 #endif //PCB_HAS_STDIO_H
 
 #ifndef PCB_HAS_STDLIB_H
+#if PCB_HAS_INCLUDE(<stdlib.h>)
 #include <stdlib.h>
 #define PCB_HAS_STDLIB_H
+#endif //has stdlib.h
 #endif //PCB_HAS_STDLIB_H
 
 #ifndef PCB_HAS_ASSERT_H
+#if PCB_HAS_INCLUDE(<assert.h>)
 #include <assert.h>
 #define PCB_HAS_ASSERT_H
+#endif //has assert.h
 #endif //PCB_HAS_ASSERT_H
 
 #ifndef PCB_HAS_STRING_H
+#if PCB_HAS_INCLUDE(<string.h>)
 #include <string.h>
+#define PCB__HAS_STRING_H
+#endif //has string.h
+#if PCB_HAS_INCLUDE(<strings.h>)
+#define PCB__HAS_STRINGS_H
 #include <strings.h>
+#endif //has strings.h
+#if PCB_HAS_INCLUDE(<wchar.h>)
+#include <wchar.h>
+#define PCB__HAS_WCHAR_H
+#endif //has wchar.h
+
+#if defined(PCB__HAS_STRING_H)  && \
+    defined(PCB__HAS_STRINGS_H) && \
+    defined(PCB__HAS_STRING_H)
 #define PCB_HAS_STRING_H
+#endif
+
 #endif //PCB_HAS_STRING_H
 
 #include <stdarg.h>
@@ -567,11 +614,31 @@ static void f(void)
 #include <stdint.h>
 #include <stddef.h>
 //A useful command to list errno info: errno -l | sort -k2 -n
+#if PCB_HAS_INCLUDE(<errno.h>)
 #include <errno.h>
+#define PCB_HAS_ERRNO_H
+#else
+#ifndef errno
+PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_stub;
+#define errno errno_stub
+#endif //errno stub
+#endif //has errno.h
+#if PCB_HAS_INCLUDE(<inttypes.h>)
+#include <inttypes.h>
+#define PCB_HAS_INTTYPES_H
+#endif //has inttypes.h
+#if PCB_HAS_INCLUDE(<ctype.h>)
+#include <ctype.h>
+#define PCB_HAS_CTYPE_H
+#endif //has ctype.h
+#if PCB_HAS_INCLUDE(<time.h>)
 #include <time.h>
+#define PCB_HAS_TIME_H
+#endif //has time.h
 #else
 //fallback for no booleans
-#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ < 202311L && !defined(bool)
+#if !defined(__cplusplus) && defined(__STDC_VERSION__) && \
+    __STDC_VERSION__+0 < 202311L && !defined(bool)
 #ifndef PCB_BOOL_LOCALLY_DEFINED
 #define PCB_BOOL_LOCALLY_DEFINED
 #define bool _Bool
@@ -584,9 +651,9 @@ static void f(void)
 #endif //PCB_BOOL_LOCALLY_DEFINED
 #endif //bool
 
-#endif //PCB_USE_CSTDLIB?
+#endif //PCB_USE_LIBC?
 
-//Section 1.5: Define functions/macros that PCB uses from the standard library
+//Section 1.5: Define functions/macros that the library uses from libc.
 #ifndef PCB_realloc
 #ifdef PCB_HAS_STDLIB_H
 #define PCB_realloc realloc
@@ -641,6 +708,12 @@ static void f(void)
 #endif //PCB_HAS_STRING_H
 #endif //PCB_strncmp
 
+#ifndef PCB_strncasecmp
+#ifdef PCB__HAS_STRINGS_H
+#define PCB_strncasecmp strncasecmp
+#endif //PCB__HAS_STRINGS_H
+#endif //PCB_strncasecmp
+
 #ifndef PCB_strlen
 #ifdef PCB_HAS_STRING_H
 #define PCB_strlen strlen
@@ -662,11 +735,18 @@ static void f(void)
 #endif //glibc
 #endif //PCB_HAS_STRING_H
 #endif //PCB_strnlen
-//TODO: strpbrk, strncasecmp
+//TODO: strpbrk
 
+#ifndef PCB_isspace
+#ifdef PCB_HAS_CTYPE_H
+#define PCB_isspace isspace
+#endif //PCB_HAS_CTYPE_H
+#endif //PCB_isspace
 
+#ifdef PCB_HAS_STDIO_H
 //MSVC, again being an outlier, doesn't natively support positional argument
 //syntax. Therefore we need to #define macros specifically for it...smh.
+//https://learn.microsoft.com/en-us/cpp/c-runtime-library/printf-p-positional-parameters
 //PCB_printf is not used by the library, but is provided anyway since
 //`printf` is the most widely used function from the printf family.
 #ifndef PCB_printf
@@ -712,14 +792,75 @@ static void f(void)
 #endif //MSVC scheiße
 #endif //PCB_vsnprintf
 
+//wchar_t variants
+#ifndef PCB_wprintf
+#if PCB_COMPILER_MSVC
+#define PCB_wprintf _wprintf_p
+#else
+#define PCB_wprintf wprintf
+#endif //MSVC scheiße
+#endif //PCB_wprintf
 
+#ifndef PCB_fwprintf
+#if PCB_COMPILER_MSVC
+#define PCB_fwprintf _fwprintf_p
+#else
+#define PCB_fwprintf fwprintf
+#endif //MSVC scheiße
+#endif //PCB_fwprintf
+
+#ifndef PCB_vfwprintf
+#if PCB_COMPILER_MSVC
+#define PCB_vfwprintf _vfwprintf_p
+#else
+#define PCB_vfwprintf vfwprintf
+#endif //MSVC scheiße
+#endif //PCB_vfwprintf
+
+//This one is even weirder than `snprintf`. There is no `snwprintf`/`swprintf`
+//pair, only `swprintf` that functions like `snprintf`.
+#ifndef PCB_swprintf
+#if PCB_COMPILER_MSVC
+#define PCB_swprintf _swprintf_p
+#else
+#define PCB_swprintf swprintf
+#endif //MSVC scheiße
+#endif //PCB_swprintf
+
+#ifndef PCB_vswprintf
+#if PCB_COMPILER_MSVC
+//Another weird one.
+#define PCB_vswprintf _vswprintf_p
+#else
+#define PCB_vswprintf vswprintf
+#endif //MSVC scheiße
+#endif //PCB_vswprintf
+
+#ifndef PCB_fflush
+#define PCB_fflush fflush
+#endif //PCB_fflush
+
+#ifndef PCB_stdout
+#define PCB_stdout stdout
+#endif //PCB_stdout
+
+#ifndef PCB_stderr
+#define PCB_stderr stderr
+#endif //PCB_stderr
+
+
+#endif //PCB_HAS_STDIO_H
+
+//TODO: somehow provide assertions in environments without libc
 #ifndef PCB_assert
 #ifdef PCB_HAS_ASSERT_H
 #define PCB_assert(expr) assert(expr)
+#define PCB__ASSERT_HANDLED
 #else
-#pragma "PCB Warning: PCB_assert(expr) ignores expr at runtime"
-#define PCB_assert(expr) ((void)(expr))
-#endif //PCB_HAS_ASSERT_H
+#define PCB_assert(expr) ((expr) ? (void)0 : PCB__assert_fail(#expr, __FILE__, __LINE__, __func__))
+#endif //sources of assert
+#else
+#define PCB__ASSERT_HANDLED //assume available
 #endif //PCB_assert
 
 //Section 1.6: Define other useful macros
@@ -751,7 +892,7 @@ static void f(void)
 #ifndef PCB__STRINGIFY
 //Turn `x` preprocessor token into a string literal (helper).
 #define PCB__STRINGIFY(x) #x
-#endif //PCB_STR
+#endif //PCB__STRINGIFY
 
 #ifndef PCB_STRINGIFY
 //Turn `x` preprocessor token into a string literal.
@@ -1474,7 +1615,8 @@ for(                                                        \
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <dirent.h>
-#include <errno.h>
+#include <spawn.h>
+#include <signal.h>
 #endif //platform-specific APIs
 
 
@@ -1663,6 +1805,8 @@ typedef struct {
 #elif PCB_PLATFORM_POSIX
     pid_t handle;
     int status;
+#else
+    int handle; //stub
 #endif //platform-dependent handles to processes
 } PCB_Process;
 
@@ -1675,6 +1819,8 @@ typedef struct {
  * See https://pubs.opengroup.org/onlinepubs/9699919799/.
  */
 #define PCB_PROCESS_INVALID_HANDLE -1
+#else
+#define PCB_PROCESS_INVALID_HANDLE 0 //stub
 #endif //platform
 #endif //PCB_PROCESS_INVALID_HANDLE
 
@@ -2653,6 +2799,60 @@ PCBAPI int PCBCALL PCB_BuildContext_init(PCB_BuildContext* context, int flags);
 PCBAPI PCB_BuildContext PCBCALL PCB_BuildContext_create(int flags);
 PCBAPI int PCBCALL PCB_build_fromContext(PCB_BuildContext* context);
 
+
+
+/* --------------------------------------------------------------- */
+/*--------------------  libc fallbacks  ---------------------------*/
+/* --------------------------------------------------------------- */
+
+#ifndef PCB_memcpy
+PCBAPI void* PCBCALL PCB_memcpy(
+    void* PCB_restrict dest, const void* PCB_restrict src, size_t n
+);
+#endif //PCB_memcpy unavailable externally
+
+#ifndef PCB_memmove
+PCBAPI void* PCBCALL PCB_memmove(void* dest, const void* src, size_t n);
+#endif //PCB_memmove unavailable externally
+
+#ifndef PCB_memset
+PCBAPI void* PCBCALL PCB_memset(void* dest, int v, size_t n);
+#endif //PCB_memset unavailable externally
+
+#ifndef PCB_memcmp
+PCBAPI int PCBCALL PCB_memcmp(const void* p1, const void* p2, size_t n);
+#endif //PCB_memcmp
+
+#ifndef PCB_strcmp
+PCBAPI int PCBCALL PCB_strcmp(const char *s1, const char *s2);
+#endif //PCB_strcmp
+
+#ifndef PCB_strncmp
+PCBAPI int PCBCALL PCB_strncmp(const char *s1, const char *s2, size_t n);
+#endif //PCB_strncmp
+
+#ifndef PCB_strncasecmp
+PCBAPI int PCBCALL PCB_strncasecmp(const char *s1, const char *s2, size_t n);
+#endif //PCB_strncasecmp
+
+#ifndef PCB_strlen
+PCBAPI size_t PCBCALL PCB_strlen(const char *s);
+#endif //PCB_strlen
+
+#ifndef PCB_strnlen
+PCBAPI size_t PCBCALL PCB_strnlen(const char *s, size_t n);
+#endif //PCB_strnlen
+
+#ifndef PCB_isspace
+PCBAPI int PCBCALL PCB_isspace(int ch);
+#endif //PCB_isspace
+
+#if !defined(PCB__ASSERT_HANDLED)
+PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
+    const char* exprStr, const char* file, unsigned int line, const char* func
+);
+#endif //PCB_HAS_ASSERT_H
+
 #endif //PCB_NO_DECLARATIONS
 
 #ifdef PCB_IMPLEMENTATION
@@ -2703,6 +2903,9 @@ PCBAPI int PCBCALL PCB_build_fromContext(PCB_BuildContext* context);
 #define PCB__logDebug(...)
 #endif //PCB_DEBUG_SELF
 
+#ifndef PCB_HAS_ERRNO_H
+int errno_stub = 11;
+#endif //PCB_HAS_ERRNO_H
 #ifndef PCB_strcmp
 int PCB_strcmp(const char* s1, const char* s2) {
     const unsigned char* x1 = (const unsigned char*)s1;
@@ -2723,6 +2926,22 @@ int PCB_strncmp(const char* s1, const char* s2, size_t n) {
 #define PCB_strncmp PCB_strncmp
 #endif //PCB_strncmp
 
+#ifndef PCB_strncasecmp
+static int PCB_toupper(int ch) { return (ch >= 'a' && ch <= 'a') ? ch - 'a' - 'A' : ch; }
+static int PCB_tolower(int ch) { return (ch >= 'A' && ch <= 'Z') ? ch + 'a' - 'A' : ch; }
+
+//https://stackoverflow.com/questions/7299119/source-code-for-strncasecmp-function
+int PCB_strncasecmp(const char* s1, const char* s2, size_t n) {
+    if(n == 0) return 0;
+    const unsigned char* x1 = (const unsigned char*)s1;
+    const unsigned char* x2 = (const unsigned char*)s2;
+    while(n > 0 && PCB_tolower(*x1) == PCB_tolower(x2)) { ++x1; ++x2; --n; }
+    unsigned char c1 = PCB_tolower(*x1), c2 = PCB_tolower(*x2);
+    return n == 0 ? 0 : ((c1 > c2) - (c1 < c2));
+}
+#define PCB_strncasecmp PCB_strncasecmp
+#endif //PCB_strncasecmp
+
 #ifndef PCB_strlen
 size_t PCB_strlen(const char* s) {
     const char* cursor = s; while(*cursor++);
@@ -2741,9 +2960,9 @@ size_t PCB_strnlen(const char* s, size_t n) {
 #endif //PCB_strnlen
 
 #ifndef PCB_memcpy
-void* PCB_memcpy(void* restrict dest, const void* src, size_t n) {
-    char* restrict d = (char*)dest;
-    const char* restrict s = (const char*)src;
+void* PCB_memcpy(void* PCB_restrict dest, const void* PCB_restrict src, size_t n) {
+    char* d = (char*)dest;
+    const char* s = (const char*)src;
     while(n > 0) *d++ = *s++, --n;
     return dest;
 }
@@ -2783,8 +3002,59 @@ int PCB_memcmp(const void* p1, const void* p2, size_t n) {
 #define PCB_memcmp PCB_memcmp
 #endif //PCB_memcmp
 
+#ifndef PCB_isspace
+int PCB_isspace(int ch) {
+    switch(ch) {
+        case ' ' : case '\t': case '\n':
+        case '\r': case '\v': case '\f':
+            return 1;
+    } return 0;
+}
+#define PCB_isspace PCB_isspace
+#endif //PCB_isspace
+
+#if !defined(PCB__ASSERT_HANDLED)
+void PCB__assert_fail(
+    const char* exprStr, const char* file, unsigned int line, const char* func
+) {
+#if defined(PCB_HAS_STDIO_H) && defined(PCB_HAS_STDLIB_H)
+    fprintf(stderr, "%s:%d:%s: assertion \"%s\" failed.", file, line, func, exprStr);
+    abort();
+#else
+    (void)exprStr; (void)file; (void)line; (void)func;
+#error "PCB Error: Assertions cannot be provided or are not implemented for the current platform."
+}
+#endif //sources of assertions
+#endif //PCB_HAS_ASSERT_H
 #endif //PCB_IMPLEMENTATION
 
+
+#if defined(PCB_IMPLEMENTATION_LOG) || defined(PCB_IMPLEMENTATION_ERR)
+#ifndef PCB_fprintf
+#error "PCB Error: PCB requires PCB_fprintf defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#define PCB_fprintf(stream, fmt, ...) //stub
+#endif //PCB_fprintf
+#ifndef PCB_vfprintf
+#define PCB_vfprintf(stream, fmt, args) //stub
+#error "PCB Error: PCB requires PCB_vfprintf defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#endif //PCB_vfprintf
+
+#ifndef PCB_stdout
+#define PCB_stdout 0 //stub
+#error "PCB Error: PCB requires PCB_stdout, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#endif //PCB_stdout
+#ifndef PCB_stderr
+#define PCB_stderr 0 //stub
+#error "PCB Error: PCB requires PCB_stderr, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#endif //PCB_stderr
+#endif //PCB_IMPLEMENTATION_LOG, PCB_IMPLEMENTATION_ERR
+
+#if defined(PCB_IMPLEMENTATION_LOG)
+#ifndef PCB_fflush
+#define PCB_fflush(stream) //stub
+#error "PCB Error: PCB requires PCB_fflush, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#endif //PCB_fflush
+#endif //PCB_IMPLEMENTATION_LOG
 
 //Section 2.1: Logging, messages, error handling
 #ifdef PCB_IMPLEMENTATION_LOG
@@ -2900,6 +3170,8 @@ int PCB_GetError(void) {
     else return -errno;
 #elif PCB_PLATFORM_POSIX
     return -errno;
+#else
+    return 0; //stub
 #endif //platform
 }
 
