@@ -1764,6 +1764,18 @@ typedef struct {
 } PCB_CStringPair;
 
 typedef struct {
+    PCB_String* data;
+    size_t length;
+    size_t capacity;
+} PCB_Strings;
+
+typedef struct {
+    PCB_StringView* data;
+    size_t length;
+    size_t capacity;
+} PCB_StringViews;
+
+typedef struct {
     const char** data;
     size_t length;
     size_t capacity;
