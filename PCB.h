@@ -2948,6 +2948,26 @@ PCBAPI void* PCBCALL PCB_Arena_aligned_alloc(
     size_t alignment
 );
 /**
+ * @brief Allocates the entire contiguous memory block left unallocated in `arena`.
+ * If `arena` has a next node, that node is not considered for allocation.
+ *
+ * A pointer to the allocated memory is stored in `*ptr`
+ * and the number of bytes allocated is stored in `*size`.
+ * If there is no space left, `*ptr` is set to NULL and `*size` is set to 0.
+ *
+ * If `ptr == NULL`, memory is not allocated and `*size` is set to the number
+ * of bytes that _would_ be allocated, i.e. queries `arena` for how much space
+ * is left inside it.
+ *
+ * @return false if `arena == NULL || size == NULL` (subject to `PCB_SAFETY_CHECKS`),
+ * true otherwise.
+ */
+PCBAPI bool PCBCALL PCB_Arena_alloc_whole(
+    PCB_Arena* arena,
+    void** ptr,
+    size_t* size
+);
+/**
  * @brief Resets `arena` as if nothing was allocated.
  */
 PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena);
@@ -5137,6 +5157,23 @@ void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
 
     a->length += (size + pad) / sizeof(void*);
     return (void*)((char*)data + pad);
+}
+
+bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
+    PCB_CHECK_SELF(arena, false);
+    if(size == NULL) return false;
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    *size = (a->capacity - a->length) * sizeof(void*);
+    if(ptr != NULL) {
+        if(*size > 0) {
+            *ptr = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
+            a->length = a->capacity;
+        }
+        else {
+            *ptr = NULL;
+        }
+    }
+    return true;
 }
 
 void PCB_Arena_reset(PCB_Arena* arena) {
