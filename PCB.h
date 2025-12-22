@@ -2925,6 +2925,29 @@ PCBAPI PCB_Arena* PCBCALL PCB_Arena_init_in(void* mem, size_t memsize);
  */
 PCBAPI void* PCBCALL PCB_Arena_alloc(PCB_Arena* arena, size_t size);
 /**
+ * @brief Allocates `size` bytes in `arena` with at least `alignment` alignment.
+ *
+ * The actual number of bytes allocated will be rounded up to `sizeof(void*)`.
+ *
+ * `alignment` MUST be a power of 2 and a multiple of `sizeof(void*)`.
+ *
+ * @return a valid pointer to the allocated buffer aligned to
+ * `min(sizeof(void*), alignment)` or NULL if any of the following occurs:
+ *
+ * - `size == 0 || alignment == 0`,
+ *
+ * -`size` is not a multiple of `alignment`,
+ *
+ * - `alignment` is invalid,
+ *
+ * - allocation failed.
+ */
+PCBAPI void* PCBCALL PCB_Arena_aligned_alloc(
+    PCB_Arena* arena,
+    size_t size,
+    size_t alignment
+);
+/**
  * @brief Resets `arena` as if nothing was allocated.
  */
 PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena);
@@ -5083,6 +5106,37 @@ void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
     void* data = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
     a->length += size / sizeof(void*);
     return data;
+}
+
+void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
+    PCB_CHECK_SELF(arena, NULL);
+    if(alignment == 0) return NULL;
+    const bool pow2 = (alignment & (alignment - 1)) == 0;
+    if(!pow2) return NULL;
+    if(alignment % sizeof(void*) != 0) return NULL;
+    if(size % alignment != 0) return NULL;
+    size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+    if(size == 0) return NULL;
+
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    void* data; size_t pad;
+    try_alloc:
+    data = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
+    pad  = alignment - (uintptr_t)data % alignment;
+    if(a->length + ((size + pad) / sizeof(void*)) > a->capacity) {
+        if(a->next != NULL)  {
+            a = (PCB_Arena_Prefix*)a->next;
+            goto try_alloc;
+        }
+        size_t capacity = a->capacity;
+        while(capacity < size) capacity *= 2;
+        a->next = PCB_Arena_init(capacity);
+        if(a->next == NULL) return NULL;
+        a = (PCB_Arena_Prefix*)a->next;
+    }
+
+    a->length += (size + pad) / sizeof(void*);
+    return (void*)((char*)data + pad);
 }
 
 void PCB_Arena_reset(PCB_Arena* arena) {
