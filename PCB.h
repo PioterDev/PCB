@@ -2968,6 +2968,11 @@ PCBAPI bool PCBCALL PCB_Arena_alloc_whole(
     size_t* size
 );
 /**
+ * @brief Returns a pointer to the next arena in the internal linked list
+ * or NULL if `arena == NULL` or `arena` doesn't have a next node.
+ */
+PCBAPI PCB_Arena* PCBCALL PCB_Arena_next(PCB_Arena* arena);
+/**
  * @brief Resets `arena` as if nothing was allocated.
  */
 PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena);
@@ -5174,6 +5179,12 @@ bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
         }
     }
     return true;
+}
+
+PCB_Arena* PCB_Arena_next(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, NULL);
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    return a->next;
 }
 
 void PCB_Arena_reset(PCB_Arena* arena) {
