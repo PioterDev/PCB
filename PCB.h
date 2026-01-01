@@ -26,11 +26,11 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 5
+#define PCB_VERSION_MINOR 6
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 0
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -140,7 +140,7 @@ extern "C" {
 
 
 //Section 1: The preprocessor shenanigans
-//Section 1.1: Identify the target operating system
+//Section 1.1: Identify the target platform
 
 //https://sourceforge.net/p/predef/wiki/OperatingSystems/
 #ifndef PCB_PLATFORM
@@ -226,6 +226,8 @@ extern "C" {
 #endif //Use _GNU_SOURCE on Linux
 #endif //POSIX sources used locally
 
+
+
 //Section 1.2: Identify the compiler used to compile this code
 
 #ifndef PCB_COMPILER
@@ -283,7 +285,207 @@ extern "C" {
 
 
 
-//Section 1.3: Define useful, but often compiler-specific macros
+//Section 1.3: Identify the target architecture
+
+#ifndef PCB_ARCH
+//https://stackoverflow.com/questions/152016/detecting-cpu-architecture-compile-time
+//https://sourceforge.net/p/predef/wiki/Architectures/
+#if PCB_COMPILER_MSVC
+//https://learn.microsoft.com/en-us/cpp/preprocessor/predefined-macros
+#if defined(_M_X64) || defined(_M_AMD64)
+#define PCB_ARCH_x86_64 1
+#define PCB_ARCH_x64 1
+#define PCB_ARCH "x64"
+#elif defined(_M_IX86)
+#define PCB_ARCH_i386 1
+#define PCB_ARCH_x86 1
+#define PCB_ARCH "x86"
+#elif defined(_M_ARM64)
+#define PCB_ARCH_AArch64 1
+#define PCB_ARCH_ARM64 1
+#define PCB_ARCH "ARM64"
+#elif defined(_M_ARM)
+#define PCB_ARCH_ARM _M_ARM
+#define PCB_ARCH "ARMv?"
+#elif defined(_M_ALPHA)
+#define PCB_ARCH_Alpha 1
+#define PCB_ARCH "Alpha"
+#elif defined(_M_PPC)
+#define PCB_ARCH_PowerPC 1
+#define PCB_ARCH "PowerPC"
+#endif //architectures
+#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#if defined(__x86_64__) || defined(__x86_64) || \
+    defined(__amd64__)  || defined(__amd64)
+#define PCB_ARCH_x86_64 1
+#define PCB_ARCH_x64 1
+#define PCB_ARCH "x86_64"
+#elif defined(i386) || defined(__i386) || defined(__i386__)
+#define PCB_ARCH_i386 1
+#define PCB_ARCH_x86 1
+#define PCB_ARCH "i386"
+#elif defined(__aarch64__)
+#define PCB_ARCH_AArch64 1
+#define PCB_ARCH_ARM64 1
+#define PCB_ARCH "AArch64"
+#elif defined(__arm__)
+#if defined(__ARM_ARCH_2__)
+#define PCB_ARCH_ARM 2
+#define PCB_ARCH_ARMv2 1
+#define PCB_ARCH "ARMv2"
+#elif defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__)
+#define PCB_ARCH_ARM 3
+#define PCB_ARCH_ARMv3 1
+#define PCB_ARCH "ARMv3"
+#elif defined(__ARM_ARCH_4T__) || defined(__TARGET_ARM_4T)
+#define PCB_ARCH_ARM 4
+#define PCB_ARCH_ARMv4T 1
+#define PCB_ARCH "ARMv4T"
+#elif defined(__ARM_ARCH_5_) || defined(__ARM_ARCH_5E_)
+#define PCB_ARCH_ARM 5
+#define PCB_ARCH_ARMv5 1
+#define PCB_ARCH "ARMv5"
+#elif defined(__ARM_ARCH_5T__) || defined(__ARM_ARCH_5TE__) ||
+      defined(__ARM_ARCH_5TEJ__)
+#define PCB_ARCH_ARM 5
+#define PCB_ARCH_ARMv5T 1
+#define PCB_ARCH "ARMv5T"
+#elif defined(__ARM_ARCH_6T2__)
+#define PCB_ARCH_ARM 6
+#define PCB_ARCH_ARMv6T2 1
+#define PCB_ARCH "ARMv6T2"
+#elif defined(__ARM_ARCH_6__)  || defined(__ARM_ARCH_6J__) || \
+      defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) || \
+      defined(__ARM_ARCH_6ZK__)
+#define PCB_ARCH_ARM 6
+#define PCB_ARCH_ARMv6 1
+#define PCB_ARCH "ARMv6"
+#elif defined(__ARM_ARCH_7__)  || defined(__ARM_ARCH_7A__) || \
+      defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || \
+      defined(__ARM_ARCH_7S__)
+#define PCB_ARCH_ARM 7
+#if defined(__ARM_ARCH_7A__)
+#define PCB_ARCH_ARMv7A 1
+#define PCB_ARCH "ARMv7A"
+#elif defined(__ARM_ARCH_7R__)
+#define PCB_ARCH_ARMv7R 1
+#define PCB_ARCH "ARMv7R"
+#elif defined(__ARM_ARCH_7M__)
+#define PCB_ARCH_ARMv7M 1
+#define PCB_ARCH "ARMv7M"
+#elif defined(__ARM_ARCH_7S__)
+#define PCB_ARCH_ARMv7S 1
+#define PCB_ARCH "ARMv7S"
+#endif //ARMv7
+#endif //different ARM ISAs
+#elif defined(__alpha__)
+//TODO: Versions
+#define PCB_ARCH_Alpha 1
+#define PCB_ARCH "Alpha"
+#elif defined(__m68k__)
+//TODO: Versions
+#define PCB_ARCH_M68k 1
+#define PCB_ARCH "Motorola 68k"
+#elif defined(__mips__) || defined(mips)
+//TODO: Versions
+#define PCB_ARCH_MIPS 1
+#define PCB_ARCH "MIPS"
+//What in bloody hell is this?! Are you OK, GNU people?
+#elif defined(__powerpc)   || defined(__powerpc__) || defined(__powerpc64__) || \
+      defined(__POWERPC__) || defined(__ppc__)     || defined(__ppc64__) || \
+      defined(__PPC__)     || defined(__PPC64__)   || \
+      defined(_ARCH_PPC)   || defined(_ARCH_PPC64)
+//TODO: Versions
+#define PCB_ARCH_PowerPC 1
+#define PCB_ARCH "PowerPC"
+#elif defined(__sparc__)
+//TODO: Versions
+#define PCB_ARCH_SPARC 1
+#define PCB_ARCH "SPARC"
+#endif //architectures
+#else //TODO: other compilers
+#endif //compiler
+
+#ifndef PCB_ARCH_x86_64
+#define PCB_ARCH_x86_64 0
+#endif //PCB_ARCH_x86_64
+#ifndef PCB_ARCH_x64
+#define PCB_ARCH_x64
+#endif //PCB_ARCH_x64
+#ifndef PCB_ARCH_i386
+#define PCB_ARCH_i386 0
+#endif //PCB_ARCH_i386
+#ifndef PCB_ARCH_x86
+#define PCB_ARCH_x86 0
+#endif //PCB_ARCH_x86
+#ifndef PCB_ARCH_ARM64
+#define PCB_ARCH_ARM64 0
+#endif //PCB_ARCH_ARM64
+#ifndef PCB_ARCH_AArch64
+#define PCB_ARCH_AArch64 0
+#endif //PCB_ARCH_AArch64
+#ifndef PCB_ARCH_ARM
+#define PCB_ARCH_ARM 0
+#endif //PCB_ARCH_ARM
+#ifndef PCB_ARCH_ARMv2
+#define PCB_ARCH_ARMv2 0
+#endif //PCB_ARCH_ARMv2
+#ifndef PCB_ARCH_ARMv3
+#define PCB_ARCH_ARMv3 0
+#endif //PCB_ARCH_ARMv3
+#ifndef PCB_ARCH_ARMv4T
+#define PCB_ARCH_ARMv4T 0
+#endif //PCB_ARCH_ARMv4T
+#ifndef PCB_ARCH_ARMv5
+#define PCB_ARCH_ARMv5 0
+#endif //PCB_ARCH_ARMv5
+#ifndef PCB_ARCH_ARMv5T
+#define PCB_ARCH_ARMv5T 0
+#endif //PCB_ARCH_ARMv5T
+#ifndef PCB_ARCH_ARMv6T2
+#define PCB_ARCH_ARMv6T2 0
+#endif //PCB_ARCH_ARMv6T2
+#ifndef PCB_ARCH_ARMv6
+#define PCB_ARCH_ARMv6 0
+#endif //PCB_ARCH_ARMv6
+#ifndef PCB_ARCH_ARMv7A
+#define PCB_ARCH_ARMv7A 0
+#endif //PCB_ARCH_ARMv7A
+#ifndef PCB_ARCH_ARMv7R
+#define PCB_ARCH_ARMv7R 0
+#endif //PCB_ARCH_ARMv7R
+#ifndef PCB_ARCH_ARMv7M
+#define PCB_ARCH_ARMv7M 0
+#endif //PCB_ARCH_ARMv7M
+#ifndef PCB_ARCH_ARMv7S
+#define PCB_ARCH_ARMv7S 0
+#endif //PCB_ARCH_ARMv7S
+#ifndef PCB_ARCH_Alpha
+#define PCB_ARCH_Alpha 0
+#endif //PCB_ARCH_Alpha
+#ifndef PCB_ARCH_M68k
+#define PCB_ARCH_M68k 0
+#endif //PCB_ARCH_M68k
+#ifndef PCB_ARCH_MIPS
+#define PCB_ARCH_MIPS 0
+#endif //PCB_ARCH_MIPS
+#ifndef PCB_ARCH_PowerPC
+#define PCB_ARCH_PowerPC 0
+#endif //PCB_ARCH_PowerPC
+#ifndef PCB_ARCH_SPARC
+#define PCB_ARCH_SPARC 0
+#endif //PCB_ARCH_SPARC
+
+#ifndef PCB_ARCH
+#define PCB_ARCH "Unknown"
+#endif //PCB_ARCH
+
+#endif //PCB_ARCH
+
+
+
+//Section 1.4: Define useful, but often compiler-specific macros
+
 #ifndef PCB_NoDiscard
 #ifdef __cplusplus
 #if __cplusplus >= 201703L
@@ -554,7 +756,7 @@ static void f(void)
 
 
 
-//Section 1.4: Import libc, unless this macro is defined as 0
+//Section 1.5: Import libc, unless this macro is defined as 0
 #ifndef PCB_USE_LIBC
 #define PCB_USE_LIBC 1
 #endif //PCB_USE_LIBC
@@ -653,7 +855,7 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 
 #endif //PCB_USE_LIBC?
 
-//Section 1.5: Define functions/macros that the library uses from libc.
+//Section 1.6: Define functions/macros that the library uses from libc.
 #ifndef PCB_realloc
 #ifdef PCB_HAS_STDLIB_H
 #define PCB_realloc realloc
@@ -863,8 +1065,8 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB__ASSERT_HANDLED //assume available
 #endif //PCB_assert
 
-//Section 1.6: Define other useful macros
-//Section 1.6.1: General purpose macros
+//Section 1.7: Define other useful macros
+//Section 1.7.1: General purpose macros
 #ifndef PCB_TODO
 #define PCB_TODO(msg) PCB_assert(0 && msg " not yet implemented")
 #endif //PCB_TODO
@@ -962,7 +1164,7 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_NO_INLINE_EXPORTS
 #endif //PCB_maybe_inline
 
-//Section 1.6.2: template<*> struct vector in C let's goooo
+//Section 1.7.2: template<*> struct vector in C let's goooo
 
 #ifndef PCB_VEC_INITIAL_CAPACITY
 #define PCB_VEC_INITIAL_CAPACITY 64
@@ -1242,7 +1444,7 @@ for(                                                                \
 #endif //PCB_Typeof?
 #endif //PCB_Vec_enumerate
 
-//Section 1.6.3: Macros for C++ compatibility
+//Section 1.7.3: Macros for C++ compatibility
 #ifndef PCB_ZEROED
 #if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_ZEROED {}
@@ -1268,7 +1470,7 @@ for(                                                                \
 #endif //PCB_CLITERAL
 
 
-//Section 1.6.4: Macros for views, slices
+//Section 1.7.4: Macros for views, slices
 #ifndef PCB_View_Vec_unchecked
 /**
  * @brief Constructs a view on vector `vec` in the range of
@@ -1595,7 +1797,7 @@ for(                                                                \
 
 
 
-//Section 1.6.5: Other macros
+//Section 1.7.5: Other macros
 #ifndef PCB_VA_forEach_until
 #define PCB_VA_forEach_until(args, argType, end, name)      \
 for(                                                        \
@@ -1607,7 +1809,7 @@ for(                                                        \
 
 
 
-//Section 1.7: Import platform-specific header files
+//Section 1.8: Import platform-specific header files
 #if PCB_PLATFORM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 //TODO: replace this include with modular includes
@@ -1629,7 +1831,7 @@ for(                                                        \
 
 
 
-//Section 1.8: declarations of all library functions
+//Section 2: declarations of library structures, enums, functions, etc.
 #ifdef PCB_BUILD_DYN
 #ifndef PCB_DYN
 #define PCB_DYN
@@ -3136,6 +3338,10 @@ PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
 
 #endif //PCB_NO_DECLARATIONS
 
+
+
+//Section 3: Implementation
+
 #ifdef PCB_IMPLEMENTATION
 
 #ifndef PCB_IMPLEMENTATION_LOG
@@ -3168,7 +3374,6 @@ PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
 
 #endif //PCB_IMPLEMENTATION
 
-//Section 2: Implementation of various functions
 
 //these functions should be moved somewhere else, for now they're here
 #ifdef PCB_IMPLEMENTATION
@@ -3337,7 +3542,7 @@ void PCB__assert_fail(
 #endif //PCB_fflush
 #endif //PCB_IMPLEMENTATION_LOG
 
-//Section 2.1: Logging, messages, error handling
+//Section 3.1: Logging, messages, error handling
 #ifdef PCB_IMPLEMENTATION_LOG
 void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
 #if PCB_PLATFORM_WINDOWS
@@ -3533,7 +3738,7 @@ void PCB_logLatestError(const char* fmt, ...) {
 #endif //PCB_IMPLEMENTATION_ERR
 
 
-//Section 2.2: Platform-independent (sort of) filesystem functions
+//Section 3.2: Platform-independent (sort of) filesystem functions
 #ifdef PCB_IMPLEMENTATION_FS
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
@@ -3706,7 +3911,7 @@ bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
 #endif //PCB_IMPLEMENTATION_FS
 
 
-//Section 2.3: Strings, string views, vectors of strings...
+//Section 3.3: Strings, string views, vectors of strings...
 #ifdef PCB_IMPLEMENTATION_STRING
 void PCB_String_destroy(PCB_String* PCB_restrict str) {
     PCB_CHECK_SELF(str,);
@@ -4743,7 +4948,7 @@ PCB_maybe_inline PCB_StringView PCB_String_findCharNotFrom_cstr_n(
 }
 #endif //PCB_IMPLEMENTATION_STRING (inline)
 
-//Section 2.4: Platform-independent (sort of) process functions.
+//Section 3.4: Platform-independent (sort of) process functions.
 #ifdef PCB_IMPLEMENTATION_PROCESS
 PCB_Process PCB_Process_self(void) {
     PCB_TODO("PCB_Process_self");
@@ -5083,7 +5288,7 @@ int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
 
 
 
-//Section 2.5: other platform-independent stuff
+//Section 3.5: other platform-independent stuff
 #ifdef PCB_IMPLEMENTATION_ARENA
 PCB_Arena* PCB_Arena_init(size_t size) {
     if(size == 0) return NULL;
@@ -5264,7 +5469,7 @@ size_t PCB_getNumberOfCores(void) {
 }
 #endif //PCB_IMPLEMENTATION
 
-//Section 2.6: build capability
+//Section 3.6: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
 const char* PCB_GetCStandardStr(long standard) {
     switch(standard) {
