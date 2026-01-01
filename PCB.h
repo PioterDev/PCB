@@ -2934,6 +2934,46 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n(
 );
 
 /**
+ * @brief Get the length of the Unicode codepoint in `sv` from byte (!)
+ * at index `index`.
+ *
+ * ⚠️WARNING⚠️: THIS FUNCTION ONLY CHECKS THE FIRST BYTE; DO NOT USE IT TO
+ * VERIFY THAT THE UNDERLYING SEQUENCE IS VALID,
+ * USE `PCB_StringView_GetCodepoint` INSTEAD.
+ *
+ * @return value in range [1, 4*] or 0 if `sv.data[index]` is not a valid
+ * first byte in UTF-8 encoding.
+ * 0 is also returned if `sv` is empty or `index` goes out of bounds.
+ * This is not the case with `PCB_StringView_GetCodepointLength_unchecked`.
+ *
+ * See RFC 2279/3629 for info about UTF-8 encoding.
+ *
+ * * - the full theoretical range of [1, 6] is available by #defining
+ * `PCB_UTF8_FULL_RANGE`. It is disabled by default in compliance with RFC 3629
+ * and is only available if `PCB_UNICODE_CONFORMANT` is not #defined.
+ */
+PCBAPI uint8_t PCBCALL PCB_StringView_GetCodepointLength(
+    PCB_StringView sv,
+    size_t index
+);
+/**
+ * @brief Get the length of the Unicode codepoint in `sv` from byte (!)
+ * at index `index`.
+ *
+ * This function is unsafe; only use it when certain that `sv` and `index`
+ * are correct. Otherwise the behavior is undefined. You've been warned.
+ *
+ * ⚠️WARNING⚠️: THIS FUNCTION ONLY CHECKS THE FIRST BYTE; DO NOT USE IT TO
+ * VERIFY THAT THE UNDERLYING SEQUENCE IS VALID,
+ * USE `PCB_StringView_GetCodepoint_unchecked` INSTEAD.
+ *
+ * @return same as `PCB_StringView_GetCodepointLength`.
+ */
+PCBAPI uint8_t PCBCALL PCB_StringView_GetCodepointLength_unchecked(
+    PCB_StringView sv,
+    size_t index
+);
+/**
  * @brief Get the Unicode codepoint in `sv` from byte (!) at index `index`.
  * @return `PCB_Codepoint` structure with:
  * - `code` field in range [0, 0x10FFFF*] on success,
@@ -4834,6 +4874,20 @@ static PCB_ForceInline uint8_t PCB__CPLFFC_UTF8(unsigned int ch) {
     if(ch <= 0xF4) return 4; /* 11110xxx (<=U+10FFFF)*/
 #endif
     PCB_Unreachable;
+}
+
+uint8_t PCB_StringView_GetCodepointLength(PCB_StringView sv, size_t index) {
+    PCB_CHECK(PCB_String_isEmpty(&sv), 0);
+    PCB_CHECK(index >= sv.length, 0);
+    return PCB_StringView_GetCodepointLength_unchecked(sv, index);
+}
+
+uint8_t PCB_StringView_GetCodepointLength_unchecked(
+    PCB_StringView sv, size_t index
+) {
+    uint8_t len = PCB__CPLFFC_UTF8((unsigned char)sv.data[index]);
+    if(len == 0 || len >= 254) return 0;
+    return len;
 }
 
 #ifndef PCB_UNICODE_CONFORMANT
