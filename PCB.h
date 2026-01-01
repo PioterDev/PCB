@@ -3054,6 +3054,12 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_n         (co
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_cstr      (const PCB_String* str, const char*       accept);
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_cstr_n    (const PCB_String* str, const char*       accept, size_t n);
 
+/**
+ * @brief Check if `codepoint` is a valid Unicode character.
+ */
+PCBAPI bool PCBCALL PCB_IsValidUnicode(int32_t codepoint);
+
+
 
 /**
  * @brief Returns a `PCB_Process` structure with data
@@ -4892,6 +4898,21 @@ PCB_Codepoint PCB_StringView_GetCodepoint_unchecked(PCB_StringView sv, size_t in
 #endif //PCB_UNICODE_CONFORMANT
 #undef PCB__ISCONT
 #undef PCB__CP_ERR
+}
+
+bool PCB_IsValidUnicode(int32_t codepoint) {
+    if(0xD800 <= codepoint && codepoint <= 0xDFFF) return false; //surrogates
+
+    //https://www.unicode.org/versions/corrigendum9.html
+    // if(0xFDD0 <= codepoint && codepoint <= 0xFDEF) return false; //reserved
+    // const int32_t ls2b = codepoint & 0xFFFF;
+    // if(ls2b == 0xFFFE || ls2b == 0xFFFF) return false; //also reserved
+
+    if(codepoint < 0x000000) return false;
+#if !(defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT))
+    if(codepoint > 0x10FFFF) return false;
+#endif //!PCB_UTF8_FULL_RANGE
+    return true;
 }
 #endif //PCB_IMPLEMENTATION_STRING
 
