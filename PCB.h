@@ -3058,6 +3058,26 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_cstr_n    (co
  * @brief Check if `codepoint` is a valid Unicode character.
  */
 PCBAPI bool PCBCALL PCB_IsValidUnicode(int32_t codepoint);
+/**
+ * @brief Get the UTF-8 length of the Unicode `codepoint`.
+ *
+ * This function is unsafe; only use it when certain that `codepoint` is a
+ * valid Unicode character. Otherwise the behavior is undefined.
+ * You've been warned.
+ * @return value in range [1, 4*].
+ *
+ * * - the full theoretical range of [1, 6] is available by #defining
+ * `PCB_UTF8_FULL_RANGE`. It is disabled by default in compliance with RFC 3629.
+ */
+PCBAPI uint8_t PCBCALL PCB_GetUTF8Length_unchecked(int32_t codepoint);
+/**
+ * @brief Get the UTF-8 length of the Unicode `codepoint`.
+ * @return value in range [1, 4*] or 0 if `codepoint` is invalid.
+ *
+ * * - the full theoretical range of [1, 6] is available by #defining
+ * `PCB_UTF8_FULL_RANGE`. It is disabled by default in compliance with RFC 3629.
+ */
+PCBAPI uint8_t PCBCALL PCB_GetUTF8Length(int32_t codepoint);
 
 
 
@@ -4913,6 +4933,24 @@ bool PCB_IsValidUnicode(int32_t codepoint) {
     if(codepoint > 0x10FFFF) return false;
 #endif //!PCB_UTF8_FULL_RANGE
     return true;
+}
+
+uint8_t PCB_GetUTF8Length_unchecked(int32_t codepoint) {
+    if(codepoint <= 0x000007F) return 1;
+    if(codepoint <= 0x00007FF) return 2;
+    if(codepoint <= 0x000FFFF) return 3;
+#if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
+    if(codepoint <= 0x01FFFFF) return 4;
+    if(codepoint <= 0x3FFFFFF) return 5;
+    return 6;
+#else
+    return 4;
+#endif //PCB_UTF8_FULL_RANGE
+}
+
+uint8_t PCB_GetUTF8Length(int32_t codepoint) {
+    if(!PCB_IsValidUnicode(codepoint)) return 0;
+    return PCB_GetUTF8Length_unchecked(codepoint);
 }
 #endif //PCB_IMPLEMENTATION_STRING
 
