@@ -2534,6 +2534,15 @@ PCBAPI bool PCBCALL PCB_String_appendf(
     ...
 ) PCB_Printf_Format(2, 3);
 /**
+ * @brief Appends a Unicode `codepoint` to `str`.
+ * @return whether the operation succeeded: fails on realloc failure or
+ * if `codepoint` is invalid.
+ */
+PCBAPI bool PCBCALL PCB_String_append_codepoint(
+    PCB_String* PCB_restrict str,
+    int32_t codepoint
+);
+/**
  * @brief Inserts `other` into `str` at position `position`.
  * Inserting `str` into itself (`str == other`) is not allowed.
  * @return whether the operation succeeded:
@@ -2627,6 +2636,17 @@ PCBAPI bool PCBCALL PCB_String_insertf(
     size_t position,
     ...
 ) PCB_Printf_Format(2, 4);
+/**
+ * @brief Inserts a Unicode `codepoint` at position `position` into `str`.
+ * Inserting 0 is not allowed.
+ * @return whether the operation succeeded: fails on realloc failure or
+ * if `codepoint` is invalid.
+ */
+PCBAPI bool PCBCALL PCB_String_insert_codepoint(
+    PCB_String* PCB_restrict str,
+    int32_t codepoint,
+    size_t position
+);
 /**
  * @brief Replaces characters in the range `[start, start + length)`
  * in `str` with `other`.
@@ -4203,6 +4223,18 @@ bool PCB_String_appendf(
 #endif //PCB_HAS_STDIO_H
 }
 
+bool PCB_String_append_codepoint(
+    PCB_String* PCB_restrict str, int32_t codepoint
+) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(!PCB_IsValidUnicode(codepoint), false);
+    uint8_t l = PCB_GetUTF8Length_unchecked(codepoint);
+    if(!PCB_String_reserve(str, l)) return false;
+    PCB_StoreUTF8Codepoint(str->data + str->length, codepoint);
+    str->data[str->length += l] = '\0';
+    return true;
+}
+
 bool PCB_String_insert(
     PCB_String* PCB_maybe_restrict str, const PCB_String* PCB_maybe_restrict other,
     size_t position
@@ -4369,6 +4401,26 @@ bool PCB_String_insertf(
     (void)str; (void)fmt; (void)position;
     return false;
 #endif //PCB_HAS_STDIO_H
+}
+
+bool PCB_String_insert_codepoint(
+    PCB_String* PCB_restrict str, int32_t codepoint, size_t position
+) {
+    PCB_CHECK_SELF(str, false);
+    PCB_CHECK(position > str->length, false);
+    PCB_CHECK(!PCB_IsValidUnicode(codepoint), false);
+    uint8_t l = PCB_GetUTF8Length_unchecked(codepoint);
+
+    if(!PCB_String_reserve(str, l)) return false;
+    PCB_memmove(
+        str->data + position + l,
+        str->data + position,
+        str->length - position
+    );
+
+    PCB_StoreUTF8Codepoint(str->data + position, codepoint);
+    str->data[str->length += l] = '\0';
+    return true;
 }
 
 bool PCB_String_replace_range(
