@@ -3118,6 +3118,18 @@ PCBAPI uint8_t PCBCALL PCB_GetUTF8Length_unchecked(int32_t codepoint);
  * `PCB_UTF8_FULL_RANGE`. It is disabled by default in compliance with RFC 3629.
  */
 PCBAPI uint8_t PCBCALL PCB_GetUTF8Length(int32_t codepoint);
+/**
+ * @brief Store UTF-8-encoded `codepoint` in `buf`.
+ *
+ * This function is unsafe; only use it when certain that `buf` can hold
+ * `codepoint` and that `codepoint` is valid. Otherwise the behavior is undefined.
+ * You've been warned.
+ * @return position after the encoded codepoint
+ */
+PCBAPI char* PCBCALL PCB_StoreUTF8Codepoint(
+    char* buf,
+    int32_t codepoint
+);
 
 
 
@@ -5005,6 +5017,22 @@ uint8_t PCB_GetUTF8Length_unchecked(int32_t codepoint) {
 uint8_t PCB_GetUTF8Length(int32_t codepoint) {
     if(!PCB_IsValidUnicode(codepoint)) return 0;
     return PCB_GetUTF8Length_unchecked(codepoint);
+}
+
+//modified from https://gist.github.com/tylerneylon/9773800
+char* PCB_StoreUTF8Codepoint(char* buf, int32_t codepoint) {
+    if(codepoint <= 0x7F) {
+        *(uint8_t*)buf = (uint8_t)((uint32_t)codepoint & 0x7F);
+        return buf + 1;
+    }
+    uint8_t c[6] = PCB_ZEROED; int i = 0; uint8_t first_max = 0x1F;
+    while(codepoint > first_max) {
+        c[i++] = (uint8_t)((uint32_t)codepoint & 0x3F) | 0x80;
+        codepoint >>= 6; first_max >>= 1;
+    }
+    c[i++] = ((uint8_t)((uint32_t)codepoint) & first_max) | (~first_max << 2);
+    while(i > 0) *(uint8_t*)buf++ = c[--i];
+    return buf;
 }
 #endif //PCB_IMPLEMENTATION_STRING
 
