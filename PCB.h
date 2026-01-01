@@ -2019,6 +2019,21 @@ typedef PCB_CStrings PCB_ShellCommand;
 #define PCB_ShellCommand_append_args PCB_CStrings_append_many
 #endif //PCB_ShellCommand_append_args
 
+/**
+ * Unicode codepoint.
+ * `code` stores the actual scalar value, while `length` is the number of code
+ * units to skip to get the next scalar value (using terminology from
+ * Unicode ch03§3.9 Unicode Encoding Forms), depending on the encoding used.
+ * For example, when decoding the UTF-8 string "ඞ" at byte 0, the structure
+ * contains `code = 0xD9E, length = 3`.
+ * Functions that return this structure define meaning of its fields on error.
+ */
+typedef struct {
+    int32_t code;
+    uint32_t length;
+} PCB_Codepoint;
+
+
 
 typedef struct {
 #if PCB_PLATFORM_WINDOWS
@@ -2917,6 +2932,47 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n(
     PCB_StringView accept,
     size_t n
 );
+
+/**
+ * @brief Get the Unicode codepoint in `sv` from byte (!) at index `index`.
+ * @return `PCB_Codepoint` structure with:
+ * - `code` field in range [0, 0x10FFFF*] on success,
+ *   -1  if `sv.data[index]` is a continuation byte,
+ *   -2  if the sequence is unfinished,
+ *   -3  if octets in the sequence would produce a codepoint out of range,
+ *   -4  if a non-continuation byte was encountered while decoding a multi-octet codepoint,
+ *   -5  if a surrogate was decoded (never returned under `PCB_UNICODE_CONFORMANT`),
+ *   -6  if `sv.data[index]` is either `0xC0` or `0xC1`,
+ *   -16 if `sv` is empty,
+ *   -17 if `index` goes out of bounds,
+ *   -18 if `sv.data + sv.length` or `sv.data + index + <decoded UTF-8 length>`
+ *   would cause a pointer arithmetic overflow;
+ * - `length` field describing how many bytes to skip until the next codepoint
+ *   or 0 if `code <= -16` (on an error unrelated to UTF-8 decoding).
+ *
+ * See RFC 2279/3629 for info about UTF-8 encoding.
+ *
+ * * - the full theoretical range of [0, 0x7FFF FFFF] is available by #defining
+ * `PCB_UTF8_FULL_RANGE`. It is disabled by default in compliance with RFC 3629
+ * and is only available if `PCB_UNICODE_CONFORMANT` is not #defined.
+ */
+PCBAPI PCB_Codepoint PCBCALL PCB_StringView_GetCodepoint(
+    PCB_StringView sv,
+    size_t index
+);
+/**
+ * @brief Get the Unicode codepoint in `sv` from byte (!) at index `index`.
+ *
+ * This function is unsafe; only use it when absolutely certain that `sv` and `input`
+ * are correct. Otherwise the behavior is undefined. You've been warned.
+ * @return same as `PCB_StringView_GetCodepoint`, except the `length` field
+ * is only 0 if `sv.data + index + <decoded UTF-8 length>` would cause an overflow.
+ */
+PCBAPI PCB_Codepoint PCBCALL PCB_StringView_GetCodepoint_unchecked(
+    PCB_StringView sv,
+    size_t index
+);
+
 
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_String(
     const PCB_String* PCB_restrict str
@@ -4690,6 +4746,152 @@ PCB_StringView PCB_StringView_findCharNotFrom_n(
         }
     }
     return cur;
+}
+
+//PCB_CodepointLengthFromFirstCharacter_UTF8
+//Pay close attention to return values before use.
+static PCB_ForceInline uint8_t PCB__CPLFFC_UTF8(unsigned int ch) {
+//NOTE: `ch` is NOT a Unicode codepoint, it is a zero-extended 1st byte of
+//the input string
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB__unlikely(cond) __builtin_expect(!!(cond), 0)
+#else
+#define PCB__unlikely(cond) (cond)
+#endif
+#if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
+    if(PCB__unlikely(ch > 0xFD)) return 255; //1111111-, invalid
+#else
+    if(PCB__unlikely(ch > 0xF4)) return 255; //111110xx (>U+10FFFF), 1111110x
+#endif //PCB_UTF8_FULL_RANGE
+    if(PCB__unlikely(ch == 0xC0 || ch == 0xC1)) return 254;
+#undef PCB__unlikely
+#if PCB_ARCH_x86_64
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+    __asm__ __volatile__ goto (
+        "mov{l} {$2147483649, %%eax | eax, 2147483649}\n\t"
+        "cpuid\n\t"
+        "test{l} {$32, %%ecx | ecx, 32}\n\t"
+        "jz %l0"
+        ::: "eax", "ecx", "edx", "cc" : no_lzcnt
+    );
+    __asm__ __volatile__(
+        "not{l} %k0\n\t"
+        "{sall $24, %k0 | shl %k0, 24}\n\t"
+        "lzcnt{l} %k0, %k0\n\t"
+        "cmp{l $1, %k0 | %k0, 1}\n\t"
+        "jg ret%=\n\t"
+        "xor{l $1, %k0 | %k0, 1}\n" /* 0->1 (ASCII), 1->0 (continuation byte) */
+        "ret%=:\n\t"
+        : "+r" (ch) :: "cc"
+    );
+    return (uint8_t)ch;
+#elif PCB_COMPILER_MSVC
+    //https://learn.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex
+    int cpuinfo[4];
+    __cpuid(cpuinfo, 0x80000001);
+    if(!(cpuinfo[2] & (1 << 5))) goto no_lzcnt;
+    ch = __lzcnt(~ch << 24);
+    return (ch > 1 ? ch : ch ^ 1); //0->1 (ASCII), 1->0 (continuation byte)
+#endif //compilers/x86_64
+#endif //architectures
+    if(0) goto no_lzcnt; //suppress "unused label" warnings
+    no_lzcnt:
+    if(ch <= 0x7F) return 1; /* ASCII */
+    if(ch <= 0xBF) return 0; /* 10xxxxxx, continuation byte, invalid input */
+    if(ch <= 0xDF) return 2; /* 110xxxxx */
+    if(ch <= 0xEF) return 3; /* 1110xxxx */
+#if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
+    if(ch <= 0xF7) return 4; /* 11110xxx */
+    if(ch <= 0xFB) return 5; /* 111110xx */
+    if(ch <= 0xFD) return 6; /* 1111110x */
+#else
+    if(ch <= 0xF4) return 4; /* 11110xxx (<=U+10FFFF)*/
+#endif
+    PCB_Unreachable;
+}
+
+#ifndef PCB_UNICODE_CONFORMANT
+static const int32_t PCB__MINIMAL_CODEPOINT_UTF8[] = {
+    0, 0x80, 0x800, 0x10000,
+#ifdef PCB_UTF8_FULL_RANGE
+    0x200000, 0x4000000,
+#endif //PCB_UTF8_FULL_RANGE
+};
+#endif //!PCB_UNICODE_CONFORMANT
+
+PCB_Codepoint PCB_StringView_GetCodepoint(PCB_StringView sv, size_t index) {
+    PCB_CHECK(PCB_String_isEmpty(&sv), (PCB_CLITERAL(PCB_Codepoint){ -16, 0 }));
+    PCB_CHECK(index >= sv.length, (PCB_CLITERAL(PCB_Codepoint){ -17, 0 }));
+    PCB_CHECK((uintptr_t)sv.data > (uintptr_t)-1 - sv.length, (PCB_CLITERAL(PCB_Codepoint){ -18, 0 }));
+    return PCB_StringView_GetCodepoint_unchecked(sv, index);
+}
+
+PCB_Codepoint PCB_StringView_GetCodepoint_unchecked(PCB_StringView sv, size_t index) {
+#define PCB__ISCONT(byte) ((byte & 0xC0) == 0x80)
+#define PCB__CP_ERR(code, bytesToSkip) PCB_CLITERAL(PCB_Codepoint){ code, bytesToSkip }
+    const unsigned char* cursor = (const unsigned char*)(sv.data + index);
+    const unsigned char* const end = (const unsigned char*)(sv.data + sv.length);
+    uint8_t len = PCB__CPLFFC_UTF8(*cursor);
+    if(len == 0) return PCB__CP_ERR(-1, 1);
+    else if(len == 254) return PCB__CP_ERR(-6, 1);
+    else if(len == 255) return PCB__CP_ERR(-3, 1);
+
+    if((uintptr_t)cursor > (uintptr_t)-1 - len) return PCB__CP_ERR(-18, 0);
+#ifndef PCB_UNICODE_CONFORMANT
+    if(cursor + len > end) return PCB__CP_ERR(-2, 1);
+#endif //!PCB_UNICODE_CONFORMANT
+    if(len == 1) return PCB_CLITERAL(PCB_Codepoint){ *cursor, 1 }; //ASCII
+
+    const uint32_t mask = (1u << (8u - len)) - 1;
+    uint32_t codepoint = (uint32_t)*cursor & mask;
+
+#ifdef PCB_UNICODE_CONFORMANT
+    if(cursor + 1 == end) return PCB__CP_ERR(-2, 1);
+    //https://www.unicode.org/versions/Unicode6.0.0/ch03.pdf, table 3-7
+    switch(cursor[0]) {
+      case 0xE0: if(cursor[1] < 0xA0) { return PCB__CP_ERR(-3, 1); } break;
+      case 0xED: if(cursor[1] > 0x9F) { return PCB__CP_ERR(-3, 1); } break;
+      case 0xF0: if(cursor[1] < 0x90) { return PCB__CP_ERR(-3, 1); } break;
+      case 0xF4: if(cursor[1] > 0x8F) { return PCB__CP_ERR(-3, 1); } break;
+      default: break;
+    }
+    ++cursor;
+
+    switch(len) {
+      case 4:
+        if(!PCB__ISCONT(*cursor)) return PCB__CP_ERR(-4, 1);
+        codepoint = (codepoint << 6) + (*cursor++ & 0x3F);
+        //fallthrough
+      case 3:
+        if(!PCB__ISCONT(*cursor)) return PCB__CP_ERR(-4, len - 2u);
+        if(cursor == end)         return PCB__CP_ERR(-2, len - 2u);
+        codepoint = (codepoint << 6) + (*cursor++ & 0x3F);
+        //fallthrough
+      case 2:
+        if(!PCB__ISCONT(*cursor)) return PCB__CP_ERR(-4, len - 1u);
+        if(cursor == end)         return PCB__CP_ERR(-2, len - 1u);
+        codepoint = (codepoint << 6) + (*cursor & 0x3F);
+        return PCB_CLITERAL(PCB_Codepoint){ (int32_t)codepoint, len };
+      default: PCB_Unreachable;
+    }
+#else
+    ++cursor;
+    for(uint8_t l = len - 1; l > 0; ++cursor, --l) {
+        if(!PCB__ISCONT(*cursor)) return PCB__CP_ERR(-4, (uint32_t)(len - l));
+        codepoint = (codepoint << 6) + (*cursor & 0x3F);
+    }
+    // const int32_t errval = -(int32_t)len - 2;
+    if(0xD800 <= codepoint && codepoint <= 0xDFFF)
+        return PCB__CP_ERR(-5, len); //surrogates
+    if((int32_t)codepoint < PCB__MINIMAL_CODEPOINT_UTF8[len - 1])
+        return PCB__CP_ERR(-3, len);
+#ifndef PCB_UTF8_FULL_RANGE
+    if(codepoint > 0x10FFFF) return PCB__CP_ERR(-3, len);
+#endif //!PCB_UTF8_FULL_RANGE
+    return PCB_CLITERAL(PCB_Codepoint){ (int32_t)codepoint, len };
+#endif //PCB_UNICODE_CONFORMANT
+#undef PCB__ISCONT
+#undef PCB__CP_ERR
 }
 #endif //PCB_IMPLEMENTATION_STRING
 
