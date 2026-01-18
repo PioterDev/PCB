@@ -2439,6 +2439,26 @@ PCBAPI PCB_StringView PCBCALL PCB_FS_Basename(PCB_StringView path);
  * This behavior is equivalent to dirname(3), except the buffer is not modified.
  */
 PCBAPI PCB_StringView PCBCALL PCB_FS_Dirname(PCB_StringView path);
+/**
+ * @brief Get the extension of `path`, without ".".
+ * If there is none or it's empty ("./foo."), an empty `PCB_StringView` is returned.
+ *
+ * This function operates purely on strings. For example, if `path` refers to
+ * a directory and there is a ".", for example "/etc/grub.d", this function
+ * will pick up "d" as the extension. It is the caller's responsibility to
+ * first check that `path` refers to a regular file!
+ */
+PCBAPI PCB_StringView PCBCALL PCB_FS_Extension(PCB_StringView path);
+/**
+ * @brief Get the extension of `path`, without "."
+ * This function differs from `PCB_FS_Extension` in that it assumes `path` is
+ * already a basename and is therefore faster. If it's not, the returned
+ * `PCB_StringView` may be incorrect. Otherwise the behavior is identical.
+ *
+ * If you called `PCB_FS_Basename` already, it is better to use this function
+ * for performance. If in doubt, use `PCB_FS_Extension`.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_FS_Extension_base(PCB_StringView path);
 
 
 
@@ -4181,6 +4201,24 @@ PCB_StringView PCB_FS_Dirname(PCB_StringView path) {
     path = PCB__FS_SUNS(path);
     if(path.length == 0) path.length = 1; //`path` was just separators
     return path;
+}
+
+PCB_StringView PCB_FS_Extension(PCB_StringView path) {
+    path = PCB_FS_Basename(path);
+    PCB_assert(!PCB_String_isEmpty(&path));
+    return PCB_FS_Extension_base(path);
+}
+
+PCB_StringView PCB_FS_Extension_base(PCB_StringView path) {
+    PCB_StringView last_dot = PCB_StringView_rsubcstr(path, ".");
+    if(PCB_String_isEmpty(&last_dot)) return last_dot;
+    PCB_StringView ext = {
+        last_dot.data + 1,
+        path.length - (size_t)(last_dot.data - path.data) - 1
+    };
+    //It's better to crash than have OOB reads, as seen in Mongobleed.
+    if(ext.length == 0) ext.data = NULL;
+    return ext;
 }
 #endif //PCB_IMPLEMENTATION_FS
 
