@@ -2888,6 +2888,17 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n(
     size_t n
 );
 /**
+ * @brief Find `n`th occurence of a substring `sub` in `sv`, searched from the end.
+ * `n` cannot be 0.
+ * @return non-empty `PCB_StringView` on success or an empty one on invalid
+ * arguments or if `sub` was not found.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_StringView_rsubstr_n(
+    PCB_StringView sv,
+    const PCB_StringView sub,
+    size_t n
+);
+/**
  * @brief Splits `sv` by `delim` into string views pointing to it.
  * @return non-empty `PCB_StringViews` on success or an empty one on error.
  */
@@ -3075,6 +3086,14 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_String_substr       (const PCB_Strin
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_subcstr      (const PCB_String* str, const char*       sub);
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_substr_n     (const PCB_String* str, const PCB_String* sub, size_t n);
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_subcstr_n    (const PCB_String* str, const char*       sub, size_t n);
+/* Similarly for PCB_StringView_rsubstr. */
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_rsubstr   (PCB_StringView    sv,  PCB_StringView    sub);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_rsubcstr  (PCB_StringView    sv,  const char*       sub);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_rsubcstr_n(PCB_StringView    sv,  const char*       sub, size_t n);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_String_rsubstr       (const PCB_String* str, const PCB_String* sub);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_String_rsubcstr      (const PCB_String* str, const char*       sub);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_String_rsubstr_n     (const PCB_String* str, const PCB_String* sub, size_t n);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_String_rsubcstr_n    (const PCB_String* str, const char*       sub, size_t n);
 /**
  * The same as above is done here for `PCB_StringView_split(_copy)`.
  * "PCB_String_split_copy" ->
@@ -4752,6 +4771,30 @@ PCB_StringView PCB_StringView_substr_n(
     return sv;
 }
 
+PCB_StringView PCB_StringView_rsubstr_n(
+    PCB_StringView sv, const PCB_StringView sub, size_t n
+) {
+    PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
+    if(PCB_String_isEmpty(&sv))  return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&sub)) return PCB_ZEROED_T(PCB_StringView);
+    PCB_StringView s = sub;
+    while(n > 0) {
+        while(sv.length > 0 && sv.data[sv.length-1] != s.data[s.length-1]) {
+            --sv.length;
+        }
+        if(sv.length == 0) return PCB_ZEROED_T(PCB_StringView);
+        while(s.length > 0 && sv.length > 0 && sv.data[sv.length-1] == s.data[s.length-1]) {
+            --sv.length; --s.length;
+        }
+        if(s.length == 0) n -= 1;
+        else if(sv.length == 0) return PCB_ZEROED_T(PCB_StringView);
+        s = sub;
+    }
+    sv.data += sv.length;
+    sv.length = sub.length;
+    return sv;
+}
+
 PCB_StringViews PCB_StringView_split(
     PCB_StringView sv,
     PCB_StringView delim
@@ -5107,6 +5150,7 @@ PCB_maybe_inline bool PCB_String_replace_range_cstr(
     const char* PCB_restrict cstr
 ) { return PCB_String_replace_range(str, start, length, PCB_StringView_from_cstr(cstr)); }
 
+
 PCB_maybe_inline PCB_StringView PCB_StringView_substr(
     PCB_StringView sv, PCB_StringView sub
 ) { return PCB_StringView_substr_n(sv, sub, 1); }
@@ -5134,6 +5178,36 @@ PCB_maybe_inline PCB_StringView PCB_String_substr_n(
 PCB_maybe_inline PCB_StringView PCB_String_subcstr_n(
     const PCB_String* str, const char* sub, size_t n
 ) { return PCB_StringView_subcstr_n(PCB_StringView_from_String(str), sub, n); }
+
+
+PCB_maybe_inline PCB_StringView PCB_StringView_rsubstr(
+    PCB_StringView sv, PCB_StringView sub
+) { return PCB_StringView_rsubstr_n(sv, sub, 1); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_rsubcstr(
+    PCB_StringView sv, const char* sub
+) { return PCB_StringView_rsubstr(sv, PCB_StringView_from_cstr(sub)); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_rsubcstr_n(
+    PCB_StringView sv, const char* sub, size_t n
+) { return PCB_StringView_rsubstr_n(sv, PCB_StringView_from_cstr(sub), n); }
+
+PCB_maybe_inline PCB_StringView PCB_String_rsubstr(
+    const PCB_String* str, const PCB_String* sub
+) { return PCB_StringView_rsubstr(PCB_StringView_from_String(str), PCB_StringView_from_String(sub)); }
+
+PCB_maybe_inline PCB_StringView PCB_String_rsubcstr(
+    const PCB_String* str, const char* sub
+) { return PCB_StringView_rsubcstr(PCB_StringView_from_String(str), sub); }
+
+PCB_maybe_inline PCB_StringView PCB_String_rsubstr_n(
+    const PCB_String* str, const PCB_String* sub, size_t n
+) { return PCB_StringView_rsubstr_n(PCB_StringView_from_String(str), PCB_StringView_from_String(sub), n); }
+
+PCB_maybe_inline PCB_StringView PCB_String_rsubcstr_n(
+    const PCB_String* str, const char* sub, size_t n
+) { return PCB_StringView_rsubcstr_n(PCB_StringView_from_String(str), sub, n); }
+
 
 /*-----------------split, no copy-----------------*/
 
