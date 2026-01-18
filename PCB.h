@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 2
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4728,9 +4728,9 @@ PCB_String PCB_String_from_CStrings(
 PCB_StringView PCB_StringView_substr_n(
     PCB_StringView sv, const PCB_StringView sub, size_t n
 ) {
-    PCB_CHECK(PCB_String_isEmpty(&sv),  PCB_ZEROED_T(PCB_StringView));
-    PCB_CHECK(PCB_String_isEmpty(&sub), PCB_ZEROED_T(PCB_StringView));
     PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
+    if(PCB_String_isEmpty(&sv))  return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&sub)) return PCB_ZEROED_T(PCB_StringView);
     PCB_StringView s = sub;
     //TODO: "premature optimization is the root of all evil",
     //this loop would benefit greatly from vectorization
@@ -4739,11 +4739,12 @@ PCB_StringView PCB_StringView_substr_n(
             sv.data++; sv.length--;
         }
         if(sv.length == 0) return PCB_ZEROED_T(PCB_StringView);
-        while(s.length > 0 && sv.data[0] == s.data[0]) {
+        while(s.length > 0 && sv.length > 0 && sv.data[0] == s.data[0]) {
             sv.data++; sv.length--;
             s.data++;  s.length--;
         }
         if(s.length == 0) n -= 1;
+        else if(sv.length == 0) return PCB_ZEROED_T(PCB_StringView);
         s = sub; //search again
     }
     sv.data -= sub.length;
