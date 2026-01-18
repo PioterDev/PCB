@@ -1920,6 +1920,16 @@ typedef enum {
     PCB_FILETYPE_SYMLINK_IGN = ~PCB_FILETYPE_SYMLINK
 } PCB_FileType;
 
+#ifndef PCB_FS_DIR_DELIM
+#if PCB_PLATFORM_WINDOWS
+#define PCB_FS_DIR_DELIM '\\'
+#elif PCB_PLATFORM_POSIX
+#define PCB_FS_DIR_DELIM '/'
+#else
+#define PCB_FS_DIR_DELIM 0x15 //stub
+#endif //platforms
+#endif //PCB_FS_DIR_DELIM
+
 
 /* A dynamic array of ASCII characters with a trailing zero at the end - a string.
  * Has a concrete implementation unlike other dynamic arrays.
@@ -2413,6 +2423,22 @@ PCBAPI bool PCBCALL PCB_FS_ReadEntireFile(
     const char* path,
     PCB_String* buf
 );
+/**
+ * @brief Get the basename (filename) of `path`.
+ *
+ * If `path` is an empty `PCB_StringView`,
+ * the returned `PCB_StringView` points to statically allocated ".".
+ * This behavior is equivalent to basename(3), except the buffer is not modified.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_FS_Basename(PCB_StringView path);
+/**
+ * @brief Get the dirname (everything except filename and directory separator) of `path`.
+ *
+ * If `path` is an empty `PCB_StringView` or there is no separator,
+ * the returned `PCB_StringView` points to statically allocated ".".
+ * This behavior is equivalent to dirname(3), except the buffer is not modified.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_FS_Dirname(PCB_StringView path);
 
 
 
@@ -4080,6 +4106,82 @@ bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
     return success;
 }
 
+//skip until not separator
+static PCB_StringView PCB__FS_SUNS(PCB_StringView path) {
+    while(path.length > 0) { //skip duplicated separators
+        if(path.data[path.length-1] == PCB_FS_DIR_DELIM) goto cont;
+#if PCB_PLATFORM_WINDOWS
+        if(path.data[path.length-1] == '/') goto cont;
+#endif
+        break;
+    cont:
+        --path.length;
+    }
+    return path;
+}
+
+PCB_StringView PCB_FS_Basename(PCB_StringView path) {
+    if(PCB_String_isEmpty(&path)) return PCB_StringView_from_cstr(".");
+    const char sep[2] = { PCB_FS_DIR_DELIM, '\0' };
+#if PCB_PLATFORM_WINDOWS
+    const char sep_alt[2] = "/";
+#endif
+    PCB_StringView dirsep = PCB_StringView_rsubcstr(path, sep);
+#if PCB_PLATFORM_WINDOWS
+    //CMD allows for paths with '/'. Dunno if it internally replaces them with '\'.
+    //We'll assume Windows is chill with '/' as a directory separator.
+    PCB_StringView dirsep_alt = PCB_StringView_rsubcstr(path, sep_alt);
+    if(PCB_String_isEmpty(&dirsep)) dirsep = dirsep_alt;
+    else if(!PCB_String_isEmpty(&dirsep_alt) && dirsep_alt.data > dirsep.data)
+        dirsep = dirsep_alt; //use rightmost separator
+#endif
+    if(PCB_String_isEmpty(&dirsep)) return path;
+    PCB_StringView base = {
+        dirsep.data + 1,
+        path.length - (size_t)(dirsep.data - path.data) - 1
+    };
+    if(base.length > 0) return base;
+    path = PCB__FS_SUNS(path);
+    //`path` was just separators
+    //return the leftmost one, it shouldn't matter which one is actually returned
+    if(path.length == 0) { path.length = 1; return path; }
+    //Find *previous* separator, i.e. apply identical logic a 2nd time and not more.
+    //A loop here would imply that we could potentially do so more than twice, but
+    //we don't. DO NOT factor it out into a loop.
+    dirsep = PCB_StringView_rsubcstr(path, sep);
+#if PCB_PLATFORM_WINDOWS
+    dirsep_alt = PCB_StringView_rsubcstr(path, sep_alt);
+    if(PCB_String_isEmpty(&dirsep)) dirsep = dirsep_alt;
+    else if(!PCB_String_isEmpty(&dirsep_alt) && dirsep_alt.data > dirsep.data)
+        dirsep = dirsep_alt;
+#endif
+    if(PCB_String_isEmpty(&dirsep)) return path;
+    return PCB_CLITERAL(PCB_StringView){
+        dirsep.data + 1,
+        path.length - (size_t)(dirsep.data - path.data) - 1
+    };
+}
+
+PCB_StringView PCB_FS_Dirname(PCB_StringView path) {
+    if(PCB_String_isEmpty(&path)) return PCB_StringView_from_cstr(".");
+    char sep[2]=  { PCB_FS_DIR_DELIM, '\0' };
+#if PCB_PLATFORM_WINDOWS
+    char sep_alt[2] = "/";
+#endif
+    PCB_StringView dirsep = PCB_StringView_rsubcstr(path, sep);
+#if PCB_PLATFORM_WINDOWS
+    PCB_StringView dirsep_alt = PCB_StringView_rsubcstr(path, sep_alt);
+    if(PCB_String_isEmpty(&dirsep)) dirsep = dirsep_alt;
+    //use rightmost separator
+    else if(!PCB_String_isEmpty(&dirsep_alt) && dirsep_alt.data > dirsep.data)
+        dirsep = dirsep_alt;
+#endif
+    if(PCB_String_isEmpty(&dirsep)) return PCB_StringView_from_cstr(".");
+    path.length = (size_t)(dirsep.data - path.data);
+    path = PCB__FS_SUNS(path);
+    if(path.length == 0) path.length = 1; //`path` was just separators
+    return path;
+}
 #endif //PCB_IMPLEMENTATION_FS
 
 
