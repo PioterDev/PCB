@@ -3535,12 +3535,43 @@ PCBAPI bool PCBCALL PCB_Arena_alloc_whole(
  */
 PCBAPI PCB_Arena* PCBCALL PCB_Arena_next(PCB_Arena* arena);
 /**
+ * @brief Get the number of bytes already allocated in `arena`.
+ */
+PCBAPI size_t PCBCALL PCB_Arena_allocated(PCB_Arena* arena);
+/**
+ * @brief Get the number of bytes that can be allocated in `arena`.
+ */
+PCBAPI size_t PCBCALL PCB_Arena_allocatable(PCB_Arena* arena);
+/**
+ * @brief Get `arena`'s current capacity.
+ */
+PCBAPI size_t PCBCALL PCB_Arena_capacity(PCB_Arena* arena);
+/**
+ * @brief Get the number of bytes already allocated in `arena`,
+ * including its successor nodes.
+ */
+PCBAPI size_t PCBCALL PCB_Arena_allocated_all(PCB_Arena* arena);
+/**
+ * @brief Get the number of bytes that can be allocated in `arena`,
+ * including its successor nodes.
+ */
+PCBAPI size_t PCBCALL PCB_Arena_allocatable_all(PCB_Arena* arena);
+/**
+ * @brief Get `arena`'s current capacity,
+ * including its successor nodes.
+ */
+PCBAPI size_t PCBCALL PCB_Arena_capacity_all(PCB_Arena* arena);
+/**
  * @brief Resets `arena` as if nothing was allocated.
  */
 PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena);
 /**
  * @brief Destroys `arena`, i.e. frees blocks contained within it.
  * After this call, `arena` becomes a dangling pointer!
+ *
+ * Do not call this function if `arena` was created with `PCB_Arena_init_in`.
+ * In that case the caller is responsible for managing the backing store.
+ * You still need to call this function on `PCB_Arena_next(arena)`.
  */
 PCBAPI void PCBCALL PCB_Arena_destroy(PCB_Arena* arena);
 /**
@@ -6312,6 +6343,58 @@ PCB_Arena* PCB_Arena_next(PCB_Arena* arena) {
     PCB_CHECK_SELF(arena, NULL);
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     return a->next;
+}
+
+size_t PCB_Arena_allocated(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    return a->length * sizeof(void*);
+}
+
+size_t PCB_Arena_allocatable(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    return (a->capacity - a->length) * sizeof(void*);
+}
+
+size_t PCB_Arena_capacity(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    return a->capacity * sizeof(void*);
+}
+
+//These are implemented separately because I don't trust the compiler to use tail recursion.
+size_t PCB_Arena_allocated_all(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    size_t allocated = 0;
+    do {
+        allocated += a->length * sizeof(void*);
+        a = (PCB_Arena_Prefix*)a->next;
+    } while(a != NULL);
+    return allocated;
+}
+
+size_t PCB_Arena_allocatable_all(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    size_t allocatable = 0;
+    do {
+        allocatable += (a->capacity - a->length) * sizeof(void*);
+        a = (PCB_Arena_Prefix*)a->next;
+    } while(a != NULL);
+    return allocatable;
+}
+
+size_t PCB_Arena_capacity_all(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    size_t capacity = 0;
+    do {
+        capacity += a->capacity * sizeof(void*);
+        a = (PCB_Arena_Prefix*)a->next;
+    } while(a != NULL);
+    return capacity;
 }
 
 void PCB_Arena_reset(PCB_Arena* arena) {
