@@ -3001,6 +3001,18 @@ PCBAPI size_t PCBCALL PCB_String_removeSuffix(
     const PCB_String* other
 );
 /**
+ * @brief Removes leading whitespace characters from `str`.
+ */
+PCBAPI void PCBCALL PCB_String_trim_left(
+    PCB_String* PCB_restrict str
+);
+/**
+ * @brief Removes trailing whitespace characters from `str`.
+ */
+PCBAPI void PCBCALL PCB_String_trim_right(
+    PCB_String* PCB_restrict str
+);
+/**
  * @brief Creates a new `PCB_String` from `sv`.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
  */
@@ -3012,6 +3024,12 @@ PCBAPI PCB_String PCBCALL PCB_String_from_StringView(const PCB_StringView* sv);
 PCBAPI PCB_String PCBCALL PCB_String_from_CStrings(
     const PCB_CStrings* PCB_restrict cstrs,
     const char* PCB_restrict delimiter
+);
+/**
+ * @brief Removes leading and trailing whitespace characters from `str`.
+ */
+PCB_maybe_inline void PCBCALL PCB_String_trim(
+    PCB_String* PCB_restrict str
 );
 
 /**
@@ -3109,6 +3127,14 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_skipPast(
     PCB_StringView sv,
     PCB_StringView s
 );
+/**
+ * @brief Skips past leading whitespace characters from `sv`.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_StringView_trim_left(PCB_StringView sv);
+/**
+ * @brief Drops trailing whitespace characters from `sv`.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_StringView_trim_right(PCB_StringView sv);
 
 /**
  * @brief Get the length of the Unicode codepoint in `sv` from byte (!)
@@ -3310,6 +3336,11 @@ static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cst
 static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cstr_n(PCB_StringView sv, const char*    accept, size_t n) { return PCB_StringView_findCharNotFrom_cstr_n(sv, accept, n); }
 
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_whitespace(PCB_StringView sv);
+
+/**
+ * @brief Shrinks `sv` to not include leading and trailing whitespace characters.
+ */
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_trim(PCB_StringView sv);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -5056,6 +5087,30 @@ size_t PCB_String_removeSuffix(PCB_String* str, const PCB_String* other) {
     return str->length;
 }
 
+void PCB_String_trim_left(PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str,);
+    if(PCB_String_isEmpty(str)) return;
+    const char* cursor = str->data;
+    while(PCB_isspace(*cursor)) ++cursor;
+    size_t firstNonWsp = (size_t)(cursor - str->data);
+    if(firstNonWsp == 0) return; //redundant memmove
+    PCB_memmove(
+        str->data,
+        str->data + firstNonWsp,
+        str->length - firstNonWsp + 1 //'\0'
+    );
+    str->length -= firstNonWsp;
+}
+
+void PCB_String_trim_right(PCB_String* PCB_restrict str) {
+    PCB_CHECK_SELF(str,);
+    if(PCB_String_isEmpty(str)) return;
+    const char* cursor = str->data + str->length - 1;
+    while((cursor - str->data) >= 0 && PCB_isspace(*cursor)) --cursor;
+    size_t newLen = (size_t)(cursor + 1 - str->data);
+    str->data[str->length = newLen] = '\0';
+}
+
 PCB_String PCB_String_from_StringView(const PCB_StringView* sv) {
     if(sv == NULL || sv->data == NULL) return PCB_ZEROED_T(PCB_String);
     size_t capacity = PCB_VEC_INITIAL_CAPACITY;
@@ -5097,6 +5152,18 @@ PCB_String PCB_String_from_CStrings(
     for(const char* current = cstrs->data[cstrs->length - 1]; *current; *cursor++ = *current++);
     *cursor = '\0';
     return str;
+}
+
+PCB_StringView PCB_StringView_trim_left(PCB_StringView sv) {
+    if(PCB_String_isEmpty(&sv)) return PCB_ZEROED_T(PCB_StringView);
+    while(sv.length > 0 && PCB_isspace(*sv.data)) { ++sv.data; --sv.length; }
+    return sv;
+}
+
+PCB_StringView PCB_StringView_trim_right(PCB_StringView sv) {
+    if(PCB_String_isEmpty(&sv)) return PCB_ZEROED_T(PCB_StringView);
+    while(sv.length > 0 && PCB_isspace(sv.data[sv.length-1])) { --sv.length; }
+    return sv;
 }
 
 PCB_StringView PCB_StringView_substr_n(
@@ -5497,6 +5564,11 @@ char* PCB_StoreUTF8Codepoint(char* buf, int32_t codepoint) {
 #endif //PCB_IMPLEMENTATION_STRING
 
 #if !defined(PCB_NO_INLINE_EXPORTS) || (defined(PCB_NO_INLINE_EXPORTS) && defined(PCB_IMPLEMENTATION_STRING))
+PCB_maybe_inline void PCB_String_trim(PCB_String* PCB_restrict str) {
+    PCB_String_trim_left (str);
+    PCB_String_trim_right(str);
+}
+
 PCB_maybe_inline PCB_StringView PCB_StringView_from_String(
     const PCB_String* PCB_restrict str
 ) {
@@ -5822,6 +5894,10 @@ PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_subcstr_n(
 PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_whitespace(
     PCB_StringView sv
 ) { return PCB_StringView_skipPast_anyCharFrom_cstr(sv, " \t\n\r\v\f"); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_trim(PCB_StringView sv) {
+    return PCB_StringView_trim_right(PCB_StringView_trim_left(sv));
+}
 #endif //PCB_IMPLEMENTATION_STRING (inline)
 
 //Section 3.5: Platform-independent (sort of) process functions.
