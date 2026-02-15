@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 2
+#define PCB_VERSION_PATCH 3
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3014,9 +3014,9 @@ PCBAPI void PCBCALL PCB_String_trim_right(
 );
 /**
  * @brief Creates a new `PCB_String` from `sv`.
- * @return an initialized `PCB_String` structure or a zeroed out one on failure
+ * @return an initialized `PCB_String` structure or a zeroed out one on failure.
  */
-PCBAPI PCB_String PCBCALL PCB_String_from_StringView(const PCB_StringView* sv);
+PCBAPI PCB_String PCBCALL PCB_String_from_StringView(PCB_StringView sv);
 /**
  * @brief Creates a new `PCB_String` from `cstrs` joined with `delimiter.
  * @return an initialized `PCB_String` structure or a zeroed out one on failure
@@ -5111,17 +5111,9 @@ void PCB_String_trim_right(PCB_String* PCB_restrict str) {
     str->data[str->length = newLen] = '\0';
 }
 
-PCB_String PCB_String_from_StringView(const PCB_StringView* sv) {
-    if(sv == NULL || sv->data == NULL) return PCB_ZEROED_T(PCB_String);
-    size_t capacity = PCB_VEC_INITIAL_CAPACITY;
-    while(capacity < (sv->length + 1)) capacity *= 2; //+1 for '\0'
+PCB_String PCB_String_from_StringView(PCB_StringView sv) {
     PCB_String s = PCB_ZEROED;
-    s.data = (char*)PCB_realloc(NULL, capacity);
-    if(s.data == NULL) return s;
-    s.length = sv->length;
-    s.capacity = capacity;
-    PCB_memcpy(s.data, sv->data, s.length);
-    s.data[s.length] = '\0';
+    PCB_String_append_sv(&s, sv); //it this fails, `s` will stil be zeroed
     return s;
 }
 
