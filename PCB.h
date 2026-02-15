@@ -1930,6 +1930,44 @@ typedef enum {
 #endif //platforms
 #endif //PCB_FS_DIR_DELIM
 
+//NOTE: Zero-initialization of this structure is non-portable.
+//ALWAYS use `PCB_File_init`.
+typedef struct {
+#if PCB_PLATFORM_WINDOWS
+    HANDLE handle;
+#elif PCB_PLATFORM_POSIX
+    int handle;
+#else
+    int handle; //stub
+#endif //platform
+} PCB_File;
+
+/**
+ * @brief Initializer for `PCB_File`.
+ * MUST be used instead of standard zero-initialization, otherwise
+ * the behavior is incorrect.
+ */
+#ifndef PCB_File_init
+#if PCB_PLATFORM_WINDOWS
+#define PCB_File_init() PCB_CLITERAL(PCB_File){ INVALID_HANDLE_VALUE }
+#elif PCB_PLATFORM_POSIX
+#define PCB_File_init() PCB_CLITERAL(PCB_File){ -1 }
+#else
+#define PCB_File_init() PCB_ZEROED_T(PCB_File)
+#endif //platforms
+#endif //PCB_File_init
+
+#ifndef PCB_File_isValid
+#if PCB_PLATFORM_WINDOWS
+#define PCB_File_isValid(f) ((f).handle != INVALID_HANDLE_VALUE)
+#elif PCB_PLATFORM_POSIX
+#define PCB_File_isValid(f) ((f).handle >= 0)
+#else
+#define PCB_File_isValid(f) false //stub
+#endif //platforms
+#endif //PCB_File_isValid
+
+
 
 /* A dynamic array of ASCII characters with a trailing zero at the end - a string.
  * Has a concrete implementation unlike other dynamic arrays.
@@ -2459,6 +2497,21 @@ PCBAPI PCB_StringView PCBCALL PCB_FS_Extension(PCB_StringView path);
  * for performance. If in doubt, use `PCB_FS_Extension`.
  */
 PCBAPI PCB_StringView PCBCALL PCB_FS_Extension_base(PCB_StringView path);
+
+
+
+/**
+ * @brief Get the native handle to the process' standard input.
+ */
+PCBAPI PCB_File PCBCALL PCB_IO_get_stdin(void);
+/**
+ * @brief Get the native handle to the process' standard output.
+ */
+PCBAPI PCB_File PCBCALL PCB_IO_get_stdout(void);
+/**
+ * @brief Get the native handle to the process' standard error.
+ */
+PCBAPI PCB_File PCBCALL PCB_IO_get_stderr(void);
 
 
 
@@ -3574,6 +3627,10 @@ PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
 #define PCB_IMPLEMENTATION_FS
 #endif //PCB_IMPLEMENTATION_FS
 
+#ifndef PCB_IMPLEMENTATION_IO
+#define PCB_IMPLEMENTATION_IO
+#endif //PCB_IMPLEMENTATION_IO
+
 #ifndef PCB_IMPLEMENTATION_STRING
 #define PCB_IMPLEMENTATION_STRING
 #endif //PCB_IMPLEMENTATION_STRING
@@ -3597,7 +3654,8 @@ PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
 #endif //PCB_IMPLEMENTATION
 
 #if defined(PCB_IMPLEMENTATION_LOG) || defined(PCB_IMPLEMENTATION_ERR) || \
-    defined(PCB_IMPLEMENTATION_FS)  || defined(PCB_IMPLEMENTATION_STRING) || \
+    defined(PCB_IMPLEMENTATION_FS)  || defined(PCB_IMPLEMENTATION_IO) || \
+    defined(PCB_IMPLEMENTATION_STRING) || \
     defined(PCB_IMPLEMENTATION_PROCESS) || defined(PCB_IMPLEMENTATION_ARENA) || \
     defined(PCB_IMPLEMENTATION_BUILD)
 #define PCB_IMPLEMENTATION_ANY
@@ -4240,7 +4298,43 @@ PCB_StringView PCB_FS_Extension_base(PCB_StringView path) {
 #endif //PCB_IMPLEMENTATION_FS
 
 
-//Section 3.3: Strings, string views, vectors of strings...
+
+//Section 3.3: Input/output utilities
+#ifdef PCB_IMPLEMENTATION_IO
+PCB_File PCB_IO_get_stdin(void) {
+    PCB_File f = PCB_File_init();
+#if PCB_PLATFORM_WINDOWS
+    f.handle = GetStdHandle(STD_OUTPUT_HANDLE);
+#elif PCB_PLATFORM_POSIX
+    f.handle = STDIN_FILENO;
+#endif //platforms
+    return f;
+}
+
+PCB_File PCB_IO_get_stdout(void) {
+    PCB_File f = PCB_File_init();
+#if PCB_PLATFORM_WINDOWS
+    f.handle = GetStdHandle(STD_OUTPUT_HANDLE);
+#elif PCB_PLATFORM_POSIX
+    f.handle = STDOUT_FILENO;
+#endif //platforms
+    return f;
+}
+
+PCB_File PCB_IO_get_stderr(void) {
+    PCB_File f = PCB_File_init();
+#if PCB_PLATFORM_WINDOWS
+    f.handle = GetStdHandle(STD_ERROR_HANDLE);
+#elif PCB_PLATFORM_POSIX
+    f.handle = STDERR_FILENO;
+#endif //platforms
+    return f;
+}
+#endif //PCB_IMPLEMENTATION_IO
+
+
+
+//Section 3.4: Strings, string views, vectors of strings...
 #ifdef PCB_IMPLEMENTATION_STRING
 void PCB_String_destroy(PCB_String* PCB_restrict str) {
     PCB_CHECK_SELF(str,);
@@ -5572,7 +5666,7 @@ PCB_maybe_inline PCB_StringView PCB_String_findCharNotFrom_cstr_n(
 }
 #endif //PCB_IMPLEMENTATION_STRING (inline)
 
-//Section 3.4: Platform-independent (sort of) process functions.
+//Section 3.5: Platform-independent (sort of) process functions.
 #ifdef PCB_IMPLEMENTATION_PROCESS
 PCB_Process PCB_Process_self(void) {
     PCB_TODO("PCB_Process_self");
@@ -5912,7 +6006,7 @@ int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
 
 
 
-//Section 3.5: other platform-independent stuff
+//Section 3.6: other platform-independent stuff
 #ifdef PCB_IMPLEMENTATION_ARENA
 PCB_Arena* PCB_Arena_init(size_t size) {
     if(size == 0) return NULL;
@@ -6093,7 +6187,7 @@ size_t PCB_getNumberOfCores(void) {
 }
 #endif //PCB_IMPLEMENTATION
 
-//Section 3.6: build capability
+//Section 3.7: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
 const char* PCB_GetCStandardStr(long standard) {
     switch(standard) {
