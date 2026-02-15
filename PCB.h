@@ -3197,6 +3197,11 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_String(
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_cstr(
     const char* PCB_restrict str
 );
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_parts(
+    const char* PCB_restrict ptr,
+    size_t length
+);
+
 PCB_maybe_inline bool PCBCALL PCB_String_replace_range_cstr(
     PCB_String* PCB_restrict str,
     size_t start,
@@ -5480,6 +5485,13 @@ PCB_maybe_inline PCB_StringView PCB_StringView_from_cstr(
 ) {
     PCB_CHECK(str == NULL, PCB_ZEROED_T(PCB_StringView));
     return PCB_CLITERAL(PCB_StringView){ str, PCB_strlen(str) };
+}
+
+PCB_maybe_inline PCB_StringView PCB_StringView_from_parts(
+    const char* PCB_restrict ptr, size_t length
+) {
+    PCB_CHECK(ptr == NULL, PCB_ZEROED_T(PCB_StringView));
+    return PCB_View_Ptr_A_T(ptr, PCB_StringView, length);
 }
 
 
