@@ -3286,6 +3286,30 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_cstr_n    (co
 
 //@sa `PCB_StringView_skipPast`.
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_cstr(PCB_StringView sv, const char* s);
+/**
+ * @brief Skip past the `n`th occurence of a `sub`string in `sv`.
+ * @return whether stuff was skipped.
+ *
+ * This is a convenience wrapper for `PCB_StringView_substr_n` + pointer arithmetic.
+ * You can infer what other functions here do.
+ */
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_sub_n    (PCB_StringView sv, PCB_StringView sub, size_t n);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_sub      (PCB_StringView sv, PCB_StringView sub);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_subcstr  (PCB_StringView sv, const char*    sub);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_subcstr_n(PCB_StringView sv, const char*    sub, size_t n);
+
+//Convenience aliases for consistency.
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom       (PCB_StringView sv, PCB_StringView accept)           { return PCB_StringView_findCharFrom       (sv, accept); }
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom_n     (PCB_StringView sv, PCB_StringView accept, size_t n) { return PCB_StringView_findCharFrom_n     (sv, accept, n); }
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom_cstr  (PCB_StringView sv, const char*    accept)           { return PCB_StringView_findCharFrom_cstr  (sv, accept); }
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom_cstr_n(PCB_StringView sv, const char*    accept, size_t n) { return PCB_StringView_findCharFrom_cstr_n(sv, accept, n); }
+
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom       (PCB_StringView sv, PCB_StringView accept)           { return PCB_StringView_findCharNotFrom       (sv, accept); }
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_n     (PCB_StringView sv, PCB_StringView accept, size_t n) { return PCB_StringView_findCharNotFrom_n     (sv, accept, n); }
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cstr  (PCB_StringView sv, const char*    accept)           { return PCB_StringView_findCharNotFrom_cstr  (sv, accept); }
+static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cstr_n(PCB_StringView sv, const char*    accept, size_t n) { return PCB_StringView_findCharNotFrom_cstr_n(sv, accept, n); }
+
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_whitespace(PCB_StringView sv);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -5769,6 +5793,35 @@ PCB_maybe_inline PCB_StringView PCB_String_findCharNotFrom_cstr_n(
         PCB_StringView_from_String(str), accept, n
     );
 }
+
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_sub_n(
+    PCB_StringView sv, PCB_StringView sub, size_t n
+) {
+    PCB_StringView s = PCB_StringView_substr_n(sv, sub, n);
+    if(PCB_String_isEmpty(&s)) return s;
+    return PCB_StringView_from_parts(
+        s.data + s.length,
+        (size_t)((sv.data+sv.length)-(s.data+s.length))
+    );
+}
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_sub(
+    PCB_StringView sv, PCB_StringView sub
+) { return PCB_StringView_skipPast_sub_n(sv, sub, 1); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_subcstr(
+    PCB_StringView sv, const char* sub
+) { return PCB_StringView_skipPast_sub_n(sv, PCB_StringView_from_cstr(sub), 1); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_subcstr_n(
+    PCB_StringView sv, const char* sub, size_t n
+) { return PCB_StringView_skipPast_sub_n(sv, PCB_StringView_from_cstr(sub), n); }
+
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_whitespace(
+    PCB_StringView sv
+) { return PCB_StringView_skipPast_anyCharFrom_cstr(sv, " \t\n\r\v\f"); }
 #endif //PCB_IMPLEMENTATION_STRING (inline)
 
 //Section 3.5: Platform-independent (sort of) process functions.
