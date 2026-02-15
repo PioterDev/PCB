@@ -1880,15 +1880,27 @@ for(                                                        \
 //This macro allows for a slight preprocessor optimization by omitting declarations.
 #ifndef PCB_NO_DECLARATIONS
 typedef enum {
-    PCB_LOGLEVEL_NONE,	PCB_LOGLEVEL_NONE_NL,  //without the prefix
-    PCB_LOGLEVEL_TRACE,	PCB_LOGLEVEL_TRACE_NL,
-    PCB_LOGLEVEL_DEBUG,	PCB_LOGLEVEL_DEBUG_NL,
-    PCB_LOGLEVEL_INFO,	PCB_LOGLEVEL_INFO_NL,
-    PCB_LOGLEVEL_WARN,	PCB_LOGLEVEL_WARN_NL,
-    PCB_LOGLEVEL_ERROR,	PCB_LOGLEVEL_ERROR_NL,
-    PCB_LOGLEVEL_FATAL,	PCB_LOGLEVEL_FATAL_NL
+    PCB_LOGLEVEL_NONE,  PCB_LOGLEVEL_NONE_NL,  //without the prefix
+    PCB_LOGLEVEL_TRACE, PCB_LOGLEVEL_TRACE_NL,
+    PCB_LOGLEVEL_DEBUG, PCB_LOGLEVEL_DEBUG_NL,
+    PCB_LOGLEVEL_INFO,  PCB_LOGLEVEL_INFO_NL,
+    PCB_LOGLEVEL_WARN,  PCB_LOGLEVEL_WARN_NL,
+    PCB_LOGLEVEL_ERROR, PCB_LOGLEVEL_ERROR_NL,
+    PCB_LOGLEVEL_FATAL, PCB_LOGLEVEL_FATAL_NL
     //With '\n'         Without '\n'
 } PCB_LogLevel;
+
+/**
+ * @brief "ANSI Escape seQuences Available" (don't Question).
+ */
+PCB_Enum(PCB_Aeqa, uint8_t) {
+    PCB_AEQA_DUNNO = 0,  //yet to be checked
+    PCB_AEQA_YES,        //available
+    PCB_AEQA_NO,         //unavailable
+    PCB_AEQA_MAYBE,      //maybe available, it's up to the user of this enum to decide
+    PCB_AEQA_BAD_HANDLE, //the underlying file handle is invalid, most likely closed
+    PCB_AEQA_OTHER_ERR   //an error has occured while checking for availability
+};
 
 
 typedef enum {
@@ -2326,6 +2338,22 @@ typedef enum {
 
 
 
+/**
+ * @brief Check whether `f` supports ANSI escape sequences.
+ *
+ * On Windows >=10, if `f` refers to a console, this function enables
+ * virtual terminal processing, turning on support for ANSI escape sequences.
+ * There is currently no way to work around this, though this behavior is most
+ * likely desired anyway.
+ */
+PCBAPI PCB_Aeqa PCBCALL PCB_check_aeqa(PCB_File f);
+/**
+ * @brief Check whether stdout and stderr support ANSI escape sequences.
+ * Internally calls `PCB_check_aeqa`.
+ *
+ * This function is called the first time `PCB_log` is called.
+ */
+PCBAPI void PCBCALL PCB_check_aeqa_std(PCB_Aeqa aeqa[2]);
 
 /**
  * @brief Logs a `printf`-like string to either stdout or stderr
@@ -3848,106 +3876,130 @@ void PCB__assert_fail(
 
 //Section 3.1: Logging, messages, error handling
 #ifdef PCB_IMPLEMENTATION_LOG
-void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
+PCB_Aeqa PCB_check_aeqa(PCB_File f) {
+    if(!PCB_File_isValid(f)) return PCB_AEQA_BAD_HANDLE;
 #if PCB_PLATFORM_WINDOWS
-    //TODO: ANSI escape sequences are supported since Windows 10,
-    //but have to be enabled with SetConsoleMode.
-    enum { ANSI_OFF, ANSI_ON, ANSI_ERR };
-    static char ansiEscapeSequenceAvailable = ANSI_OFF;
-    if(ansiEscapeSequenceAvailable == ANSI_OFF) {} //enable it
-    else if(ansiEscapeSequenceAvailable == ANSI_ERR) {} //fallback to SetConsoleTextAttribute
-    //Implement those 2 ifs.
-
-    HANDLE hStderr = GetStdHandle(STD_ERROR_HANDLE);
-    if(hStderr == INVALID_HANDLE_VALUE) return;
-#endif
-    switch(level) {
-        case PCB_LOGLEVEL_NONE:
-        case PCB_LOGLEVEL_NONE_NL:
-            break;
-        case PCB_LOGLEVEL_TRACE:
-        case PCB_LOGLEVEL_TRACE_NL:
-#if PCB_PLATFORM_WINDOWS
-            PCB_fprintf(stdout, "[");
-            SetConsoleTextAttribute(hStderr, 8); PCB_fprintf(stdout, "Trace");
-            SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stdout, "]\t");
-#else
-            PCB_fprintf(stdout, "[\033[38;5;238mTrace\033[0m]\t");
-#endif
-            break;
-        case PCB_LOGLEVEL_DEBUG:
-        case PCB_LOGLEVEL_DEBUG_NL:
-#if PCB_PLATFORM_WINDOWS
-        PCB_fprintf(stdout, "[");
-        SetConsoleTextAttribute(hStderr, 0xb); PCB_fprintf(stdout, "Debug");
-        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stdout, "]\t");
-#else
-        PCB_fprintf(stdout, "[\033[38;5;51mDebug\033[0m]\t");
-#endif
-        break;
-    case PCB_LOGLEVEL_INFO:
-    case PCB_LOGLEVEL_INFO_NL:
-        PCB_fprintf(stdout, "[Info]\t");
-        break;
-    case PCB_LOGLEVEL_WARN:
-    case PCB_LOGLEVEL_WARN_NL:
-#if PCB_PLATFORM_WINDOWS
-        PCB_fprintf(stdout, "[");
-        SetConsoleTextAttribute(hStderr, 6); PCB_fprintf(stdout, "Warn");
-        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stdout, "]\t");
-#else
-        PCB_fprintf(stdout, "[\033[38;5;214mWarn\033[0m]\t");
-#endif
-        break;
-    case PCB_LOGLEVEL_ERROR:
-    case PCB_LOGLEVEL_ERROR_NL:
-#if PCB_PLATFORM_WINDOWS
-        PCB_fprintf(stderr, "[");
-        SetConsoleTextAttribute(hStderr, 0xc); PCB_fprintf(stderr, "Error");
-        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stderr, "]\t");
-#else
-        PCB_fprintf(stderr, "[\033[38;5;9mError\033[0m]\t");
-#endif
-        break;
-    case PCB_LOGLEVEL_FATAL:
-    case PCB_LOGLEVEL_FATAL_NL:
-#if PCB_PLATFORM_WINDOWS
-        PCB_fprintf(stderr, "[");
-        SetConsoleTextAttribute(hStderr, 4); PCB_fprintf(stderr, "Fatal");
-        SetConsoleTextAttribute(hStderr, 0xf); PCB_fprintf(stderr, "]\t");
-#else
-        PCB_fprintf(stderr, "[\033[1m\033[38;5;1mFatal\033[0m]\t");
-#endif
-        break;
+    //As of 2025-02-15, Wine doesn't support virtual terminal processing.
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (ntdll != NULL && GetProcAddress(ntdll, "wine_get_version") != NULL)
+        return PCB_AEQA_NO;
+    DWORD dw = GetFileType(f.handle);
+    if(dw != FILE_TYPE_CHAR) { //TODO: similar checks as in POSIX version
+        return PCB_AEQA_NO;
     }
+    if(!GetConsoleMode(f.handle, &dw))
+        return PCB_AEQA_OTHER_ERR;
+    if(!SetConsoleMode(f.handle, dw | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+        return PCB_AEQA_OTHER_ERR;
+    return PCB_AEQA_YES;
+#elif PCB_PLATFORM_POSIX
+    struct stat s = PCB_ZEROED;
+    if(fstat(f.handle, &s) < 0) switch(errno) {
+      case EBADF: return PCB_AEQA_BAD_HANDLE;
+      default:    return PCB_AEQA_OTHER_ERR;
+    }
+    if(S_ISREG(s.st_mode)) return PCB_AEQA_NO;
+    if(S_ISDIR(s.st_mode)) return PCB_AEQA_NO;
+    if(S_ISBLK(s.st_mode)) return PCB_AEQA_NO;
+    //This should be impossible. After all, how in hell are you going to write(2) to a symlink?!
+    if(S_ISLNK(s.st_mode)) return PCB_AEQA_NO;
+    //A niche case where a child process' output is piped to the parent
+    //where it's processed similarly to a terminal, but it's not a terminal.
+    //This is rare, but possible, so we mark it as "possibly supported".
+    if(S_ISFIFO(s.st_mode)) return PCB_AEQA_MAYBE;
+    if(S_ISSOCK(s.st_mode)) return PCB_AEQA_MAYBE;
+    if(!isatty(f.handle)) return PCB_AEQA_NO;
+    //Assume that, if this refers to a terminal, then "supported".
+    //May or may not actually be the case.
+    //TODO: We should somehow distinguish physical serial output devices
+    //like an Arduino from a terminal.
+    return PCB_AEQA_YES;
+#else
+    //Assume no.
+    //This disregards the infinite possibilities of embedded devices, but it's
+    //simply not possible to determine support for all hardware/software.
+    //Do this yourself if you care.
+    return PCB_AEQA_NO;
+#endif
+}
+
+void PCB_check_aeqa_std(PCB_Aeqa aeqa[2]) {
+    aeqa[0] = PCB_check_aeqa(PCB_IO_get_stdout());
+    aeqa[1] = PCB_check_aeqa(PCB_IO_get_stderr());
+}
+
+static const char* PCB__log_label(PCB_LogLevel level, PCB_Aeqa aeqa[2]) {
+    switch(level) {
+      case PCB_LOGLEVEL_NONE:
+      case PCB_LOGLEVEL_NONE_NL:
+        break;
+      case PCB_LOGLEVEL_TRACE:
+      case PCB_LOGLEVEL_TRACE_NL:
+        if(aeqa[0] == PCB_AEQA_YES) return "[\033[38;5;238mTrace\033[0m] ";
+        return "[Trace] ";
+      case PCB_LOGLEVEL_DEBUG:
+      case PCB_LOGLEVEL_DEBUG_NL:
+        if(aeqa[0] == PCB_AEQA_YES) return "[\033[38;5;51mDebug\033[0m] ";
+        return "[Debug] ";
+      case PCB_LOGLEVEL_INFO:
+      case PCB_LOGLEVEL_INFO_NL:
+        return "[Info]  ";
+      case PCB_LOGLEVEL_WARN:
+      case PCB_LOGLEVEL_WARN_NL:
+        if(aeqa[0] == PCB_AEQA_YES) return "[\033[38;5;214mWarn\033[0m]  ";
+        return "[Warn]  ";
+      case PCB_LOGLEVEL_ERROR:
+      case PCB_LOGLEVEL_ERROR_NL:
+        if(aeqa[1] == PCB_AEQA_YES) return "[\033[38;5;9mError\033[0m] ";
+        return "[Error] ";
+      case PCB_LOGLEVEL_FATAL:
+      case PCB_LOGLEVEL_FATAL_NL:
+        if(aeqa[1] == PCB_AEQA_YES) return "[\033[1m\033[38;5;1mFatal\033[0m] ";
+        return "[Fatal] ";
+    }
+    return "";
+}
+
+void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
+    //TODO: Should probably be global.
+    static PCB_Aeqa aeqa[2];
+    if(aeqa[0] == PCB_AEQA_DUNNO || aeqa[1] == PCB_AEQA_DUNNO)
+        PCB_check_aeqa_std(aeqa);
+
+    const char* label = PCB__log_label(level, aeqa);
+
     va_list args;
     va_start(args, fmt);
-    //Yes, dear reader. This switch-case shouldn't be written like this.
-    //However, I hate excessive whitespace.
     switch(level) {
-        case PCB_LOGLEVEL_NONE:  case PCB_LOGLEVEL_NONE_NL:
-        case PCB_LOGLEVEL_TRACE: case PCB_LOGLEVEL_TRACE_NL:
-        case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_DEBUG_NL:
-        case PCB_LOGLEVEL_INFO:  case PCB_LOGLEVEL_INFO_NL:
-        case PCB_LOGLEVEL_WARN:  case PCB_LOGLEVEL_WARN_NL:
-            PCB_vfprintf(stdout, fmt, args); break;
-        case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_ERROR_NL:
-        case PCB_LOGLEVEL_FATAL: case PCB_LOGLEVEL_FATAL_NL:
-            PCB_vfprintf(stderr, fmt, args); break;
+      case PCB_LOGLEVEL_NONE:  case PCB_LOGLEVEL_NONE_NL:
+      case PCB_LOGLEVEL_TRACE: case PCB_LOGLEVEL_TRACE_NL:
+      case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_DEBUG_NL:
+      case PCB_LOGLEVEL_INFO:  case PCB_LOGLEVEL_INFO_NL:
+      case PCB_LOGLEVEL_WARN:  case PCB_LOGLEVEL_WARN_NL:
+        PCB_fprintf(PCB_stdout, "%s", label);
+        PCB_vfprintf(PCB_stdout, fmt, args); break;
+      case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_ERROR_NL:
+      case PCB_LOGLEVEL_FATAL: case PCB_LOGLEVEL_FATAL_NL:
+        PCB_fprintf(PCB_stderr, "%s", label);
+        PCB_vfprintf(PCB_stderr, fmt, args); break;
     }
     va_end(args);
     switch(level) {
-        case PCB_LOGLEVEL_NONE:  case PCB_LOGLEVEL_TRACE:
-        case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_INFO:
-        case PCB_LOGLEVEL_WARN:
-            PCB_fprintf(stdout, "\n"); break;
-        case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_FATAL:
-            PCB_fprintf(stderr, "\n"); break;
-        case PCB_LOGLEVEL_NONE_NL:  case PCB_LOGLEVEL_TRACE_NL:
-        case PCB_LOGLEVEL_DEBUG_NL: case PCB_LOGLEVEL_INFO_NL:
-        case PCB_LOGLEVEL_WARN_NL:  case PCB_LOGLEVEL_ERROR_NL:
-        case PCB_LOGLEVEL_FATAL_NL:
-            break;
+      case PCB_LOGLEVEL_NONE:  case PCB_LOGLEVEL_TRACE:
+      case PCB_LOGLEVEL_DEBUG: case PCB_LOGLEVEL_INFO:
+      case PCB_LOGLEVEL_WARN:
+        PCB_fprintf(PCB_stdout, "\n"); break;
+      case PCB_LOGLEVEL_ERROR: case PCB_LOGLEVEL_FATAL:
+        PCB_fprintf(PCB_stderr, "\n"); break;
+      case PCB_LOGLEVEL_NONE_NL:  case PCB_LOGLEVEL_TRACE_NL:
+      case PCB_LOGLEVEL_DEBUG_NL: case PCB_LOGLEVEL_INFO_NL:
+      case PCB_LOGLEVEL_WARN_NL:
+#ifdef PCB_DEBUG
+        PCB_fflush(PCB_stdout);
+#endif  //explicitly flush if debugging is enabled
+        //fallthrough since stderr isn't buffered
+      case PCB_LOGLEVEL_ERROR_NL: case PCB_LOGLEVEL_FATAL_NL:
+        break;
     }
 }
 #endif //PCB_IMPLEMENTATION_LOG
