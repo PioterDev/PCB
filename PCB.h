@@ -3100,6 +3100,15 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n(
     PCB_StringView accept,
     size_t n
 );
+/**
+ * @brief Skip past bytes from `s` at the start of `sv`.
+ * @return `sv` moved past `s` or an empty `PCB_StringView` if `sv` didn't
+ * start with `s`.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_StringView_skipPast(
+    PCB_StringView sv,
+    PCB_StringView s
+);
 
 /**
  * @brief Get the length of the Unicode codepoint in `sv` from byte (!)
@@ -3269,6 +3278,9 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom           (co
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_n         (const PCB_String* str, const PCB_String* accept, size_t n);
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_cstr      (const PCB_String* str, const char*       accept);
 PCB_maybe_inline PCB_StringView PCBCALL PCB_String_findCharNotFrom_cstr_n    (const PCB_String* str, const char*       accept, size_t n);
+
+//@sa `PCB_StringView_skipPast`.
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_cstr(PCB_StringView sv, const char* s);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -5233,6 +5245,18 @@ PCB_StringView PCB_StringView_findCharNotFrom_n(
     return cur;
 }
 
+PCB_StringView PCB_StringView_skipPast(PCB_StringView sv, PCB_StringView s) {
+    if(PCB_String_isEmpty(&sv)) return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&s))  return PCB_ZEROED_T(PCB_StringView);
+    while(s.length > 0 && sv.length > 0) {
+        if(*sv.data != *s.data) return PCB_ZEROED_T(PCB_StringView);
+        ++sv.data; --sv.length;
+        ++s.data;  --s.length;
+    }
+    if(s.length == 0) return sv;
+    return PCB_ZEROED_T(PCB_StringView);
+}
+
 //PCB_CodepointLengthFromFirstCharacter_UTF8
 //Pay close attention to return values before use.
 static PCB_ForceInline uint8_t PCB__CPLFFC_UTF8(unsigned int ch) {
@@ -5457,6 +5481,12 @@ PCB_maybe_inline PCB_StringView PCB_StringView_from_cstr(
     PCB_CHECK(str == NULL, PCB_ZEROED_T(PCB_StringView));
     return PCB_CLITERAL(PCB_StringView){ str, PCB_strlen(str) };
 }
+
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_cstr(
+    PCB_StringView sv, const char* s
+) { return PCB_StringView_skipPast(sv, PCB_StringView_from_cstr(s)); }
+
 
 PCB_maybe_inline bool PCB_String_replace_range_cstr(
     PCB_String* PCB_restrict str,
