@@ -3590,23 +3590,40 @@ PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
 #define PCB_IMPLEMENTATION_BUILD
 #endif //PCB_IMPLEMENTATION_BUILD
 
+#ifndef PCB_IMPLEMENTATION_LIBC_FALLBACKS
+#define PCB_IMPLEMENTATION_LIBC_FALLBACKS
+#endif //PCB_IMPLEMENTATION_LIBC_FALLBACKS
+
 #endif //PCB_IMPLEMENTATION
 
+#if defined(PCB_IMPLEMENTATION_LOG) || defined(PCB_IMPLEMENTATION_ERR) || \
+    defined(PCB_IMPLEMENTATION_FS)  || defined(PCB_IMPLEMENTATION_STRING) || \
+    defined(PCB_IMPLEMENTATION_PROCESS) || defined(PCB_IMPLEMENTATION_ARENA) || \
+    defined(PCB_IMPLEMENTATION_BUILD)
+#define PCB_IMPLEMENTATION_ANY
+#endif //Any implementation (except libc fallbacks) requested
 
-//these functions should be moved somewhere else, for now they're here
-#ifdef PCB_IMPLEMENTATION
+
+
+#ifdef PCB_IMPLEMENTATION_ANY
+/* ---------------------------------------------------------------- */
+/* ------------------------ Private macros ------------------------ */
+/* ---------------------------------------------------------------- */
 #ifdef PCB_DEBUG_SELF
-#define PCB__logTrace PCB_logTrace
+#define PCB__logTrace(...) PCB_logTrace(__VA_ARGS__)
 #else
 #define PCB__logTrace(...)
 #endif //PCB_DEBUG_SELF
 
 #if defined(PCB_DEBUG_SELF) && PCB_DEBUG_SELF+0
-#define PCB__logDebug PCB_logDebug
+#define PCB__logDebug(...) PCB_logDebug(__VA_ARGS__)
 #else
 #define PCB__logDebug(...)
 #endif //PCB_DEBUG_SELF
 
+#endif //PCB_IMPLEMENTATION_ANY
+
+#ifdef PCB_IMPLEMENTATION_LIBC_FALLBACKS
 #ifndef PCB_HAS_ERRNO_H
 int errno_stub = 11;
 #endif //PCB_HAS_ERRNO_H
@@ -3730,7 +3747,7 @@ void PCB__assert_fail(
 }
 #endif //sources of assertions
 #endif //PCB_HAS_ASSERT_H
-#endif //PCB_IMPLEMENTATION
+#endif //PCB_IMPLEMENTATION_LIBC_FALLBACKS
 
 
 #if defined(PCB_IMPLEMENTATION_LOG) || defined(PCB_IMPLEMENTATION_ERR)
