@@ -1992,47 +1992,25 @@ typedef struct {
 
 
 
-/* A dynamic array of ASCII characters with a trailing zero at the end - a string.
+/**
+ * @brief A dynamic array of characters - a string.
  * Has a concrete implementation unlike other dynamic arrays.
- * The trailing zero is not included in its length.
- *
- * You can safely pass a `PCB_String*` to functions that expect a
- * `PCB_StringView*` since they share the prefix.
- *
- * You can, in most situations, safely pass a `const PCB_StringView*`
- * to functions that expect a `const PCB_String*`.
- *
- * If a function relates to memory management, it likely reads the `capacity`
- * field, which isn't present in a `PCB_StringView`, so you can't
- * pass it there (I mean, duh).
- *
- * For example, you can safely pass a `const PCB_StringView*` instead of
- * `const PCB_String*` into `PCB_String_append`, but you can't do that
- * with `PCB_String_clone`.
+ * `PCB_String_*` functions ensure it ends with trailing null byte for
+ * compatibility with null-terminated strings.
+ * The trailing null byte is not included in its length.
+ * Inserting null bytes in the middle is currently disallowed.
+ * This behavior may change in future releases.
  */
 typedef struct {
     char* data;
-    size_t length;
+    size_t length; //in bytes, ignores variable length encoding of UTF-8
     size_t capacity;
 } PCB_String;
 
-/* A non-owning view at a portion of some string.
- * Likely does not end with a zero, keep that in mind when passing
- * `data` to a function expecting a C string.
- *
- * You can safely pass a `PCB_String*` to functions that expect a
- * `PCB_StringView*` since they share the prefix.
- *
- * You can, in most situations, safely pass a `const PCB_StringView*`
- * to functions that expect a `const PCB_String*`.
- *
- * If a function relates to memory management, it likely reads the `capacity`
- * field, which isn't present in a `PCB_StringView`, so you can't
- * pass it there (I mean, duh).
- *
- * For example, you can safely pass a `const PCB_StringView*` instead of
- * `const PCB_String*` into `PCB_String_append`, but you can't do that
- * with `PCB_String_clone`.
+/**
+ * @brief A non-owning view at a portion of some string.
+ * Likely does not end with a null byte, keep that in mind when passing
+ * `data` to a function expecting a null-terminated string.
  */
 typedef struct {
     const char* data;
