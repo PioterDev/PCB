@@ -1164,6 +1164,17 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_NO_INLINE_EXPORTS
 #endif //PCB_maybe_inline
 
+//Macro used for ensuring a particular storage type for enums.
+#ifndef PCB_Enum
+#if defined(__cpluslus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
+#define PCB_Enum(name, type) \
+    enum name : type; typedef enum name name; enum name : type
+#else
+#define PCB_Enum(name, type) \
+    typedef type name; enum
+#endif
+#endif //PCB_Enum
+
 //Section 1.7.2: template<*> struct vector in C let's goooo
 
 #ifndef PCB_VEC_INITIAL_CAPACITY
