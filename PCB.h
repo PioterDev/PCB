@@ -2118,6 +2118,7 @@ typedef struct {
 
 
 typedef struct PCB_Arena PCB_Arena;
+typedef struct PCB_Arena_Mark PCB_Arena_Mark;
 /**
  * @brief A prefix of `PCB_Arena` for metadata.
  */
@@ -3561,6 +3562,36 @@ PCBAPI size_t PCBCALL PCB_Arena_allocatable_all(PCB_Arena* arena);
  * including its successor nodes.
  */
 PCBAPI size_t PCBCALL PCB_Arena_capacity_all(PCB_Arena* arena);
+/**
+ * @brief Create a mark for `arena`.
+ *
+ * A mark stores information about how much was allocated when this function
+ * was called. It is used in conjunction with `PCB_Arena_restore(_to)` to implement
+ * a stack allocator. Think of it as `asm("push rbp")`.
+ *
+ * `mark` is allocated in `arena` and cannot be used in `PCB_Arena_restore(_to)`
+ * with a different arena.
+ * @return pointer to the mark or NULL if allocation failed.
+ * @sa PCB_Arena_alloc
+ */
+PCBAPI PCB_Arena_Mark* PCBCALL PCB_Arena_mark(PCB_Arena* arena);
+/**
+ * @brief Restore the state of `arena` from `mark`.
+ * `mark` becomes invalid after this function returns `true`.
+ * You CANNOT use the same mark multiple times!!
+ * @return `true` on success or `false` if `mark == NULL` or `arena`
+ * holds less than what is recorded in `mark` (this can happen if you messed
+ * up the LIFO order of `PCB_Arena_restore`) or if `mark` was not
+ * allocated in `arena`.
+ */
+PCBAPI bool PCBCALL PCB_Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark);
+/**
+ * @brief Restore the state of `arena` from `mark`.
+ * Contrary to `PCB_Arena_restore`, `mark` is preserved and can be used later.
+ * This is useful in memory-hungry loops.
+ * @return same as `PCB_Arena_restore`
+ */
+PCBAPI bool PCBCALL PCB_Arena_restore_to(PCB_Arena* arena, PCB_Arena_Mark* mark);
 /**
  * @brief Resets `arena` as if nothing was allocated.
  */
@@ -6243,6 +6274,58 @@ int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
 
 //Section 3.6: other platform-independent stuff
 #ifdef PCB_IMPLEMENTATION_ARENA
+struct PCB_Arena_Mark {
+    size_t length;
+    size_t lengths[1];
+};
+
+static inline size_t PCB__Arena_nodes(PCB_Arena* arena) {
+    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
+    PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)current->next;
+    size_t i = 1;
+    while(next != NULL) {
+        ++i;
+        current = next;
+        next = (PCB_Arena_Prefix*)next->next;
+    }
+    return i;
+}
+
+static inline PCB_Arena_Prefix* PCB__Arena_marknode(
+    PCB_Arena* arena, PCB_Arena_Mark* mark
+) {
+    const size_t marklen = sizeof(mark->length) + mark->length * sizeof(*mark->lengths);
+    PCB_Arena_Prefix* marknode = NULL; //node that houses `mark`
+    PCB_Arena_Prefix* current  = (PCB_Arena_Prefix*)arena;
+    PCB_Arena_Prefix* next     = (PCB_Arena_Prefix*)current->next;
+    while(true) {
+        char* start = (char*)current + sizeof(*current);
+        char* end = start + current->capacity * sizeof(void*);
+        if((char*)mark >= start && (char*)mark + marklen <= end) {
+            marknode = current; break;
+        }
+        if(next == NULL) break;
+        current = next;
+        next = (PCB_Arena_Prefix*)next->next;
+    }
+    return marknode;
+}
+
+static inline void PCB__Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
+    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
+    PCB_Arena_Prefix* next    = (PCB_Arena_Prefix*)current->next;
+    //NOTE: this code assumes the number of nodes in `arena` cannot be
+    //`< mark->length`, which may not hold true if `arena` gains the capability
+    //of dropping nodes
+    for(size_t i = 0; i < mark->length; i++) {
+        next = (PCB_Arena_Prefix*)current->next;
+        current->length = mark->lengths[i];
+        current = next;
+    }
+    //if new nodes were allocated after `mark`'s creation, they should be reset
+    if(next != NULL) PCB_Arena_reset((PCB_Arena*)next);
+}
+
 PCB_Arena* PCB_Arena_init(size_t size) {
     if(size == 0) return NULL;
     size_t capacity = 1;
@@ -6395,6 +6478,52 @@ size_t PCB_Arena_capacity_all(PCB_Arena* arena) {
         a = (PCB_Arena_Prefix*)a->next;
     } while(a != NULL);
     return capacity;
+}
+
+PCB_Arena_Mark* PCB_Arena_mark(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, NULL);
+    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
+    PCB_Arena_Prefix* next    = (PCB_Arena_Prefix*)current->next;
+
+    size_t i = PCB__Arena_nodes(arena);
+    PCB_Arena_Mark* mark = (PCB_Arena_Mark*)PCB_Arena_alloc(
+        arena, sizeof(mark->length) + i * sizeof(mark->lengths[0])
+    );
+    if(mark == NULL) return NULL;
+
+    mark->length = i; i = 0;
+    current = (PCB_Arena_Prefix*)arena;
+    next = (PCB_Arena_Prefix*)current->next;
+    while(true) {
+        mark->lengths[i++] = current->length;
+        if(next == NULL) break;
+        current = next;
+        next = (PCB_Arena_Prefix*)next->next;
+    }
+    return mark;
+}
+
+bool PCB_Arena_restore_to(PCB_Arena* arena, PCB_Arena_Mark* mark) {
+    PCB_CHECK_SELF(arena, false);
+    PCB_CHECK(mark == NULL, false);
+
+    PCB_Arena_Prefix* marknode = PCB__Arena_marknode(arena, mark);
+    if(marknode == NULL) return false;
+    PCB__Arena_restore(arena, mark);
+    return true;
+}
+
+bool PCB_Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
+    PCB_CHECK_SELF(arena, false);
+    PCB_CHECK(mark ==  NULL, false);
+
+    const size_t marklen = sizeof(mark->length) + mark->length * sizeof(*mark->lengths);
+    PCB_Arena_Prefix* marknode = PCB__Arena_marknode(arena, mark);
+    if(marknode == NULL) return false;
+    PCB__Arena_restore(arena, mark);
+    //dealloc `mark` since we know it's the last thing that was allocated
+    marknode->length -= marklen / sizeof(void*);
+    return true;
 }
 
 void PCB_Arena_reset(PCB_Arena* arena) {
