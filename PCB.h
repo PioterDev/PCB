@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 3
+#define PCB_VERSION_PATCH 4
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -410,7 +410,7 @@ extern "C" {
 #define PCB_ARCH_x86_64 0
 #endif //PCB_ARCH_x86_64
 #ifndef PCB_ARCH_x64
-#define PCB_ARCH_x64
+#define PCB_ARCH_x64 0
 #endif //PCB_ARCH_x64
 #ifndef PCB_ARCH_i386
 #define PCB_ARCH_i386 0
