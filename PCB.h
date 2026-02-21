@@ -217,11 +217,7 @@ extern "C" {
 #endif //_GNU_SOURCE
 #else
 #if !defined(_XOPEN_SOURCE) && !defined(_POSIX_C_SOURCE)
-#if defined(__GLIBC__) && __GLIBC__+0 >= 2 && __GLIBC_MINOR__+0 < 10
-#define _XOPEN_SOURCE 600
-#else
 #define _XOPEN_SOURCE 700
-#endif //glibc 2.10
 #endif //only #define if no feature test macro is #defined
 #endif //Use _GNU_SOURCE on Linux
 #endif //POSIX sources used locally
