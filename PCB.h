@@ -6603,37 +6603,37 @@ size_t PCB_getNumberOfCores(void) {
 #ifdef PCB_IMPLEMENTATION_BUILD
 const char* PCB_GetCStandardStr(long standard) {
     switch(standard) {
-        case 1L:      return "c89"; //see below why 1
+      case 1L:      return "c89"; //see below why 1
 //https://sourceforge.net/p/predef/wiki/Standards
 #if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-        case 199409L: return "iso9899:199409";
+      case 199409L: return "iso9899:199409";
 #endif //GCC/Clang have this as a flag for C95, dunno about MSVC
-        case 199901L: return "c99";
-        case 201112L: return "c11";
-        case 201710L: return "c17";
-#if PCB_COMPILER_GCC && __GNUC__ <= 13 && __GNUC__ >= 9
-        case 202000L: return "c2x";
+      case 199901L: return "c99";
+      case 201112L: return "c11";
+      case 201710L: return "c17";
+#if PCB_COMPILER_GCC < 140000 && PCB_COMPILER_GCC >= 90000
+      case 202000L: return "c2x";
 #endif //gcc's "c2x", deprecated in GCC14
-        case 202311L: return "c23";
-#if   PCB_COMPILER_GCC && __GNUC__ >= 15
-        case 202500L: return "c2y";
-#elif PCB_COMPILER_CLANG && __clang_major__ >= 19
-        case 202400L: return "c2y";
+      case 202311L: return "c23";
+#if   PCB_COMPILER_GCC >= 150000
+      case 202500L: return "c2y";
+#elif PCB_COMPILER_CLANG >= 190000
+      case 202400L: return "c2y";
 #endif //"c2y"
-        default:      return NULL;
+      default:      return NULL;
     }
     PCB_Unreachable;
 }
 
 const char* PCB_GetCppStandardStr(long standard) {
     switch(standard) {
-        case 199711L: return "c++98";
-        case 201103L: return "c++11"; //there was no C++03 macro definition
-        case 201402L: return "c++14";
-        case 201703L: return "c++17";
-        case 202002L: return "c++20";
-        case 202302L: return "c++23";
-        default:      return NULL;
+      case 199711L: return "c++98";
+      case 201103L: return "c++11"; //there was no C++03 macro definition
+      case 201402L: return "c++14";
+      case 201703L: return "c++17";
+      case 202002L: return "c++20";
+      case 202302L: return "c++23";
+      default:      return NULL;
     }
     PCB_Unreachable;
 }
@@ -6656,28 +6656,28 @@ long PCB_GetCStandardInt(const char* standard) {
         } else return 0; //invalid character
     }
     switch(v) {
-        //C89 doesn't have __STDC_VERSION__, but it's a valid
-        //"-std=", hence a special value of 1
-        case 89:
-        case 90:   return 1L; //C89 = ANSI C <=> C90 = ISO C90
-        //when `standard` starts with "c"
-        case 99:   return 199901L;
-        case 11:   return 201112L;
-        case 17:   return 201710L;
-        case 23:   return 202311L;
-        //when `standard` starts with "iso9899:", only for GCC/Clang
+      //C89 doesn't have __STDC_VERSION__, but it's a valid
+      //"-std=", hence a special value of 1
+      case 89:
+      case 90:   return 1L; //C89 = ANSI C <=> C90 = ISO C90
+      //when `standard` starts with "c"
+      case 99:   return 199901L;
+      case 11:   return 201112L;
+      case 17:   return 201710L;
+      case 23:   return 202311L;
+      //when `standard` starts with "iso9899:", only for GCC/Clang
 #if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-        case 1990: return 1L;
-        case 1999: return 199901L;
-        case 2011: return 201112L;
-        case 2017:
-        case 2018: return 201710L;
+      case 1990: return 1L;
+      case 1999: return 199901L;
+      case 2011: return 201112L;
+      case 2017:
+      case 2018: return 201710L;
 #if PCB_COMPILER_GCC
-        case 2024: return 202311L;
+      case 2024: return 202311L;
 #endif //for some reason Clang doesn't have "-std=iso9899:2024"
 #endif //GCC/Clang recognize "-std=iso9899:*"
-        case 199409: return 199409L;
-        default: return 0;
+      case 199409: return 199409L;
+      default: return 0;
     }
     PCB_Unreachable;
 }
