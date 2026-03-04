@@ -3602,16 +3602,31 @@ PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena);
  */
 PCBAPI void PCBCALL PCB_Arena_destroy(PCB_Arena* arena);
 /**
- * @brief `sprintf`s a new string in `arena`.
- * @return pointer to the allocated string or NULL on error
+ * @brief `sprintf`s a new string in `arena`, variadic version.
+ * @return pointer to the allocated string or NULL on error.
+ * @sa PCB_Arena_alloc
  *
- * This function is only available if PCB was compiled with stdio.h present.
+ * This function is only available if the library was compiled with stdio.h present.
  * Otherwise it always returns NULL.
  */
 PCBAPI char* PCBCALL PCB_Arena_asprintf(
     PCB_Arena* arena,
-    const char* fmt, ...
+    const char* fmt,
+    ...
 ) PCB_Printf_Format(2, 3);
+/**
+ * @brief `sprintf`s a new string in `arena`, argument version.
+ * @return pointer to the allocated string or NULL on error.
+ * @sa PCB_Arena_alloc
+ *
+ * This function is only available if the library was compiled with stdio.h present.
+ * Otherwise it always returns NULL.
+ */
+PCBAPI char* PCBCALL PCB_Arena_vasprintf(
+    PCB_Arena* arena,
+    const char* fmt,
+    va_list args
+);
 /**
  * @brief Duplicates `str` in `arena`.
  * @return pointer to the duplicated string or NULL if `str == NULL` or if
@@ -6547,19 +6562,33 @@ void PCB_Arena_destroy(PCB_Arena* arena) {
 char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args) + 1;
+    char* str = PCB_Arena_vasprintf(arena, fmt, args);
     va_end(args);
+    return str;
+}
+
+char* PCB_Arena_vasprintf(PCB_Arena* arena, const char* fmt, va_list ap) {
+    va_list args;
+    va_copy(args, ap);
+    const size_t lengthRequired = (unsigned int)PCB_vsnprintf(NULL, 0, fmt, args) + 1;
+    va_end(args);
+
     char* text = (char*)PCB_Arena_alloc(arena, lengthRequired);
-    if(text == NULL)  return NULL;
-    va_start(args, fmt);
-    const size_t printedLength = (size_t)PCB_vsnprintf(text, lengthRequired, fmt, args);
-    va_end(args); //         '\0'
-    PCB_assert(printedLength + 1 == lengthRequired);
+    if(text == NULL) return NULL;
+    va_copy(args, ap);
+    const size_t printed = (unsigned int)PCB_vsnprintf(text, lengthRequired, fmt, args);
+    PCB_assert(printed + 1 == lengthRequired);
+    va_end(args);
     return text;
 }
 #else
 char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
     (void)arena; (void)fmt;
+    return NULL;
+}
+
+char* PCB_Arena_vasprintf(PCB_Arena* arena, const char* fmt, va_list ap) {
+    (void)arena; (void)fmt; (void)ap;
     return NULL;
 }
 #endif //PCB_HAS_STDIO_H?
