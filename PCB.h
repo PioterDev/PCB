@@ -3466,7 +3466,8 @@ PCBAPI int PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
 /**
  * @brief Creates a new arena allocator with `size` bytes as initial capacity.
  * @return a valid pointer to the arena
- * or NULL if `size == 0` or the allocation failed
+ * or NULL if `size == 0` or the allocation failed.
+ * @sa PCB_Arena_destroy
  */
 PCBAPI PCB_Arena* PCBCALL PCB_Arena_init(size_t size);
 /**
@@ -3474,21 +3475,29 @@ PCBAPI PCB_Arena* PCBCALL PCB_Arena_init(size_t size);
  * and size `memsize`.
  * @return a valid pointer to the arena or NULL if `memsize` is insufficient to
  * hold the arena.
+ * @sa PCB_Arena_destroy
  */
 PCBAPI PCB_Arena* PCBCALL PCB_Arena_init_in(void* mem, size_t memsize);
 /**
  * @brief Allocates `size` bytes in `arena`.
- * The actual number of bytes allocated will be rounded up to pointer size.
- * @return a valid pointer to the allocated buffer aligned to pointer size
+ *
+ * The actual number of bytes allocated will be rounded up to `sizeof(void*)`.
+ *
+ * @return a valid pointer to the allocated buffer aligned to `sizeof(void*)`
  * or NULL if `size == 0` or if allocation failed
  */
 PCBAPI void* PCBCALL PCB_Arena_alloc(PCB_Arena* arena, size_t size);
+/**
+ * @brief Same as `PCB_Arena_alloc`, but clears (zeroes)
+ * the buffer before return.
+ */
+PCBAPI void* PCBCALL PCB_Arena_calloc(PCB_Arena* arena, size_t size);
 /**
  * @brief Allocates `size` bytes in `arena` with at least `alignment` alignment.
  *
  * The actual number of bytes allocated will be rounded up to `sizeof(void*)`.
  *
- * `alignment` MUST be a power of 2 and a multiple of `sizeof(void*)`.
+ * `alignment` MUST be a power of 2 and a multiple of `sizeof(void*)` (1).
  *
  * @return a valid pointer to the allocated buffer aligned to
  * `min(sizeof(void*), alignment)` or NULL if any of the following occurs:
@@ -3500,8 +3509,19 @@ PCBAPI void* PCBCALL PCB_Arena_alloc(PCB_Arena* arena, size_t size);
  * - `alignment` is invalid,
  *
  * - allocation failed.
+ *
+ * @sa (1) posix_memalign(3)
  */
 PCBAPI void* PCBCALL PCB_Arena_aligned_alloc(
+    PCB_Arena* arena,
+    size_t size,
+    size_t alignment
+);
+/**
+ * @brief Same as `PCB_Arena_aligned_alloc`, but zeroes (clears)
+ * the buffer before return.
+ */
+PCBAPI void* PCBCALL PCB_Arena_aligned_calloc(
     PCB_Arena* arena,
     size_t size,
     size_t alignment
@@ -6385,6 +6405,12 @@ void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
     return data;
 }
 
+void* PCB_Arena_calloc(PCB_Arena* arena, size_t size) {
+    void* mem = PCB_Arena_alloc(arena, size);
+    if(mem != NULL) PCB_memset(mem, 0, size);
+    return mem;
+}
+
 void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
     PCB_CHECK_SELF(arena, NULL);
     if(alignment == 0) return NULL;
@@ -6397,7 +6423,7 @@ void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
 
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     void* data; size_t pad;
-    try_alloc:
+try_alloc:
     data = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
     pad  = alignment - (uintptr_t)data % alignment;
     if(a->length + ((size + pad) / sizeof(void*)) > a->capacity) {
@@ -6414,6 +6440,12 @@ void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
 
     a->length += (size + pad) / sizeof(void*);
     return (void*)((char*)data + pad);
+}
+
+void* PCB_Arena_aligned_calloc(PCB_Arena* arena, size_t size, size_t alignment) {
+    void* mem = PCB_Arena_aligned_alloc(arena, size, alignment);
+    if(mem != NULL) PCB_memset(mem, 0, size);
+    return mem;
 }
 
 bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
