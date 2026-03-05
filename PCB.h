@@ -3608,6 +3608,25 @@ PCBAPI bool PCBCALL PCB_Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark);
  * @return same as `PCB_Arena_restore`
  */
 PCBAPI bool PCBCALL PCB_Arena_restore_to(PCB_Arena* arena, PCB_Arena_Mark* mark);
+#ifndef PCB_Arena_scope
+/**
+ * @brief Create an allocation scope for `arena`.
+ * The lifetime of objects allocated in `arena` in this scope ends when leaving it.
+ *
+ * It is defined as a `for` loop that runs exactly once, so you can leave
+ * the scope prematurely by `continue`ing (⚠️do NOT however `break`⚠️, otherwise
+ * objects won't be deallocated!!!).
+ * A helper macro `PCB_Arena_scope_leave` is #defined to reduce the chance to
+ * mess this up if needed.
+ */
+#define PCB_Arena_scope(arena)                                      \
+for(                                                                \
+    PCB_Arena_Mark* PCB_MANGLE(m) = PCB_Arena_mark(arena);          \
+    PCB_MANGLE(m) != NULL;                                          \
+    PCB_Arena_restore(arena, PCB_MANGLE(m)), PCB_MANGLE(m) = NULL   \
+)
+#define PCB_Arena_scope_leave() continue
+#endif //PCB_Arena_scope
 /**
  * @brief Resets `arena` as if nothing was allocated.
  */
