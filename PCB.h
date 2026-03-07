@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 4
+#define PCB_VERSION_PATCH 5
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1396,9 +1396,16 @@ for(                                                \
  * @brief Traditional for-each with an iterator.
  * Adding elements is not allowed as it may invalidate the iterator.
  *
+ * Arguments are reversed compared to, for example, C++'s range-based for loop,
+ * to allow skipping `underlyingType` if it can be inferred with `PCB_Typeof`.
+ * If you prefer the standard order, you can #define a macro that reverses
+ * arguments before passing them here.
+ *
  * An example usage is as follows:
  * ```c
- * Vec_int v_new = {0};
+ * typedef struct { int* data; size_t length; size_t capacity; } Ints;
+ * ...
+ * Ints v = PCB_ZEROED;
  * ...
  * PCB_Vec_forEach_it(&v, it, int) {
  *  (*it) += 69;
@@ -1426,27 +1433,32 @@ for(                                                                            
  * @brief Enumerate `vec` with index `i` and pointer-to-element `it`.
  * Due to limitations of C, `i` and `it` have to be wrapped inside a struct
  * named `enumPair`.
+ * `i` is of type `size_t`. For now it's not possible to change that.
  * Adding elements is not allowed as it may invalidate the iterator.
  *
- * An example usage is as follows
+ * Arguments are reversed compared to, for example, C++'s std::views::enumerate,
+ * to allow skipping `elemType` if it can be inferred with `PCB_Typeof`.
+ * If you prefer the standard order, you can #define a macro that reverses
+ * arguments before passing them here.
+ *
+ * An example usage is as follows:
  * ```c
  * typedef struct {
- *     const char* const* data;
- *     size_t length;
- *     size_t capacity;
+ *     const char **data;
+ *     size_t length, capacity;
  * } CStrings;
  * ...
- * CStrings cstrs = {0};
+ * CStrings cstrs = PCB_ZEROED;
  * ...
  * PCB_Vec_enumerate(&cstrs, i, it, iter, const char*) {
- *     printf("%4lu | %s\n", iter.i, iter.it);
+ *     printf("%4lu | %s\n", iter.i, *iter.it);
  * }
  * ```
  */
-#define PCB_Vec_enumerate(vec, i, it, enumPair, type)               \
-for(                                                                \
-    struct { size_t i; type *it; } enumPair = { 0, (vec)->data };   \
-    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++         \
+#define PCB_Vec_enumerate(vec, i, it, enumPair, elemType)               \
+for(                                                                    \
+    struct { size_t i; elemType *it; } enumPair = { 0, (vec)->data };   \
+    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++             \
 )
 #endif //PCB_Typeof?
 #endif //PCB_Vec_enumerate
