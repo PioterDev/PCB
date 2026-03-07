@@ -1814,7 +1814,39 @@ for(                                                        \
 )
 #endif //PCB_VA_forEach_until
 
+//for-each for arrays. See `PCB_Vec_forEach_it` for details.
+#ifndef PCB_Arr_forEach_it
+#ifdef PCB_Typeof
+#define PCB_Arr_forEach_it(arr, itName, ...)        \
+for(                                                \
+    PCB_Typeof(&(arr)[0]) itName = &(arr)[0];       \
+    itName != &(arr)[PCB_ARRAY_LEN(arr)]; itName++  \
+)
+#else
+#define PCB_Arr_forEach_it(arr, itName, underlyingType) \
+for(                                                    \
+    underlyingType *itName = &(arr)[0];                 \
+    itName != &(arr)[PCB_ARRAY_LEN(arr)]; itName++      \
+)
+#endif //PCB_Typeof?
+#endif //PCB_Arr_forEach_it
 
+//Enumeration for arrays. See `PCB_Vec_enumerate` for details.
+#ifndef PCB_Arr_enumerate
+#ifdef PCB_Typeof
+#define PCB_Arr_enumerate(arr, i, it, enumPair, type)                           \
+for(                                                                            \
+    struct { size_t i; PCB_Typeof(&(arr)[0]) it; } enumPair = { 0, &(arr)[0] }; \
+    enumPair.i < PCB_ARRAY_LEN(arr); enumPair.i++, enumPair.it++                \
+)
+#else
+#define PCB_Arr_enumerate(arr, i, it, enumPair, type)               \
+for(                                                                \
+    struct { size_t i; type *it; } enumPair = { 0, &(arr)[0] };     \
+    enumPair.i < PCB_ARRAY_LEN(arr); enumPair.i++, enumPair.it++    \
+)
+#endif //PCB_Typeof?
+#endif //PCB_Arr_enumerate
 
 //Section 1.8: Import platform-specific header files
 #if PCB_PLATFORM_WINDOWS
