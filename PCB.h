@@ -1497,7 +1497,7 @@ for(                                                                    \
  * `end > vec->length`, the behavior is undefined.
  */
 #define PCB_View_Vec_unchecked(vec, start, end) \
-    { (vec)->data + (start), (end) - (start) }
+    { (vec)->data + (start), (size_t)((end) - (start)) }
 #endif //PCB_View_Vec_unchecked
 
 #ifndef PCB_View_Arr_unchecked
@@ -1508,7 +1508,7 @@ for(                                                                    \
  * If `start > end`, the behavior is undefined.
  */
 #define PCB_View_Arr_unchecked(arr, start, end) \
-    { &(arr)[start], (end) - (start) }
+    { &(arr)[start], (size_t)((end) - (start)) }
 #endif //PCB_View_Arr_unchecked
 
 #ifndef PCB_View_Ptr_unchecked
@@ -1518,7 +1518,7 @@ for(                                                                    \
  * the behavior is undefined.
  */
 #define PCB_View_Ptr_unchecked(ptr, start, end) \
-    { (ptr) + (start), (end) - (start) }
+    { (ptr) + (start), (size_t)((end) - (start)) }
 #endif //PCB_View_Ptr_unchecked
 
 #ifndef PCB_View_Vec
@@ -1544,11 +1544,14 @@ for(                                                                    \
      (vec)->data + (start)),                                            \
     (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),                    \
      PCB_assert((ssize_t)(end)   <= (ssize_t)(vec)->length),            \
-     (end) - (start))                                                   \
+     (size_t)((end) - (start)))                                         \
 }
 //For those wondering about casts to ssize_t: it's to suppress warnings about
 //"unsigned comparison with 0 is always <true/false>" when passing literals
-//to `start`/`end`. There is no other way around it.
+//to `start`/`end`.
+//Same deal with casts to size_t, but this time to suppress
+//"narrowing conversion", again for literals.
+//There is no other way around it.
 #endif //PCB_DISABLE_ASSERT
 #endif //PCB_View_Vec
 
@@ -1561,11 +1564,11 @@ for(                                                                    \
  * Used similarly to `PCB_View_Vec`, except it's only valid for arrays,
  * like `int arr[16];`.
  */
-#define PCB_View_Arr(arr, start, end) {                     \
-     &(arr)[start],                                         \
-    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),        \
-     PCB_assert((ssize_t)(end)   <= PCB_ARRAY_LEN(arr)),    \
-     (end) - (start))                                       \
+#define PCB_View_Arr(arr, start, end) {                 \
+     &(arr)[start],                                     \
+    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),    \
+     PCB_assert((ssize_t)(end)   <= PCB_ARRAY_LEN(arr)),\
+     (size_t)((end) - (start)))                         \
 }
 #endif //PCB_DISABLE_ASSERT
 #endif //PCB_View_Arr
@@ -1582,7 +1585,7 @@ for(                                                                    \
     ((end) - (start) != 0 ? PCB_assert((ptr) != NULL) : (void)0,\
      (ptr) + (start)),                                          \
     (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),            \
-     (end) - (start))                                           \
+     (size_t)((end) - (start)))                                 \
 }
 #endif //PCB_DISABLE_ASSERT
 #endif //PCB_View_Ptr
