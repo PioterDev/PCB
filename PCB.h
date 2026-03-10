@@ -2187,6 +2187,9 @@ PCB_Enum(PCB_Arena_Flags, uint32_t) {
      * If you can't ensure this, it is recommended to use `mark`/`restore`
      * functionality of `PCB_Arena_Mark` instead.
      *
+     * In conjuction with the above, the additional metadata enables
+     * realloc, which fail without it.
+     *
      * This flag can only be changed when the arena is empty. Otherwise,
      * if cleared, subsequent frees/mark restores will leak memory;
      * if set, frees/mark restores will go OOB and trigger UB.
@@ -3760,6 +3763,56 @@ for(                                                                \
  * @sa PCB_Arena_enable_allocMeta
  */
 PCBAPI void PCBCALL PCB_Arena_free(PCB_Arena* arena, void* ptr);
+/**
+ * @brief Change the size of an allocation pointed to by `ptr` to `size` bytes.
+ * The following list of ifs should be followed from top to bottom.
+ *
+ * If `ptr == NULL`, the behavior is equivalent to calling `PCB_Arena_alloc`.
+ * If `size == 0 && ptr != NULL`, a diagnostic is issued and NULL is returned.
+ * ISO C does not define behavior for standard realloc for such inputs.
+ * If `arena` does not store allocation metadata, the function fails with NULL.
+ * If `size` is equal to the original size, `ptr` is returned without any modifications.
+ * If `ptr` is *not* the last thing allocated in `arena` or one of its successors, then:
+ * - if `size` is smaller than the original size, `ptr` is returned without
+ *   any modifications and the difference is leaked;
+ * - otherwise a new buffer of at least size `size` bytes is allocated, data
+ *   from `ptr` is copied into the new buffer and `ptr` is leaked.
+ * If `size` is greater than the original size and the old buffer cannot be
+ * expanded in-place, a new buffer of at least `size` bytes is allocated, data
+ * from `ptr` is copied into the new buffer and `ptr` is freed.
+ *
+ * In the happy path, the allocation is simply expanded/shrunk in-place.
+ * In such case `ptr` is returned.
+ *
+ * After this function returns, `ptr` is considered invalid, unless it itself
+ * is returned. It is not recommended to blindly reassign `ptr` to the value
+ * returned.
+ *
+ * If `ptr` was created using `PCB_Arena_aligned_(c)alloc` and a new buffer
+ * is created, the new buffer is aligned to at least the original alignment.
+ * If `ptr` is not a pointer originally returned by one of the alloc functions,
+ * the behavior is undefined.
+ *
+ * @return NULL for reasons described above or if allocating a new node
+ * failed, `ptr` in some described cases, a new pointer otherwise.
+ *
+ * @note Passing `ptr` which does not belong to `arena` or any of its
+ * successors is tolerated; currently NULL is returned.
+ * Do not, however, rely on this behavior.
+ * Future revisions may issue a diagnostic, abort, or do something else entirely.
+ *
+ * @sa PCB_Arena_alloc
+ * @sa PCB_Arena_aligned_alloc
+ * @sa PCB_Arena_free
+ * @sa PCB_Arena_enable_allocMeta
+ * @sa PCB_ARENA_FLAG_ALLOC_META
+ * @sa https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3621.txt
+ */
+PCBAPI void* PCBCALL PCB_Arena_realloc(
+    PCB_Arena* arena,
+    void* ptr,
+    size_t size
+);
 /**
  * @brief Resets `arena` as if nothing was allocated.
  */
@@ -6587,6 +6640,22 @@ static inline void PCB__Arena_store_meta(
     meta->pad  = pad;
 }
 
+static void* PCB__Arena_realloc_new(
+    PCB_Arena* arena, void* ptr, size_t size, PCB_Arena_Alloc_Meta* meta
+) {
+    void* new_ptr = NULL;
+    if(meta->pad & (SIZE_MAX ^ (SIZE_MAX>>1))) { //explicit alignment was requested
+        size_t alignment = 1;
+        while((!((uintptr_t)ptr & alignment))) alignment <<= 1;
+        new_ptr = PCB_Arena_aligned_alloc(arena, size*sizeof(void*), alignment);
+    } else {
+        new_ptr = PCB_Arena_alloc(arena, size*sizeof(void*));
+    }
+    if(new_ptr == NULL) return NULL;
+    PCB_memcpy(new_ptr, ptr, meta->size*sizeof(void*));
+    return new_ptr;
+}
+
 static inline void PCB__Arena_do_free(
     PCB_Arena_Prefix* a, size_t length, PCB_Arena_Alloc_Meta* meta
 ) {
@@ -6597,9 +6666,33 @@ static inline void PCB__Arena_do_free(
         a->last.size = a->last.pad = 0;
 }
 
+//TODO: would be better to somehow use ASan for these.
 static void PCB__Arena_diagnose_df(const char* func, void* ptr) {
     PCB_log(PCB_LOGLEVEL_FATAL, "%s: double free detected for %p.", func, ptr);
     abort();
+}
+
+static void PCB__Arena_diagnose_uaf(const char* func, void* ptr) {
+    PCB_log(PCB_LOGLEVEL_FATAL, "%s: use-after-free detected for %p.", func, ptr);
+    abort();
+}
+
+static inline bool PCB__Arena_try_shrink_buf(
+    PCB_Arena_Prefix* a, size_t size, PCB_Arena_Alloc_Meta* meta
+) {
+    if(size > meta->size) return false;
+    size_t diff = meta->size - size;
+    meta->size -= diff; a->length -= diff;
+    return true;
+}
+
+static inline bool PCB__Arena_try_expand_buf(
+    PCB_Arena_Prefix* a, size_t size, PCB_Arena_Alloc_Meta* meta
+) {
+    size_t diff = size - meta->size;
+    if(a->length + diff > a->capacity) return false;
+    meta->size += diff; a->length += diff;
+    return true;
 }
 
 PCB_Arena* PCB_Arena_init(size_t size) {
@@ -6862,6 +6955,50 @@ void PCB_Arena_free(PCB_Arena* arena, void* ptr) {
     //`ptr` was the last thing allocated, we can actually deallocate it.
     //Otherwise ignored.
     if(length + meta->size == a->length) PCB__Arena_do_free(a, length, meta);
+}
+
+void* PCB_Arena_realloc(PCB_Arena* arena, void* ptr, size_t size) {
+    if(ptr == NULL) return PCB_Arena_alloc(arena, size);
+    PCB_CHECK_SELF(arena, NULL);
+
+    size = PCB__Arena_ceil(size);
+    if(size == 0) {
+        PCB_log( //https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3621.txt
+            PCB_LOGLEVEL_WARN, //recommends issuing a diagnostic.
+            "%s called with size 0 and non-null pointer. "
+            "ISO C does not standardize behavior of realloc functions for "
+            "this combination of inputs. "
+            "Will return null without freeing. Don't rely on this behavior.",
+            __func__
+        ); return NULL;
+    }
+    PCB_Arena_Prefix* a = PCB__Arena_ptrnode(arena, ptr);
+    if(a == NULL) return NULL; //likely a user bug, maybe issue a diagnostic?
+
+    //We have no way of knowing how much data to copy to a new allocation
+    //if it has to be moved. Bail.
+    if(!(a->flags & PCB_ARENA_FLAG_ALLOC_META)) return NULL;
+
+    size /= sizeof(void*);
+    size_t length = PCB__Arena_offsetof(a, ptr);
+    if(length >= a->length) { PCB__Arena_diagnose_uaf(__func__, ptr); return NULL; }
+    PCB_Arena_Alloc_Meta* meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
+
+    if(meta->size == size) return ptr;
+    if(length + meta->size != a->length) { //Not the last thing allocated.
+        //We can't shrink without introducing a hole, just leak the difference.
+        if(meta->size > size) return ptr;
+        //"Extend" by allocating new memory.
+        //This leaks `ptr`, but nobody sane is going to use a linear
+        //allocator with arbitrary lifetimes...right?
+        return PCB__Arena_realloc_new(arena, ptr, size, meta);
+    }
+    if(PCB__Arena_try_shrink_buf(a, size, meta)) return ptr;
+    if(PCB__Arena_try_expand_buf(a, size, meta)) return ptr;
+    void* new_ptr = PCB__Arena_realloc_new(arena, ptr, size, meta);
+    if(new_ptr == NULL) return NULL;
+    PCB__Arena_do_free(a, length, meta);
+    return new_ptr;
 }
 
 void PCB_Arena_reset(PCB_Arena* arena) {
