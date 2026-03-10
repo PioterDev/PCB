@@ -6374,8 +6374,33 @@ struct PCB_Arena_Mark {
     size_t lengths[1];
 };
 
-static inline size_t PCB__Arena_nodes(PCB_Arena* arena) {
-    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
+#define PCB__Arena_forEach_node(cur, next)                      \
+for(PCB_Arena_Prefix                                            \
+        *cur  = (PCB_Arena_Prefix*)arena,                       \
+        *next = (PCB_Arena_Prefix*)cur->next;                   \
+    cur != NULL;                                                \
+    cur  = next,                                                \
+    next = next == NULL ? NULL : (PCB_Arena_Prefix*)next->next  \
+)
+
+static PCB_ForceInline char* PCB__Arena_start(PCB_Arena_Prefix* a) {
+    return (char*)a + sizeof(*a);
+}
+
+static PCB_ForceInline void* PCB__Arena_cur(PCB_Arena_Prefix* a) {
+    return PCB__Arena_start(a) + a->length*sizeof(void*);
+}
+
+static PCB_ForceInline char* PCB__Arena_end(PCB_Arena_Prefix* a) {
+    return PCB__Arena_start(a) + a->capacity*sizeof(void*);
+}
+
+//size rounded up to a multiple of pointer size
+static PCB_ForceInline size_t PCB__Arena_ceil(size_t size) {
+    return (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+}
+
+static inline size_t PCB__Arena_nodes(PCB_Arena_Prefix* current) {
     PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)current->next;
     size_t i = 1;
     while(next != NULL) {
@@ -6386,24 +6411,18 @@ static inline size_t PCB__Arena_nodes(PCB_Arena* arena) {
     return i;
 }
 
+//node that houses `mark`
 static inline PCB_Arena_Prefix* PCB__Arena_marknode(
     PCB_Arena* arena, PCB_Arena_Mark* mark
 ) {
-    const size_t marklen = sizeof(mark->length) + mark->length * sizeof(*mark->lengths);
-    PCB_Arena_Prefix* marknode = NULL; //node that houses `mark`
-    PCB_Arena_Prefix* current  = (PCB_Arena_Prefix*)arena;
-    PCB_Arena_Prefix* next     = (PCB_Arena_Prefix*)current->next;
-    while(true) {
-        char* start = (char*)current + sizeof(*current);
-        char* end = start + current->capacity * sizeof(void*);
-        if((char*)mark >= start && (char*)mark + marklen <= end) {
-            marknode = current; break;
-        }
-        if(next == NULL) break;
-        current = next;
-        next = (PCB_Arena_Prefix*)next->next;
+    const size_t marklen = sizeof(mark->length) + mark->length * sizeof(mark->lengths[0]);
+    char* const m = (char*)mark;
+    PCB__Arena_forEach_node(current, next) {
+        char* start = PCB__Arena_start(current);
+        char* end   = PCB__Arena_end(current);
+        if(m >= start && m + marklen <= end) return current;
     }
-    return marknode;
+    return NULL;
 }
 
 static inline void PCB__Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
@@ -6449,8 +6468,7 @@ PCB_Arena* PCB_Arena_init_in(void* mem, size_t memsize) {
 
 void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
-    //size rounded to a multiple of pointer size
-    size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+    size = PCB__Arena_ceil(size);
     if(size == 0) return NULL;
     try_alloc:
     if(a->length + (size / sizeof(void*)) > a->capacity) {
@@ -6464,7 +6482,7 @@ void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
         if(a->next == NULL) return NULL;
         a = (PCB_Arena_Prefix*)a->next;
     }
-    void* data = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
+    void* data = PCB__Arena_cur(a);
     a->length += size / sizeof(void*);
     return data;
 }
@@ -6481,13 +6499,13 @@ void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
     const bool pow2 = (alignment & (alignment - 1)) == 0;
     if(!pow2) return NULL;
     if(alignment % sizeof(void*) != 0) return NULL;
-    size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
+    size = PCB__Arena_ceil(size);
     if(size == 0) return NULL;
 
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     void* data; size_t pad;
 try_alloc:
-    data = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
+    data = PCB__Arena_cur(a);
     pad  = alignment - (uintptr_t)data % alignment;
     if(a->length + ((size + pad) / sizeof(void*)) > a->capacity) {
         if(a->next != NULL)  {
@@ -6518,7 +6536,7 @@ bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
     *size = (a->capacity - a->length) * sizeof(void*);
     if(ptr != NULL) {
         if(*size > 0) {
-            *ptr = (void*)((char*)a + sizeof(*a) + a->length * sizeof(void*));
+            *ptr = PCB__Arena_cur(a);
             a->length = a->capacity;
         }
         else {
@@ -6588,23 +6606,16 @@ size_t PCB_Arena_capacity_all(PCB_Arena* arena) {
 
 PCB_Arena_Mark* PCB_Arena_mark(PCB_Arena* arena) {
     PCB_CHECK_SELF(arena, NULL);
-    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
-    PCB_Arena_Prefix* next    = (PCB_Arena_Prefix*)current->next;
 
-    size_t i = PCB__Arena_nodes(arena);
+    size_t i = PCB__Arena_nodes((PCB_Arena_Prefix*)arena);
     PCB_Arena_Mark* mark = (PCB_Arena_Mark*)PCB_Arena_alloc(
         arena, sizeof(mark->length) + i * sizeof(mark->lengths[0])
     );
     if(mark == NULL) return NULL;
 
     mark->length = i; i = 0;
-    current = (PCB_Arena_Prefix*)arena;
-    next = (PCB_Arena_Prefix*)current->next;
-    while(true) {
+    PCB__Arena_forEach_node(current, next) {
         mark->lengths[i++] = current->length;
-        if(next == NULL) break;
-        current = next;
-        next = (PCB_Arena_Prefix*)next->next;
     }
     return mark;
 }
@@ -6706,6 +6717,8 @@ char* PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n) {
     text[len] = '\0'; //`str` may not end with '\0'
     return text;
 }
+
+#undef PCB__Arena_forEach_node
 #endif //PCB_IMPLEMENTATION_ARENA
 
 //uncategorized functions should be put here
