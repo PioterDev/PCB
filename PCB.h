@@ -2162,6 +2162,45 @@ typedef struct {
 
 typedef struct PCB_Arena PCB_Arena;
 typedef struct PCB_Arena_Mark PCB_Arena_Mark;
+
+PCB_Enum(PCB_Arena_Flags, uint32_t) {
+    /**
+     * @brief Store additional metadata before each allocation.
+     *
+     * Normally, when freeing, only the last allocation within a node can be
+     * actually deallocated.
+     *
+     * Suppose A() allocates on the arena and calls B().
+     * B() then allocates on the arena and calls C().
+     * C() also allocates on the arena, frees what it allocated and returns.
+     * B() then frees its allocation and returns.
+     * A() then frees its allocation.
+     *
+     * When this flag is not set, memory allocated in A and B will not be deallocated.
+     * This is because the arena only tracks the last allocation.
+     *
+     * With this flag enabled, memory allocated in A and B will become deallocatable
+     * with such allocation pattern, thanks to additional metadata for
+     * each allocation.
+     *
+     * This only works with individual allocations in strict LIFO order.
+     * If you can't ensure this, it is recommended to use `mark`/`restore`
+     * functionality of `PCB_Arena_Mark` instead.
+     *
+     * This flag can only be changed when the arena is empty. Otherwise,
+     * if cleared, subsequent frees/mark restores will leak memory;
+     * if set, frees/mark restores will go OOB and trigger UB.
+     */
+    PCB_ARENA_FLAG_ALLOC_META = 1 << 0
+};
+
+typedef struct {
+    size_t size; //of the allocation
+    //Additional padding of the last allocation, not including this structure.
+    //A MSB of 1 marks allocations that have explicit alignment.
+    size_t pad;
+} PCB_Arena_Alloc_Meta;
+
 /**
  * @brief A prefix of `PCB_Arena` for metadata.
  */
@@ -2169,6 +2208,8 @@ typedef struct {
     size_t length;
     size_t capacity;
     PCB_Arena* next;
+    PCB_Arena_Flags flags;
+    PCB_Arena_Alloc_Meta last;
 } PCB_Arena_Prefix;
 
 
@@ -3511,20 +3552,42 @@ PCBAPI int PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command);
 
 
 /**
- * @brief Creates a new arena allocator with `size` bytes as initial capacity.
+ * @brief Creates a new arena allocator with `size` bytes as initial capacity
+ * and default configuration.
  * @return a valid pointer to the arena
  * or NULL if `size == 0` or the allocation failed.
  * @sa PCB_Arena_destroy
  */
 PCBAPI PCB_Arena* PCBCALL PCB_Arena_init(size_t size);
 /**
+ * @brief Creates a new arena allocator with `size` bytes as initial capacity.
+ * @return see PCB_Arena_init.
+ * @sa PCB_Arena_Flags
+ *
+ * NOTE: This function is subject to change in the near future.
+ */
+PCBAPI PCB_Arena* PCBCALL PCB_Arena_init_ex(size_t size, PCB_Arena_Flags flags);
+/**
  * @brief Initialize a `PCB_Arena` in a chunk of memory pointed to by `mem`
- * and size `memsize`.
+ * and size `memsize` with default configuration.
  * @return a valid pointer to the arena or NULL if `memsize` is insufficient to
  * hold the arena.
  * @sa PCB_Arena_destroy
  */
 PCBAPI PCB_Arena* PCBCALL PCB_Arena_init_in(void* mem, size_t memsize);
+/**
+ * @brief Initialize a `PCB_Arena` in a chunk of memory pointed to by `mem`
+ * and size `memsize`.
+ * @return see PCB_Arena_init_in.
+ * @sa PCB_Arena_Flags
+ *
+ * NOTE: This function is subject to change in the near future.
+ */
+PCBAPI PCB_Arena* PCBCALL PCB_Arena_init_in_ex(
+    void* mem,
+    size_t memsize,
+    PCB_Arena_Flags flags
+);
 /**
  * @brief Allocates `size` bytes in `arena`.
  *
@@ -3624,6 +3687,22 @@ PCBAPI size_t PCBCALL PCB_Arena_allocatable_all(PCB_Arena* arena);
  */
 PCBAPI size_t PCBCALL PCB_Arena_capacity_all(PCB_Arena* arena);
 /**
+ * @brief Get `arena`'s flags. Only looks at the head of the internal linked list.
+ * @sa PCB_Arena_next
+ */
+PCBAPI PCB_Arena_Flags PCBCALL PCB_Arena_flags(PCB_Arena* arena);
+/**
+ * @brief Enables storing additional metadata before each allocation.
+ * This can only be done if `arena` is empty, including all of its successors.
+ * @return whether successfully `enable`d (`!enable` -> disabled).
+ * @sa PCB_Arena_reset
+ * @sa PCB_ARENA_FLAG_ALLOC_META
+ */
+PCBAPI bool PCBCALL PCB_Arena_enable_allocMeta(
+    PCB_Arena* arena,
+    bool enable
+);
+/**
  * @brief Create a mark for `arena`.
  *
  * A mark stores information about how much was allocated when this function
@@ -3672,6 +3751,15 @@ for(                                                                \
 )
 #define PCB_Arena_scope_leave() continue
 #endif //PCB_Arena_scope
+/**
+ * @brief Free `ptr`, which was previously allocated with
+ * `PCB_Arena_(c)alloc` or `PCB_Arena_aligned_(c)alloc`, from `arena`.
+ * This is a no-op if `ptr` was not the last thing allocated in `arena` or
+ * one of its successors or `arena` does not store allocation metadata.
+ * The memory is simply leaked.
+ * @sa PCB_Arena_enable_allocMeta
+ */
+PCBAPI void PCBCALL PCB_Arena_free(PCB_Arena* arena, void* ptr);
 /**
  * @brief Resets `arena` as if nothing was allocated.
  */
@@ -6395,6 +6483,11 @@ static PCB_ForceInline char* PCB__Arena_end(PCB_Arena_Prefix* a) {
     return PCB__Arena_start(a) + a->capacity*sizeof(void*);
 }
 
+//Only safe if `a` comes from `PCB__Arena_ptrnode` and neither are NULL.
+static PCB_ForceInline size_t PCB__Arena_offsetof(PCB_Arena_Prefix* a, void* ptr) {
+    return (size_t)((char*)ptr - PCB__Arena_start(a))/sizeof(void*);
+}
+
 //size rounded up to a multiple of pointer size
 static PCB_ForceInline size_t PCB__Arena_ceil(size_t size) {
     return (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
@@ -6433,37 +6526,115 @@ static inline void PCB__Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
     //of dropping nodes
     for(size_t i = 0; i < mark->length; i++) {
         next = (PCB_Arena_Prefix*)current->next;
-        current->length = mark->lengths[i];
+        //Suppose the following history: ([x] -> buffer placed in node x)
+        //alloc_1[2], mark[1], free_1, restore
+        //In such case `current->length` will be smaller than `mark->length`
+        //on restore, so assigning old value would leak.
+        if(current->length > mark->lengths[i]) {
+            current->length = mark->lengths[i];
+        }
         current = next;
     }
     //if new nodes were allocated after `mark`'s creation, they should be reset
     if(next != NULL) PCB_Arena_reset((PCB_Arena*)next);
 }
 
+static inline bool PCB__Arena_holds(PCB_Arena_Prefix* a, const void* ptr) {
+    char* start = PCB__Arena_start(a);
+    char* end   = PCB__Arena_end(a); //         `<= end` or `< end`?
+    return (const char*)ptr >= start && (const char*)ptr <= end;
+}
+
+static inline PCB_Arena_Prefix* PCB__Arena_ptrnode(PCB_Arena* arena, const void* ptr) {
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    while(a != NULL) {
+        if(PCB__Arena_holds(a, ptr)) return a;
+        a = (PCB_Arena_Prefix*)a->next;
+    }
+    return NULL;
+}
+
+/**
+ * Computes the padding required, given `start`, so that
+ * at least `reserve` units are available immediately prior and
+ * alignment equal to `alignment` is guaranteed.
+ *
+ * In terms of arenas, it computes the padding from `start` required for
+ * an allocation aligned to at least `alignment*sizeof(void*)` bytes, which reserves
+ * `reserve*sizeof(void*)` bytes immediately prior to the allocation for metadata.
+ *
+ * The result is correct and well-defined even if `start` and `reserve` are 0.
+ */
+static PCB_ForceInline size_t PCB__Arena_pad(
+    uintptr_t start, size_t alignment, size_t reserve
+) {
+    return reserve + alignment - ((size_t)start+reserve-1)%alignment - 1;
+}
+
+static PCB_ForceInline size_t PCB__Arena_meta_size(PCB_Arena_Prefix* a) {
+    return a->flags & PCB_ARENA_FLAG_ALLOC_META
+        ? sizeof(PCB_Arena_Alloc_Meta)/sizeof(void*)
+        : 0;
+}
+
+static inline void PCB__Arena_store_meta(
+    PCB_Arena_Prefix* a, void* data, size_t size, size_t pad
+) {
+    PCB_Arena_Alloc_Meta* meta = &a->last;
+    if(a->flags & PCB_ARENA_FLAG_ALLOC_META)
+        meta = (PCB_Arena_Alloc_Meta*)data;
+    meta->size = size;
+    meta->pad  = pad;
+}
+
+static inline void PCB__Arena_do_free(
+    PCB_Arena_Prefix* a, size_t length, PCB_Arena_Alloc_Meta* meta
+) {
+    a->length = length - (meta->pad & ~(SIZE_MAX ^ (SIZE_MAX>>1)));
+    if(a->flags & PCB_ARENA_FLAG_ALLOC_META)
+        a->length -= sizeof(PCB_Arena_Alloc_Meta)/sizeof(void*);
+    else
+        a->last.size = a->last.pad = 0;
+}
+
+static void PCB__Arena_diagnose_df(const char* func, void* ptr) {
+    PCB_log(PCB_LOGLEVEL_FATAL, "%s: double free detected for %p.", func, ptr);
+    abort();
+}
+
 PCB_Arena* PCB_Arena_init(size_t size) {
-    if(size == 0) return NULL;
+    return PCB_Arena_init_ex(size, 0);
+}
+
+PCB_Arena* PCB_Arena_init_ex(size_t size, PCB_Arena_Flags flags) {
+    PCB_CHECK(size == 0, NULL);
     size_t capacity = 1;
     while(capacity < size) capacity *= 2;
-    PCB_Arena_Prefix* arena = (PCB_Arena_Prefix*)PCB_realloc(NULL, capacity + sizeof(*arena));
-    if(arena == NULL) {
+    capacity += sizeof(PCB_Arena_Prefix);
+    void* mem = PCB_realloc(NULL, capacity);
+    if(mem == NULL) {
 #if PCB_PLATFORM_WINDOWS
         SetLastError(0);
 #endif
         return NULL;
     }
-    arena->length = 0;
-    arena->capacity = capacity / sizeof(void*);
-    arena->next = NULL;
-    return (PCB_Arena*)arena;
+    return PCB_Arena_init_in_ex(mem, capacity, flags);
 }
 
 PCB_Arena* PCB_Arena_init_in(void* mem, size_t memsize) {
+    return PCB_Arena_init_in_ex(mem, memsize, 0);
+}
+
+PCB_Arena* PCB_Arena_init_in_ex(void* mem, size_t memsize, PCB_Arena_Flags flags) {
+    PCB_CHECK_NULL(mem, NULL);
     if(memsize <= sizeof(PCB_Arena_Prefix)) return NULL;
-    PCB_Arena_Prefix* arena = (PCB_Arena_Prefix*)mem;
-    arena->length = 0;
-    arena->capacity = (memsize - sizeof(PCB_Arena_Prefix)) / sizeof(void*);
-    arena->next = NULL;
-    return (PCB_Arena*)arena;
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)mem;
+    a->length    = 0;
+    a->capacity  = (memsize - sizeof(*a)) / sizeof(void*);
+    a->next      = NULL;
+    a->flags     = flags;
+    a->last.size = a->last.pad = 0;
+    return (PCB_Arena*)a;
 }
 
 void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
@@ -6472,21 +6643,24 @@ void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
     if(size == 0) return NULL;
 
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    size /= sizeof(void*);
+    const size_t meta = PCB__Arena_meta_size(a);
 try_alloc:
-    if(a->length + (size / sizeof(void*)) > a->capacity) {
+    if(a->length + size + meta > a->capacity) {
         if(a->next != NULL)  {
             a = (PCB_Arena_Prefix*)a->next;
             goto try_alloc;
         }
-        size_t capacity = a->capacity*sizeof(void*);
-        while(capacity < size) capacity *= 2;
-        a->next = PCB_Arena_init(capacity);
+        size_t capacity = a->capacity;
+        while(capacity < size + meta) capacity *= 2;
+        a->next = PCB_Arena_init_ex(capacity*sizeof(void*), a->flags);
         if(a->next == NULL) return NULL;
         a = (PCB_Arena_Prefix*)a->next;
     }
     void* data = PCB__Arena_cur(a);
-    a->length += size / sizeof(void*);
-    return data;
+    PCB__Arena_store_meta(a, data, size, 0);
+    a->length += size + meta;
+    return (char*)data + meta*sizeof(void*);
 }
 
 void* PCB_Arena_calloc(PCB_Arena* arena, size_t size) {
@@ -6504,25 +6678,29 @@ void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
     size = PCB__Arena_ceil(size);
     if(size == 0) return NULL;
 
+    alignment /= sizeof(void*); //normalize to
+    size      /= sizeof(void*); //internal units
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    const size_t meta = PCB__Arena_meta_size(a);
     void* data; size_t pad;
 try_alloc:
     data = PCB__Arena_cur(a);
-    pad  = alignment - (uintptr_t)data % alignment;
-    if(a->length + ((size + pad) / sizeof(void*)) > a->capacity) {
+    pad = PCB__Arena_pad((uintptr_t)data / sizeof(void*), alignment, meta);
+    if(a->length + size + pad > a->capacity) {
         if(a->next != NULL)  {
             a = (PCB_Arena_Prefix*)a->next;
             goto try_alloc;
         }
-        size_t capacity = a->capacity*sizeof(void*);
-        while(capacity < size + alignment) capacity *= 2;
-        a->next = PCB_Arena_init(capacity);
+        size_t capacity = a->capacity;
+        while(capacity < size + meta + alignment) capacity *= 2;
+        a->next = PCB_Arena_init_ex(capacity*sizeof(void*), a->flags);
         if(a->next == NULL) return NULL;
         a = (PCB_Arena_Prefix*)a->next;
     }
-
-    a->length += (size + pad) / sizeof(void*);
-    return (void*)((char*)data + pad);
+    data = (char*)data + (pad - meta) * sizeof(void*); //sets MSB
+    PCB__Arena_store_meta(a, data, size, (pad - meta) | (SIZE_MAX ^ (SIZE_MAX>>1)));
+    a->length += size + pad;
+    return (char*)data + meta*sizeof(void*);
 }
 
 void* PCB_Arena_aligned_calloc(PCB_Arena* arena, size_t size, size_t alignment) {
@@ -6535,15 +6713,20 @@ bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
     PCB_CHECK_SELF(arena, false);
     if(size == NULL) return false;
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
-    *size = (a->capacity - a->length) * sizeof(void*);
-    if(ptr != NULL) {
-        if(*size > 0) {
-            *ptr = PCB__Arena_cur(a);
-            a->length = a->capacity;
-        }
-        else {
-            *ptr = NULL;
-        }
+
+    *size = 0;
+    if(ptr != NULL) *ptr = NULL;
+    const size_t meta = PCB__Arena_meta_size(a);
+    const size_t end  = a->length + meta;
+    if(end > a->capacity) return false;
+
+    size_t s = a->capacity - end;
+    *size = s * sizeof(void*);
+    if(ptr != NULL && s > 0) {
+        void* data = PCB__Arena_cur(a);
+        PCB__Arena_store_meta(a, data, s, 0);
+        a->length = a->capacity;
+        *ptr = (char*)data + meta*sizeof(void*);
     }
     return true;
 }
@@ -6606,6 +6789,25 @@ size_t PCB_Arena_capacity_all(PCB_Arena* arena) {
     return capacity;
 }
 
+PCB_Arena_Flags PCB_Arena_flags(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena, 0);
+    return ((PCB_Arena_Prefix*)arena)->flags;
+}
+
+bool PCB_Arena_enable_allocMeta(PCB_Arena* arena, bool enable) {
+    PCB_CHECK_SELF(arena, false);
+    PCB__Arena_forEach_node(current, next) {
+        if(current->length != 0) return false;
+    }
+    PCB__Arena_forEach_node(current, next) {
+        if(enable)
+            current->flags |=  PCB_ARENA_FLAG_ALLOC_META;
+        else //how come does ~ change type to SIGNED int?!
+            current->flags &= (PCB_Arena_Flags)~PCB_ARENA_FLAG_ALLOC_META;
+    }
+    return true;
+}
+
 PCB_Arena_Mark* PCB_Arena_mark(PCB_Arena* arena) {
     PCB_CHECK_SELF(arena, NULL);
 
@@ -6627,7 +6829,7 @@ bool PCB_Arena_restore_to(PCB_Arena* arena, PCB_Arena_Mark* mark) {
     PCB_CHECK(mark == NULL, false);
 
     PCB_Arena_Prefix* marknode = PCB__Arena_marknode(arena, mark);
-    if(marknode == NULL) return false;
+    if(marknode == NULL) return false; //likely user bug, maybe issue a diagnostic?
     PCB__Arena_restore(arena, mark);
     return true;
 }
@@ -6638,21 +6840,34 @@ bool PCB_Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
 
     const size_t marklen = sizeof(mark->length) + mark->length * sizeof(*mark->lengths);
     PCB_Arena_Prefix* marknode = PCB__Arena_marknode(arena, mark);
-    if(marknode == NULL) return false;
+    if(marknode == NULL) return false; //likely user bug, maybe issue a diagnostic?
     PCB__Arena_restore(arena, mark);
     //dealloc `mark` since we know it's the last thing that was allocated
     marknode->length -= marklen / sizeof(void*);
+    //dealloc metadata before `mark`, if any
+    marknode->length -= PCB__Arena_meta_size(marknode);
     return true;
 }
 
+void PCB_Arena_free(PCB_Arena* arena, void* ptr) {
+    PCB_CHECK_SELF(arena,);
+    if(ptr == NULL) return;
+    PCB_Arena_Prefix* a = PCB__Arena_ptrnode(arena, ptr);
+    if(a == NULL) return; //likely user bug, maybe issue a diagnostic?
+
+    size_t length = PCB__Arena_offsetof(a, ptr);
+    if(length >= a->length) { PCB__Arena_diagnose_df(__func__, ptr); return; }
+    PCB_Arena_Alloc_Meta* meta = &a->last;
+    if(a->flags & PCB_ARENA_FLAG_ALLOC_META) meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
+    //`ptr` was the last thing allocated, we can actually deallocate it.
+    //Otherwise ignored.
+    if(length + meta->size == a->length) PCB__Arena_do_free(a, length, meta);
+}
+
 void PCB_Arena_reset(PCB_Arena* arena) {
-    PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)(((PCB_Arena_Prefix*)arena)->next);
-    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
-    while(true) {
+    PCB_CHECK_SELF(arena, );
+    PCB__Arena_forEach_node(current, next) {
         current->length = 0;
-        if(next == NULL) break;
-        current = next;
-        next = (PCB_Arena_Prefix*)next->next;
     }
 }
 
