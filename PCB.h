@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 5
+#define PCB_VERSION_PATCH 6
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3551,8 +3551,6 @@ PCBAPI void* PCBCALL PCB_Arena_calloc(PCB_Arena* arena, size_t size);
  *
  * - `size == 0 || alignment == 0`,
  *
- * -`size` is not a multiple of `alignment`,
- *
  * - `alignment` is invalid,
  *
  * - allocation failed.
@@ -6483,7 +6481,6 @@ void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
     const bool pow2 = (alignment & (alignment - 1)) == 0;
     if(!pow2) return NULL;
     if(alignment % sizeof(void*) != 0) return NULL;
-    if(size % alignment != 0) return NULL;
     size = (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
     if(size == 0) return NULL;
 
