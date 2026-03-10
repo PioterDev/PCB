@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 6
+#define PCB_VERSION_PATCH 7
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6467,16 +6467,18 @@ PCB_Arena* PCB_Arena_init_in(void* mem, size_t memsize) {
 }
 
 void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
-    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    PCB_CHECK_SELF(arena, NULL);
     size = PCB__Arena_ceil(size);
     if(size == 0) return NULL;
-    try_alloc:
+
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+try_alloc:
     if(a->length + (size / sizeof(void*)) > a->capacity) {
         if(a->next != NULL)  {
             a = (PCB_Arena_Prefix*)a->next;
             goto try_alloc;
         }
-        size_t capacity = ((PCB_Arena_Prefix*)arena)->capacity;
+        size_t capacity = a->capacity*sizeof(void*);
         while(capacity < size) capacity *= 2;
         a->next = PCB_Arena_init(capacity);
         if(a->next == NULL) return NULL;
@@ -6512,8 +6514,8 @@ try_alloc:
             a = (PCB_Arena_Prefix*)a->next;
             goto try_alloc;
         }
-        size_t capacity = a->capacity;
-        while(capacity < size) capacity *= 2;
+        size_t capacity = a->capacity*sizeof(void*);
+        while(capacity < size + alignment) capacity *= 2;
         a->next = PCB_Arena_init(capacity);
         if(a->next == NULL) return NULL;
         a = (PCB_Arena_Prefix*)a->next;
