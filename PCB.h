@@ -1160,6 +1160,46 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_NO_INLINE_EXPORTS
 #endif //PCB_maybe_inline
 
+#ifndef PCB_defer_varl
+/**
+ * @brief Set the `var` variable to `val` and jump to `label`.
+ */
+#define PCB_defer_varl(var, val, label) do { var = val; goto label; } while(0)
+#endif //PCB_defer_varl
+
+#ifndef PCB_defer_l
+/**
+ * @brief Set the `result` variable to `val` and jump to `label`.
+ * Parameterized version of `PCB_defer_varl` for `label`.
+ */
+#define PCB_defer_l(val, label) PCB_defer_varl(result, val, label)
+#endif //PCB_defer_l
+
+#ifndef PCB_return_defer_var
+/**
+ * @brief Set the `var` variable to `val` and jump to `defer`.
+ * Parameterized version of `PCB_return_defer` for `var`.
+ * See `PCB_defer_varl` for a more generic version.
+ */
+#define PCB_return_defer_var(var, val) PCB_defer_varl(var, val, defer)
+#endif //PCB_return_defer_var
+
+#ifndef PCB_return_defer
+/**
+ * @brief Set the `result` variable to `val` and jump to `defer`.
+ * Used for resource cleanup at function exit.
+ *
+ * This macro uses `result` as the return variable and `defer` as the final
+ * cleanup label by convention.
+ * See `PCB_return_defer_var` for a more generic version.
+ *
+ * You can safely #define this macro in your code to whatever is best suited
+ * for you prior to #include'ing the library. The library uses a private
+ * version.
+ */
+#define PCB_return_defer(val) PCB_return_defer_var(result, val)
+#endif //PCB_return_defer
+
 //Macro used for ensuring a particular storage type for enums.
 #ifndef PCB_Enum
 #if defined(__cpluslus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
@@ -4054,6 +4094,9 @@ PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
 /* ---------------------------------------------------------------- */
 /* ------------------------ Private macros ------------------------ */
 /* ---------------------------------------------------------------- */
+#define PCB__defer_l(val, label) PCB_defer_varl(result, val, label)
+#define PCB__return_defer(val)   PCB_defer_varl(result, val, defer)
+
 #ifdef PCB_DEBUG_SELF
 #define PCB__logTrace(...) PCB_logTrace(__VA_ARGS__)
 #else
