@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 8
+#define PCB_VERSION_PATCH 9
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -7133,6 +7133,9 @@ void PCB_Arena_destroy(PCB_Arena* arena) {
 
 #ifdef PCB_HAS_STDIO_H
 char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
+    PCB_CHECK_SELF(arena, NULL);
+    if(fmt == NULL) return NULL;
+
     va_list args;
     va_start(args, fmt);
     char* str = PCB_Arena_vasprintf(arena, fmt, args);
@@ -7141,16 +7144,19 @@ char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
 }
 
 char* PCB_Arena_vasprintf(PCB_Arena* arena, const char* fmt, va_list ap) {
+    PCB_CHECK_SELF(arena, NULL);
+    if(fmt == NULL) return NULL;
+
     va_list args;
     va_copy(args, ap);
-    const size_t lengthRequired = (unsigned int)PCB_vsnprintf(NULL, 0, fmt, args) + 1;
+    const size_t req = (unsigned int)PCB_vsnprintf(NULL, 0, fmt, args) + 1;
     va_end(args);
 
-    char* text = (char*)PCB_Arena_alloc(arena, lengthRequired);
+    char* text = (char*)PCB_Arena_alloc(arena, req);
     if(text == NULL) return NULL;
     va_copy(args, ap);
-    const size_t printed = (unsigned int)PCB_vsnprintf(text, lengthRequired, fmt, args);
-    PCB_assert(printed + 1 == lengthRequired);
+    const size_t printed = (unsigned int)PCB_vsnprintf(text, req, fmt, args);
+    PCB_assert(printed + 1 == req);
     va_end(args);
     return text;
 }
@@ -7167,6 +7173,7 @@ char* PCB_Arena_vasprintf(PCB_Arena* arena, const char* fmt, va_list ap) {
 #endif //PCB_HAS_STDIO_H?
 
 char* PCB_Arena_strdup(PCB_Arena* arena, const char* str) {
+    PCB_CHECK_SELF(arena, NULL);
     if(str == NULL) return NULL;
     size_t len = PCB_strlen(str) + 1; // '\0'
     char* text = (char*)PCB_Arena_alloc(arena, len);
@@ -7176,6 +7183,7 @@ char* PCB_Arena_strdup(PCB_Arena* arena, const char* str) {
 }
 
 char* PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n) {
+    PCB_CHECK_SELF(arena, NULL);
     if(str == NULL) return NULL;
     size_t len = PCB_strnlen(str, n); //           '\0'
     char* text = (char*)PCB_Arena_alloc(arena, len + 1);
