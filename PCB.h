@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 9
+#define PCB_VERSION_PATCH 10
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3648,7 +3648,7 @@ PCBAPI void* PCBCALL PCB_Arena_alloc(PCB_Arena* arena, size_t size);
  * @brief Same as `PCB_Arena_alloc`, but clears (zeroes)
  * the buffer before return.
  */
-PCBAPI void* PCBCALL PCB_Arena_calloc(PCB_Arena* arena, size_t size);
+PCBAPI void* PCBCALL PCB_Arena_zalloc(PCB_Arena* arena, size_t size);
 /**
  * @brief Allocates `size` bytes in `arena` with at least `alignment` alignment.
  *
@@ -3676,7 +3676,7 @@ PCBAPI void* PCBCALL PCB_Arena_aligned_alloc(
  * @brief Same as `PCB_Arena_aligned_alloc`, but zeroes (clears)
  * the buffer before return.
  */
-PCBAPI void* PCBCALL PCB_Arena_aligned_calloc(
+PCBAPI void* PCBCALL PCB_Arena_aligned_zalloc(
     PCB_Arena* arena,
     size_t size,
     size_t alignment
@@ -6832,7 +6832,7 @@ try_alloc:
     return (char*)data + meta*sizeof(void*);
 }
 
-void* PCB_Arena_calloc(PCB_Arena* arena, size_t size) {
+void* PCB_Arena_zalloc(PCB_Arena* arena, size_t size) {
     void* mem = PCB_Arena_alloc(arena, size);
     if(mem != NULL) PCB_memset(mem, 0, size);
     return mem;
@@ -6879,7 +6879,7 @@ try_alloc:
     return (char*)data + meta*sizeof(void*);
 }
 
-void* PCB_Arena_aligned_calloc(PCB_Arena* arena, size_t size, size_t alignment) {
+void* PCB_Arena_aligned_zalloc(PCB_Arena* arena, size_t size, size_t alignment) {
     void* mem = PCB_Arena_aligned_alloc(arena, size, alignment);
     if(mem != NULL) PCB_memset(mem, 0, size);
     return mem;
