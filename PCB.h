@@ -1923,6 +1923,10 @@ for(                                                                \
 #include <signal.h>
 #endif //platform-specific APIs
 
+#ifdef __SANITIZE_ADDRESS__
+#include <sanitizer/asan_interface.h>
+#endif //ASan
+
 
 
 //Section 2: declarations of library structures, enums, functions, etc.
@@ -2245,7 +2249,7 @@ typedef struct {
 } PCB_Arena_Alloc_Meta;
 
 /**
- * @brief A prefix of `PCB_Arena` for metadata.
+ * @brief A prefix of `PCB_Arena` for allocator metadata.
  */
 typedef struct {
     size_t length;
@@ -6615,21 +6619,27 @@ static inline PCB_Arena_Prefix* PCB__Arena_marknode(
 }
 
 static inline void PCB__Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
-    PCB_Arena_Prefix* current = (PCB_Arena_Prefix*)arena;
-    PCB_Arena_Prefix* next    = (PCB_Arena_Prefix*)current->next;
+    PCB_Arena_Prefix* cur  = (PCB_Arena_Prefix*)arena;
+    PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)cur->next;
     //NOTE: this code assumes the number of nodes in `arena` cannot be
     //`< mark->length`, which may not hold true if `arena` gains the capability
     //of dropping nodes
     for(size_t i = 0; i < mark->length; i++) {
-        next = (PCB_Arena_Prefix*)current->next;
+        next = (PCB_Arena_Prefix*)cur->next;
         //Suppose the following history: ([x] -> buffer placed in node x)
         //alloc_1[2], mark[1], free_1, restore
-        //In such case `current->length` will be smaller than `mark->length`
+        //In such case `cur->length` will be smaller than `mark->length`
         //on restore, so assigning old value would leak.
-        if(current->length > mark->lengths[i]) {
-            current->length = mark->lengths[i];
+        if(cur->length > mark->lengths[i]) {
+            cur->length = mark->lengths[i];
+#ifdef __SANITIZE_ADDRESS__
+            ASAN_POISON_MEMORY_REGION(
+                PCB__Arena_cur(cur),
+                (cur->capacity - cur->length)*sizeof(void*)
+            );
+#endif //ASan
         }
-        current = next;
+        cur = next;
     }
     //if new nodes were allocated after `mark`'s creation, they should be reset
     if(next != NULL) PCB_Arena_reset((PCB_Arena*)next);
@@ -6668,9 +6678,14 @@ static PCB_ForceInline size_t PCB__Arena_pad(
 }
 
 static PCB_ForceInline size_t PCB__Arena_meta_size(PCB_Arena_Prefix* a) {
+#ifdef __SANITIZE_ADDRESS__
+    (void)a;
+    return sizeof(PCB_Arena_Alloc_Meta)/sizeof(void*);
+#else
     return a->flags & PCB_ARENA_FLAG_ALLOC_META
         ? sizeof(PCB_Arena_Alloc_Meta)/sizeof(void*)
         : 0;
+#endif //always leave poisoned redzones between allocations under ASan
 }
 
 static inline void PCB__Arena_store_meta(
@@ -6703,8 +6718,11 @@ static inline void PCB__Arena_do_free(
     PCB_Arena_Prefix* a, size_t length, PCB_Arena_Alloc_Meta* meta
 ) {
     a->length = length - (meta->pad & ~(SIZE_MAX ^ (SIZE_MAX>>1)));
-    if(a->flags & PCB_ARENA_FLAG_ALLOC_META)
-        a->length -= sizeof(PCB_Arena_Alloc_Meta)/sizeof(void*);
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(PCB__Arena_cur(a), (a->capacity - a->length) * sizeof(void*));
+#endif //ASan
+    if(a->flags & PCB_ARENA_FLAG_ALLOC_META) //NOTE: Poisoned by the caller
+        a->length -= sizeof(*meta)/sizeof(void*);
     else
         a->last.size = a->last.pad = 0;
 }
@@ -6726,6 +6744,9 @@ static inline bool PCB__Arena_try_shrink_buf(
     if(size > meta->size) return false;
     size_t diff = meta->size - size;
     meta->size -= diff; a->length -= diff;
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(PCB__Arena_cur(a), diff*sizeof(void*));
+#endif //ASan
     return true;
 }
 
@@ -6734,6 +6755,9 @@ static inline bool PCB__Arena_try_expand_buf(
 ) {
     size_t diff = size - meta->size;
     if(a->length + diff > a->capacity) return false;
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_UNPOISON_MEMORY_REGION(PCB__Arena_cur(a), diff*sizeof(void*));
+#endif //ASan
     meta->size += diff; a->length += diff;
     return true;
 }
@@ -6770,6 +6794,9 @@ PCB_Arena* PCB_Arena_init_in_ex(void* mem, size_t memsize, PCB_Arena_Flags flags
     a->next      = NULL;
     a->flags     = flags;
     a->last.size = a->last.pad = 0;
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(PCB__Arena_start(a), a->capacity*sizeof(void*));
+#endif //ASan
     return (PCB_Arena*)a;
 }
 
@@ -6794,7 +6821,13 @@ try_alloc:
         a = (PCB_Arena_Prefix*)a->next;
     }
     void* data = PCB__Arena_cur(a);
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_UNPOISON_MEMORY_REGION(data, (size + meta) * sizeof(void*));
+#endif //ASan
     PCB__Arena_store_meta(a, data, size, 0);
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(data, meta*sizeof(void*));
+#endif //ASan
     a->length += size + meta;
     return (char*)data + meta*sizeof(void*);
 }
@@ -6834,7 +6867,13 @@ try_alloc:
         a = (PCB_Arena_Prefix*)a->next;
     }
     data = (char*)data + (pad - meta) * sizeof(void*); //sets MSB
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_UNPOISON_MEMORY_REGION(data, (size + meta) * sizeof(void*));
+#endif //ASan
     PCB__Arena_store_meta(a, data, size, (pad - meta) | (SIZE_MAX ^ (SIZE_MAX>>1)));
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(data, meta*sizeof(void*));
+#endif //ASan
     a->length += size + pad;
     return (char*)data + meta*sizeof(void*);
 }
@@ -6860,7 +6899,13 @@ bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
     *size = s * sizeof(void*);
     if(ptr != NULL && s > 0) {
         void* data = PCB__Arena_cur(a);
+#ifdef __SANITIZE_ADDRESS__
+        ASAN_UNPOISON_MEMORY_REGION(data, (s + meta) * sizeof(void*));
+#endif //ASan
         PCB__Arena_store_meta(a, data, s, 0);
+#ifdef __SANITIZE_ADDRESS__
+        ASAN_POISON_MEMORY_REGION(data, meta*sizeof(void*));
+#endif //ASan
         a->length = a->capacity;
         *ptr = (char*)data + meta*sizeof(void*);
     }
@@ -6980,8 +7025,15 @@ bool PCB_Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
     PCB__Arena_restore(arena, mark);
     //dealloc `mark` since we know it's the last thing that was allocated
     marknode->length -= marklen / sizeof(void*);
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(PCB__Arena_cur(marknode), marklen);
+#endif //ASan
     //dealloc metadata before `mark`, if any
-    marknode->length -= PCB__Arena_meta_size(marknode);
+    const size_t meta = PCB__Arena_meta_size(marknode);
+    marknode->length -= meta;
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(PCB__Arena_cur(marknode), meta*sizeof(void*));
+#endif //ASan
     return true;
 }
 
@@ -6994,10 +7046,19 @@ void PCB_Arena_free(PCB_Arena* arena, void* ptr) {
     size_t length = PCB__Arena_offsetof(a, ptr);
     if(length >= a->length) { PCB__Arena_diagnose_df(__func__, ptr); return; }
     PCB_Arena_Alloc_Meta* meta = &a->last;
-    if(a->flags & PCB_ARENA_FLAG_ALLOC_META) meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
+    if(a->flags & PCB_ARENA_FLAG_ALLOC_META) {
+        meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
+#ifdef __SANITIZE_ADDRESS__
+        ASAN_UNPOISON_MEMORY_REGION(meta, sizeof(*meta));
+#endif //ASan
+    }
     //`ptr` was the last thing allocated, we can actually deallocate it.
     //Otherwise ignored.
     if(length + meta->size == a->length) PCB__Arena_do_free(a, length, meta);
+#ifdef __SANITIZE_ADDRESS__
+    if(a->flags & PCB_ARENA_FLAG_ALLOC_META)
+        ASAN_POISON_MEMORY_REGION(meta, sizeof(*meta));
+#endif //ASan
 }
 
 void* PCB_Arena_realloc(PCB_Arena* arena, void* ptr, size_t size) {
@@ -7026,22 +7087,30 @@ void* PCB_Arena_realloc(PCB_Arena* arena, void* ptr, size_t size) {
     size_t length = PCB__Arena_offsetof(a, ptr);
     if(length >= a->length) { PCB__Arena_diagnose_uaf(__func__, ptr); return NULL; }
     PCB_Arena_Alloc_Meta* meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_UNPOISON_MEMORY_REGION(meta, sizeof(*meta));
+#endif //ASan
+    void* result;
 
-    if(meta->size == size) return ptr;
+    if(meta->size == size) PCB__return_defer(ptr);
     if(length + meta->size != a->length) { //Not the last thing allocated.
         //We can't shrink without introducing a hole, just leak the difference.
-        if(meta->size > size) return ptr;
+        if(meta->size > size) PCB__return_defer(ptr);
         //"Extend" by allocating new memory.
         //This leaks `ptr`, but nobody sane is going to use a linear
         //allocator with arbitrary lifetimes...right?
-        return PCB__Arena_realloc_new(arena, ptr, size, meta);
+        PCB__return_defer(PCB__Arena_realloc_new(arena, ptr, size, meta));
     }
-    if(PCB__Arena_try_shrink_buf(a, size, meta)) return ptr;
-    if(PCB__Arena_try_expand_buf(a, size, meta)) return ptr;
-    void* new_ptr = PCB__Arena_realloc_new(arena, ptr, size, meta);
-    if(new_ptr == NULL) return NULL;
+    if(PCB__Arena_try_shrink_buf(a, size, meta)) PCB__return_defer(ptr);
+    if(PCB__Arena_try_expand_buf(a, size, meta)) PCB__return_defer(ptr);
+    result = PCB__Arena_realloc_new(arena, ptr, size, meta);
+    if(result == NULL) goto defer;
     PCB__Arena_do_free(a, length, meta);
-    return new_ptr;
+defer:
+#ifdef __SANITIZE_ADDRESS__
+    ASAN_POISON_MEMORY_REGION(meta, sizeof(*meta));
+#endif //ASan
+    return result;
 }
 
 void PCB_Arena_reset(PCB_Arena* arena) {
