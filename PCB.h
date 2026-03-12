@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 7
+#define PCB_VERSION_PATCH 8
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6865,6 +6865,7 @@ try_alloc:
         a->next = PCB_Arena_init_ex(capacity*sizeof(void*), a->flags);
         if(a->next == NULL) return NULL;
         a = (PCB_Arena_Prefix*)a->next;
+        goto try_alloc;
     }
     data = (char*)data + (pad - meta) * sizeof(void*); //sets MSB
 #ifdef __SANITIZE_ADDRESS__
