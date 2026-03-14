@@ -483,146 +483,70 @@ extern "C" {
 //Section 1.4: Define useful, but often compiler-specific macros
 
 #ifndef PCB_NoDiscard
-#ifdef __cplusplus
-#if __cplusplus >= 201703L
+#if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_NoDiscard [[nodiscard]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
 #define PCB_NoDiscard __attribute__((warn_unused_result))
-#elif PCB_COMPILER_MSVC
-#define PCB_NoDiscard
 #else
 #define PCB_NoDiscard
-#endif //Compilers
-#endif //C++17
-#else //C
-#if __STDC_VERSION__ >= 202311L
-#define PCB_NoDiscard [[nodiscard]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-#define PCB_NoDiscard __attribute__((warn_unused_result))
-#elif PCB_COMPILER_MSVC
-#define PCB_NoDiscard
-#else
-#define PCB_NoDiscard
-#endif //Compilers
-#endif //C23
-#endif //C++?
+#endif //(C++17+ || C23+) || (GCC >= 3.4.6 || Clang >= 4)
 #endif //PCB_NoDiscard
 
+//`reason` must be a string literal.
 #ifndef PCB_NoDiscardReason
-#ifdef __cplusplus
-#if __cplusplus >= 202002L
+#if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_NoDiscardReason(reason) [[nodiscard(reason)]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
 #define PCB_NoDiscardReason(reason) __attribute__((warn_unused_result))
-#elif PCB_COMPILER_MSVC
-#define PCB_NoDiscardReason(reason)
 #else
 #define PCB_NoDiscardReason(reason)
-#endif //Compilers
-#endif //C++17
-#else //C
-#if __STDC_VERSION__ >= 202311L
-#define PCB_NoDiscardReason(reason) [[nodiscard(reason)]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-#define PCB_NoDiscardReason(reason) __attribute__((warn_unused_result))
-#elif PCB_COMPILER_MSVC
-#define PCB_NoDiscardReason(reason)
-#else
-#define PCB_NoDiscardReason(reason)
-#endif //Compilers
-#endif //C23
-#endif //C++?
+#endif //(C++17+ || C23+) || (GCC >= 3.4.6 || Clang >= 4)
 #endif //PCB_NoDiscardReason
 
 #ifndef PCB_Deprecated
-#ifdef __cplusplus
-#if __cplusplus >= 201402L
+#if (defined(__cplusplus) && __cplusplus+0 >= 201402L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_Deprecated [[deprecated]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#elif PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG >= 30100
 #define PCB_Deprecated __attribute__((deprecated))
 #elif PCB_COMPILER_MSVC
 #define PCB_Deprecated __declspec(deprecated)
 #else
 #define PCB_Deprecated
-#endif //Compilers
-#endif //C++14
-#else //C
-#if __STDC_VERSION__ >= 202311L
-#define PCB_Deprecated [[deprecated]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-#define PCB_Deprecated __attribute__((deprecated))
-#elif PCB_COMPILER_MSVC
-#define PCB_Deprecated __declspec(deprecated)
-#else
-#define PCB_Deprecated
-#endif //Compilers
-#endif //C23
-#endif //C++?
+#endif //(C++14+ || C23+) || (GCC >= 3.1.1 || Clang >= 3.1) || MSVC
 #endif //PCB_Deprecated
 
+//`reason` must be a string literal.
 #ifndef PCB_DeprecatedReason
-#ifdef __cplusplus
-#if __cplusplus >= 201402L
+#if (defined(__cplusplus) && __cplusplus+0 >= 201402L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_DeprecatedReason(reason) [[deprecated(reason)]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-#define PCB_DeprecatedReason(reason) __attribute__((deprecated(reason)))
-#elif PCB_COMPILER_MSVC
-#define PCB_Deprecated(reason) __declspec(deprecated(reason))
-#else
-#define PCB_Deprecated(reason)
-#endif //Compilers
-#endif //C++14
-#else //C
-#if __STDC_VERSION__ >= 202311L
-#define PCB_DeprecatedReason(reason) [[deprecated(reason)]]
-#else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#elif PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG >= 30100
 #define PCB_DeprecatedReason(reason) __attribute__((deprecated(reason)))
 #elif PCB_COMPILER_MSVC
 #define PCB_DeprecatedReason(reason) __declspec(deprecated(reason))
 #else
 #define PCB_DeprecatedReason(reason)
-#endif //Compilers
-#endif //C23
-#endif //C++?
-#endif //PCB_Deprecated
+#endif //(C++14+ || C23+) || (GCC >= 3.1.1 || Clang >= 3.1) || MSVC
+#endif //PCB_DeprecatedReason
 
 #ifndef PCB_NoReturn
-#ifdef __cplusplus
-#if __cplusplus >= 201103L
+#if (defined(__cplusplus) && __cplusplus+0 >= 201103L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_NoReturn [[noreturn]]
-#else
-#if PCB_COMPILER_GCC
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L
+#define PCB_NoReturn _Noreturn
+#elif PCB_COMPILER_GCC >= 29503
 #define PCB_NoReturn __attribute__((noreturn))
-#elif PCB_COMPILER_MSVC
-#define PCB_NoReturn __declspec(noreturn)
-#else
-#define PCB_NoReturn
-#endif //Compilers
-#endif //C++11
-#else //C
-#if __STDC_VERSION__ >= 202311L
-#define PCB_NoReturn [[noreturn]]
-#else
-#if PCB_COMPILER_GCC
-#define PCB_NoReturn __attribute__((noreturn))
-#elif PCB_COMPILER_CLANG
+#elif PCB_COMPILER_CLANG >= 30100
 #define PCB_NoReturn _Noreturn
 #elif PCB_COMPILER_MSVC
 #define PCB_NoReturn __declspec(noreturn)
 #else
-#pragma "PCB Warning: PCB_NoReturn does not mark function as one that doesn't return"
 #define PCB_NoReturn
-#endif //Compilers
-#endif //C23
-#endif //C++?
+#endif //(C++11+ || C23+) || (C11+) || compilers
 #endif //PCB_NoReturn
 
 #ifndef PCB_ForceInline
