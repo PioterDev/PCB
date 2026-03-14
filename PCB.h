@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 10
+#define PCB_VERSION_PATCH 11
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -482,28 +482,28 @@ extern "C" {
 
 //Section 1.4: Define useful, but often compiler-specific macros
 
-#ifndef PCB_NoDiscard
+#ifndef PCB_Nodiscard
 #if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
-#define PCB_NoDiscard [[nodiscard]]
+#define PCB_Nodiscard [[nodiscard]]
 #elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
-#define PCB_NoDiscard __attribute__((warn_unused_result))
+#define PCB_Nodiscard __attribute__((warn_unused_result))
 #else
-#define PCB_NoDiscard
+#define PCB_Nodiscard
 #endif //(C++17+ || C23+) || (GCC >= 3.4.6 || Clang >= 4)
-#endif //PCB_NoDiscard
+#endif //PCB_Nodiscard
 
 //`reason` must be a string literal.
-#ifndef PCB_NoDiscardReason
+#ifndef PCB_NodiscardReason
 #if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
-#define PCB_NoDiscardReason(reason) [[nodiscard(reason)]]
+#define PCB_NodiscardReason(reason) [[nodiscard(reason)]]
 #elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
-#define PCB_NoDiscardReason(reason) __attribute__((warn_unused_result))
+#define PCB_NodiscardReason(reason) __attribute__((warn_unused_result))
 #else
-#define PCB_NoDiscardReason(reason)
+#define PCB_NodiscardReason(reason)
 #endif //(C++17+ || C23+) || (GCC >= 3.4.6 || Clang >= 4)
-#endif //PCB_NoDiscardReason
+#endif //PCB_NodiscardReason
 
 #ifndef PCB_Deprecated
 #if (defined(__cplusplus) && __cplusplus+0 >= 201402L) || \
@@ -532,22 +532,22 @@ extern "C" {
 #endif //(C++14+ || C23+) || (GCC >= 3.1.1 || Clang >= 3.1) || MSVC
 #endif //PCB_DeprecatedReason
 
-#ifndef PCB_NoReturn
+#ifndef PCB_Noreturn
 #if (defined(__cplusplus) && __cplusplus+0 >= 201103L) || \
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
-#define PCB_NoReturn [[noreturn]]
+#define PCB_Noreturn [[noreturn]]
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L
-#define PCB_NoReturn _Noreturn
+#define PCB_Noreturn _Noreturn
 #elif PCB_COMPILER_GCC >= 29503
-#define PCB_NoReturn __attribute__((noreturn))
+#define PCB_Noreturn __attribute__((noreturn))
 #elif PCB_COMPILER_CLANG >= 30100
-#define PCB_NoReturn _Noreturn
+#define PCB_Noreturn _Noreturn
 #elif PCB_COMPILER_MSVC
-#define PCB_NoReturn __declspec(noreturn)
+#define PCB_Noreturn __declspec(noreturn)
 #else
-#define PCB_NoReturn
+#define PCB_Noreturn
 #endif //(C++11+ || C23+) || (C11+) || compilers
-#endif //PCB_NoReturn
+#endif //PCB_Noreturn
 
 #ifndef PCB_ForceInline
 #if (PCB_COMPILER_GCC >= 30101) || PCB_COMPILER_CLANG
