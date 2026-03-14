@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 11
+#define PCB_VERSION_PATCH 12
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -482,6 +482,82 @@ extern "C" {
 
 //Section 1.4: Define useful, but often compiler-specific macros
 
+#ifndef PCB_DO_PRAGMA
+#if PCB_COMPILER_MSVC
+//https://learn.microsoft.com/en-us/cpp/preprocessor/pragma-directives-and-the-pragma-keyword
+//MSVC, could you stop being an annoying b*tch FOR FIVE MINUTES!?
+#define PCB_DO_PRAGMA(x) __pragma(x)
+#else
+#define PCB_DO_PRAGMA(x) _Pragma(#x)
+#endif //MSVC...
+#endif //PCB_DO_PRAGMA
+
+#ifndef PCB_EmitWarning
+//https://stackoverflow.com/questions/471935/user-warnings-on-msvc-and-gcc
+//https://releases.llvm.org/3.3/tools/clang/docs/UsersManual.html
+#if PCB_COMPILER_GCC >= 40800 || PCB_COMPILER_CLANG >= 30300
+#define PCB_EmitWarning(w) PCB_DO_PRAGMA(GCC warning w)
+#elif PCB_COMPILER_GCC >= 40407 || PCB_COMPILER_MSVC >= 1500
+#define PCB_EmitWarning(w) PCB_DO_PRAGMA(message w)
+#else
+#ifdef PCB_ALLOW_UNKNOWN_PRAGMAS_FOR_USER_WARNINGS
+#define PCB_EmitWarning(w) PCB_DO_PRAGMA(user_warn w)
+#else
+#define PCB_EmitWarning(w)
+#endif //opt-in, otherwise won't compile if some idiot treats every single warning as error
+#endif //compilers
+#endif //PCB_EmitWarning
+
+//Save current diagnostic state.
+#ifndef PCB_PushDiagnostics
+#if PCB_COMPILER_GCC >= 40600 || PCB_COMPILER_CLANG >= 30100
+#define PCB_PushDiagnostics() PCB_DO_PRAGMA(GCC diagnostic push)
+#elif PCB_COMPILER_MSVC
+#define PCB_PushDiagnostics() PCB_DO_PRAGMA(warning(push))
+#else
+#define PCB_PushDiagnostics()
+#endif //compilers
+#endif //PCB_PushDiagnostics
+
+//Disable the specified diagnostic.
+//MSVC has a completely different diagnostic naming (of course it does),
+//so you still need an additional layer of #ifs for compiler detection.
+#ifndef PCB_IgnoreDiagnostic
+#if PCB_COMPILER_GCC >= 40600 || PCB_COMPILER_CLANG >= 30100
+#define PCB_IgnoreDiagnostic(w) PCB_DO_PRAGMA(GCC diagnostic ignored w)
+#elif PCB_COMPILER_MSVC
+#define PCB_IgnoreDiagnostic(w) PCB_DO_PRAGMA(warning(disable: w))
+#else
+#define PCB_IgnoreDiagnostic(w)
+#endif //compilers
+#endif //PCB_IgnoreDiagnostic
+
+//Elevate the specified warning to an error.
+//Same deal as with `PCB_IgnoreDiagnostic`.
+#ifndef PCB_ElevateWarning
+#if PCB_COMPILER_GCC >= 40600 || PCB_COMPILER_CLANG >= 30100
+#define PCB_ElevateWarning(w) PCB_DO_PRAGMA(GCC diagnostic error w)
+#elif PCB_COMPILER_MSVC
+#define PCB_ElevateWarning(w) PCB_DO_PRAGMA(warning(error: w))
+#else
+#define PCB_ElevateWarning(w)
+#endif //compilers
+#endif //PCB_ElevateWarning
+
+//Here would be `GCC diagnostic warning ...`, but MSVC doesn't have an equivalent (of course it doesn't).
+
+//Restore previous diagnostic state.
+#ifndef PCB_PopDiagnostics
+#if PCB_COMPILER_GCC >= 40600 || PCB_COMPILER_CLANG >= 30100
+#define PCB_PopDiagnostics() PCB_DO_PRAGMA(GCC diagnostic pop)
+#elif PCB_COMPILER_MSVC
+#define PCB_PopDiagnostics() PCB_DO_PRAGMA(warning(pop))
+#else
+#define PCB_PopDiagnostics()
+#endif //compilers
+#endif //PCB_PopDiagnostics
+
+
 #ifndef PCB_Nodiscard
 #if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
@@ -514,7 +590,7 @@ extern "C" {
 #elif PCB_COMPILER_MSVC
 #define PCB_Deprecated __declspec(deprecated)
 #else
-#define PCB_Deprecated
+#define PCB_Deprecated PCB_EmitWarning("Deprecated")
 #endif //(C++14+ || C23+) || (GCC >= 3.1.1 || Clang >= 3.1) || MSVC
 #endif //PCB_Deprecated
 
@@ -528,7 +604,7 @@ extern "C" {
 #elif PCB_COMPILER_MSVC
 #define PCB_DeprecatedReason(reason) __declspec(deprecated(reason))
 #else
-#define PCB_DeprecatedReason(reason)
+#define PCB_DeprecatedReason(reason) PCB_EmitWarning("Deprecated:" reason)
 #endif //(C++14+ || C23+) || (GCC >= 3.1.1 || Clang >= 3.1) || MSVC
 #endif //PCB_DeprecatedReason
 
@@ -545,9 +621,22 @@ extern "C" {
 #elif PCB_COMPILER_MSVC
 #define PCB_Noreturn __declspec(noreturn)
 #else
+PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return")
 #define PCB_Noreturn
 #endif //(C++11+ || C23+) || (C11+) || compilers
 #endif //PCB_Noreturn
+
+#ifndef PCB_Unused
+#if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
+#define PCB_Unused [[maybe_unused]]
+#elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 40000
+#define PCB_Unused __attribute__((unused))
+#else
+#define PCB_Unused
+#endif //(C++17+ || C23+) || compilers
+       //GCC 2.95.3 || Clang 4.0.0 docs are the oldest versions mentioning this attribute.
+#endif //PCB_Unused
 
 #ifndef PCB_ForceInline
 #if (PCB_COMPILER_GCC >= 30101) || PCB_COMPILER_CLANG
@@ -595,7 +684,7 @@ static void f(void)
 #define PCB_BeforeMain(f) static __attribute__((constructor)) void f(void)
 #else
 #define PCB_BeforeMain(f) \
-_Pragma("PCB Warning: function '" #f "' will not run before main because the compiler used does not support it") \
+PCB_EmitWarning("This function will not run before main because the compiler used does not support it") \
 static void f(void)
 #endif //Compilers
 #endif //C++?
