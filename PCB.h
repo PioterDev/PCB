@@ -824,6 +824,10 @@ static void f(void)
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L && PCB_HAS_INCLUDE(<uchar.h>)
+#include <uchar.h>
+#define PCB_HAS_UCHAR_H
+#endif //C11's uchar
 //A useful command to list errno info: errno -l | sort -k2 -n
 #if PCB_HAS_INCLUDE(<errno.h>)
 #include <errno.h>
@@ -2118,6 +2122,11 @@ typedef struct {
 } PCB_StringView;
 
 typedef struct {
+    char* data;
+    size_t length;
+} PCB_StringSlice;
+
+typedef struct {
     PCB_String* data;
     size_t length;
     size_t capacity;
@@ -2167,6 +2176,100 @@ typedef PCB_CStrings PCB_ShellCommand;
 #ifndef PCB_ShellCommand_append_args
 #define PCB_ShellCommand_append_args PCB_CStrings_append_many
 #endif //PCB_ShellCommand_append_args
+
+
+
+/**
+ * Definitions of character types that work in C99+ and C++11+.
+ * As you can see, it is rather convoluted.
+ *
+ * This is because C++11+ defines `char(16|32)_t` as distinct types to their
+ * integer counterparts, but not `char8_t`...not until C++20...if it even
+ * defines them, which we need to check with a FTM.
+ *
+ * In C, however, all 3 are `typedef`'d to integer types...if uchar.h is
+ * available (which it's not for some platforms).
+ *
+ * These provide a uniform interface in all versions of both C and C++ and
+ * allow passing appropiate string literals (for example u"foo") without casts.
+ */
+#if defined(__cplusplus)
+#if defined(__cpp_char8_t) && __cpp_char8_t+0 >= 201811L
+typedef char8_t PCB_char8;
+#else
+typedef unsigned char PCB_char8;
+#endif //__cpp_char8_t FTM
+#elif defined(__STDC_VERSION__)
+//TODO: MinGW doesn't provide char8_t in C23. Is this a bug?
+#if __STDC_VERSION__+0 >= 202311L && defined(PCB_HAS_UCHAR_H)
+typedef char8_t PCB_char8;
+#else
+typedef unsigned char PCB_char8;
+#endif //C23 && <uchar.h>
+#endif //language
+
+#if defined(__cplusplus)
+#if defined(__cpp_unicode_characters) && __cpp_unicode_characters+0 >= 200704L
+typedef char16_t PCB_char16;
+#else
+typedef uint_least16_t PCB_char16;
+#endif //__cpp_unicode_characters FTM
+#elif defined(__STDC_VERSION__)
+#if __STDC_VERSION__+0 >= 201112L && defined(PCB_HAS_UCHAR_H)
+typedef char16_t PCB_char16;
+#else
+typedef uint_least16_t PCB_char16;
+#endif //C11?
+#endif //language
+
+#if defined(__cplusplus)
+#if defined(__cpp_unicode_characters) && __cpp_unicode_characters+0 >= 200704L
+typedef char32_t PCB_char32;
+#else
+typedef uint_least32_t PCB_char32;
+#endif //__cpp_unicode_characters FTM
+#elif defined(__STDC_VERSION__)
+#if __STDC_VERSION__+0 >= 201112L && defined(PCB_HAS_UCHAR_H)
+typedef char32_t PCB_char32;
+#else
+typedef uint_least32_t PCB_char32;
+#endif //C11?
+#endif //language
+
+typedef struct { wchar_t*    data; size_t length; size_t capacity; } PCB_WString;
+typedef struct { PCB_char8*  data; size_t length; size_t capacity; } PCB_U8String;
+typedef struct { PCB_char16* data; size_t length; size_t capacity; } PCB_U16String;
+typedef struct { PCB_char32* data; size_t length; size_t capacity; } PCB_U32String;
+
+typedef struct { const wchar_t*    data; size_t length; } PCB_WStringView;
+typedef struct { const PCB_char8*  data; size_t length; } PCB_U8StringView;
+typedef struct { const PCB_char16* data; size_t length; } PCB_U16StringView;
+typedef struct { const PCB_char32* data; size_t length; } PCB_U32StringView;
+
+typedef struct { wchar_t*    data; size_t length; } PCB_WStringSlice;
+typedef struct { PCB_char8*  data; size_t length; } PCB_U8StringSlice;
+typedef struct { PCB_char16* data; size_t length; } PCB_U16StringSlice;
+typedef struct { PCB_char32* data; size_t length; } PCB_U32StringSlice;
+
+typedef struct { PCB_WString*   data; size_t length; size_t capacity; } PCB_WStrings;
+typedef struct { PCB_U8String*  data; size_t length; size_t capacity; } PCB_U8Strings;
+typedef struct { PCB_U16String* data; size_t length; size_t capacity; } PCB_U16Strings;
+typedef struct { PCB_U32String* data; size_t length; size_t capacity; } PCB_U32Strings;
+
+typedef struct { PCB_WStringView*   data; size_t length; size_t capacity; } PCB_WStringViews;
+typedef struct { PCB_U8StringView*  data; size_t length; size_t capacity; } PCB_U8StringViews;
+typedef struct { PCB_U16StringView* data; size_t length; size_t capacity; } PCB_U16StringViews;
+typedef struct { PCB_U32StringView* data; size_t length; size_t capacity; } PCB_U32StringViews;
+
+typedef struct { const wchar_t**    data; size_t length; size_t capacity; } PCB_WCStrings;
+typedef struct { const PCB_char8**  data; size_t length; size_t capacity; } PCB_U8CStrings;
+typedef struct { const PCB_char16** data; size_t length; size_t capacity; } PCB_U16CStrings;
+typedef struct { const PCB_char32** data; size_t length; size_t capacity; } PCB_U32CStrings;
+
+typedef struct { const wchar_t*    const* data; size_t length; } PCB_WCStringsView;
+typedef struct { const PCB_char8*  const* data; size_t length; } PCB_U8CStringsView;
+typedef struct { const PCB_char16* const* data; size_t length; } PCB_U16CStringsView;
+typedef struct { const PCB_char32* const* data; size_t length; } PCB_U32CStringsView;
 
 /**
  * Unicode codepoint.
@@ -2676,6 +2779,11 @@ PCBAPI PCB_File PCBCALL PCB_IO_get_stdout(void);
 PCBAPI PCB_File PCBCALL PCB_IO_get_stderr(void);
 
 
+
+//Why exactly is there no standard strlen for these...?
+PCBAPI size_t PCBCALL PCB_strlen_char8 (const PCB_char8*  str) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strlen_char16(const PCB_char16* str) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strlen_char32(const PCB_char32* str) PCB_Nonnull_Arg(1);
 
 /**
  * @brief Frees `str`'s buffer and resets fields to 0.
@@ -4807,6 +4915,10 @@ PCB_File PCB_IO_get_stderr(void) {
 
 //Section 3.4: Strings, string views, vectors of strings...
 #ifdef PCB_IMPLEMENTATION_STRING
+size_t PCB_strlen_char8 (const PCB_char8*  str) { const PCB_char8*  s = str; while(*s++) {} return (size_t)(s - str); }
+size_t PCB_strlen_char16(const PCB_char16* str) { const PCB_char16* s = str; while(*s++) {} return (size_t)(s - str); }
+size_t PCB_strlen_char32(const PCB_char32* str) { const PCB_char32* s = str; while(*s++) {} return (size_t)(s - str); }
+
 void PCB_String_destroy(PCB_String* PCB_restrict str) {
     PCB_CHECK_SELF(str,);
     PCB_Vec_destroy(str);
