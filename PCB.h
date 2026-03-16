@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 12
+#define PCB_VERSION_PATCH 13
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3591,21 +3591,29 @@ PCBAPI void    PCBCALL PCB_WString_destroy(PCB_WString* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_WString_reserve(PCB_WString* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_WString_reserve_to(PCB_WString* PCB_restrict str, const size_t cap);
 PCBAPI bool    PCBCALL PCB_WString_resize(PCB_WString* PCB_restrict str, const size_t targetLength);
+PCBAPI bool    PCBCALL PCB_WString_append(PCB_WString* str, const PCB_WString* other);
+PCBAPI bool    PCBCALL PCB_WString_append_sv(PCB_WString* PCB_restrict str, PCB_WStringView sv);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_U8String_reserve_to(PCB_U8String* PCB_restrict str, const size_t cap);
 PCBAPI bool    PCBCALL PCB_U8String_resize(PCB_U8String* PCB_restrict str, const size_t targetLength);
+PCBAPI bool    PCBCALL PCB_U8String_append(PCB_U8String* str, const PCB_U8String* other);
+PCBAPI bool    PCBCALL PCB_U8String_append_sv(PCB_U8String* PCB_restrict str, PCB_U8StringView sv);
 
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_U16String_reserve_to(PCB_U16String* PCB_restrict str, const size_t cap);
 PCBAPI bool    PCBCALL PCB_U16String_resize(PCB_U16String* PCB_restrict str, const size_t targetLength);
+PCBAPI bool    PCBCALL PCB_U16String_append(PCB_U16String* str, const PCB_U16String* other);
+PCBAPI bool    PCBCALL PCB_U16String_append_sv(PCB_U16String* PCB_restrict str, PCB_U16StringView sv);
 
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_U32String_reserve_to(PCB_U32String* PCB_restrict str, const size_t cap);
 PCBAPI bool    PCBCALL PCB_U32String_resize(PCB_U32String* PCB_restrict str, const size_t targetLength);
+PCBAPI bool    PCBCALL PCB_U32String_append(PCB_U32String* str, const PCB_U32String* other);
+PCBAPI bool    PCBCALL PCB_U32String_append_sv(PCB_U32String* PCB_restrict str, PCB_U32StringView sv);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -5023,26 +5031,44 @@ PCB__Str_resize(PCB_U16String) //PCB_U16String_resize()
 PCB__Str_resize(PCB_U32String) //PCB_U32String_resize()
 #undef PCB__Str_resize
 
-bool PCB_String_append(PCB_String* str, const PCB_String* other) {
-    PCB_CHECK_SELF(str, false);
-    PCB_CHECK(other == NULL, false);
-    if(PCB_String_isEmpty(other)) return true;
-    if(!PCB_String_reserve(str, other->length)) return false; //with '\0'
-    PCB_memcpy(str->data + str->length, other->data, other->length + 1);
-    str->length += other->length;
-    return true;
+#define PCB__Str_append(Type) \
+bool Type##_append(Type* str, const Type* other) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK(other == NULL, false); \
+    if(PCB_String_isEmpty(other)) return true; \
+    if(!Type##_reserve(str, other->length)) return false; \
+    PCB_memcpy( \
+        str->data + str->length, \
+        other->data, \
+        other->length * sizeof(*str->data) \
+    ); \
+    str->data[str->length += other->length] = '\0'; \
+    return true; \
 }
+PCB__Str_append(PCB_String)    //PCB_String_append()
+PCB__Str_append(PCB_WString)   //PCB_WString_append()
+PCB__Str_append(PCB_U8String)  //PCB_U8String_append()
+PCB__Str_append(PCB_U16String) //PCB_U16String_append()
+PCB__Str_append(PCB_U32String) //PCB_U32String_append()
+#undef PCB__Str_append
 
-bool PCB_String_append_sv(PCB_String* PCB_restrict str, PCB_StringView sv) {
-    PCB_CHECK_SELF(str, false);
-    if(PCB_String_isEmpty(&sv)) return true;
-    char* PCB_maybe_restrict data = sv.data;
-    PCB_CHECK(str->data <= data && data <= str->data + str->length, false);
-    if(!PCB_String_reserve(str, sv.length)) return false;
-    PCB_memcpy(str->data + str->length, data, sv.length);
-    str->data[str->length += sv.length] = '\0';
-    return true;
+#define PCB__Str_append_sv(Type, svType, charType) \
+bool Type##_append_sv(Type* PCB_restrict str, svType sv) { \
+    PCB_CHECK_SELF(str, false); \
+    if(PCB_String_isEmpty(&sv)) return true; \
+    const charType* PCB_maybe_restrict data = sv.data; \
+    PCB_CHECK(str->data <= data && data <= str->data + str->length, false); \
+    if(!Type##_reserve(str, sv.length)) return false; \
+    PCB_memcpy(str->data + str->length, data, sv.length * sizeof(*str->data)); \
+    str->data[str->length += sv.length] = '\0'; \
+    return true; \
 }
+PCB__Str_append_sv(PCB_String,    PCB_StringView,    char)       //PCB_String_append_sv()
+PCB__Str_append_sv(PCB_WString,   PCB_WStringView,   wchar_t)    //PCB_WString_append_sv()
+PCB__Str_append_sv(PCB_U8String,  PCB_U8StringView,  PCB_char8)  //PCB_U8String_append_sv()
+PCB__Str_append_sv(PCB_U16String, PCB_U16StringView, PCB_char16) //PCB_U16String_append_sv()
+PCB__Str_append_sv(PCB_U32String, PCB_U32StringView, PCB_char32) //PCB_U32String_append_sv()
+#undef PCB__Str_append_sv
 
 bool PCB_String_append_cstr(
     PCB_String* PCB_restrict str,
