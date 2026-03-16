@@ -2920,6 +2920,14 @@ PCBAPI bool PCBCALL PCB_String_append_codepoint(
     int32_t codepoint
 );
 /**
+ * @brief Appends a UTF-32 sequence of `codepoints` to `str`.
+ * @return number of codepoints appended, -1 on error
+ */
+PCBAPI ssize_t PCBCALL PCB_String_append_codepoints(
+    PCB_String* PCB_restrict str,
+    PCB_U32StringView codepoints
+);
+/**
  * @brief Inserts `other` into `str` at position `position`.
  * Inserting `str` into itself (`str == other`) is not allowed.
  * @return whether the operation succeeded:
@@ -3025,12 +3033,24 @@ PCBAPI bool PCBCALL PCB_String_insert_codepoint(
     size_t position
 );
 /**
+ * @brief Inserts a UTF-32 sequence of `codepoints` to `str` at position `position`.
+ * @return number of codepoints inserted, -1 on error
+ */
+PCBAPI ssize_t PCBCALL PCB_String_insert_codepoints(
+    PCB_String* PCB_restrict str,
+    PCB_U32StringView codepoints,
+    size_t position
+);
+/**
  * @brief Replaces characters in the range `[start, start + length)`
  * in `str` with `other`.
  *
+ * If `other` is empty, the behavior is equivalent to `PCB_String_remove_range`.
+ *
  * Note: It is NOT permitted that `other` overlaps with `str`, i.e. views a range
  * [`str->data`, `str->data + str->length`) as it may be invalidated by a realloc.
- * @return whether the operation succeded: TODO
+ * @return whether the operation succeded: fails on
+ * invalid arguments passed or realloc failure
  */
 PCBAPI bool PCBCALL PCB_String_replace_range(
     PCB_String* PCB_restrict str,
@@ -5238,6 +5258,30 @@ bool PCB_String_append_codepoint(
     return true;
 }
 
+ssize_t PCB_String_append_codepoints(
+    PCB_String* PCB_restrict str, PCB_U32StringView codepoints
+) {
+    PCB_CHECK_SELF(str, -1);
+    if(PCB_String_isEmpty(&codepoints)) return 0;
+    size_t neededLen = 0;
+    for(size_t i = 0; i < codepoints.length; i++) {
+        neededLen += (size_t)PCB_GetUTF8Length((int32_t)codepoints.data[i]);
+        if(neededLen + str->length > SIZE_MAX/2) return -1;
+    }
+    if(neededLen == 0) return 0;
+    if(!PCB_String_reserve(str, neededLen)) return -1;
+
+    char* cursor = str->data + str->length;
+    ssize_t appended = 0;
+    PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
+        if(!PCB_IsValidUnicode((int32_t)*c)) continue;
+        cursor = PCB_StoreUTF8Codepoint(cursor, (int32_t)*c);
+        ++appended;
+    }
+    str->data[str->length += neededLen] = '\0';
+    return appended;
+}
+
 bool PCB_String_insert(
     PCB_String* PCB_maybe_restrict str, const PCB_String* PCB_maybe_restrict other,
     size_t position
@@ -5426,6 +5470,32 @@ bool PCB_String_insert_codepoint(
     return true;
 }
 
+ssize_t PCB_String_insert_codepoints(
+    PCB_String* PCB_restrict str, PCB_U32StringView codepoints, size_t position
+) {
+    PCB_CHECK_SELF(str, -1);
+    PCB_CHECK(position > str->length, -1);
+    if(PCB_Vec_isEmpty(&codepoints)) return 0;
+    size_t neededLen = 0;
+    PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
+        neededLen += (size_t)PCB_GetUTF8Length((int32_t)*c);
+        if(neededLen + str->length > SIZE_MAX/2) return -1;
+    }
+    if(neededLen == 0) return 0;
+    if(!PCB_String_reserve(str, neededLen)) return 0;
+    PCB_memmove(str->data + position + neededLen, str->data + position, str->length - position);
+
+    char* cursor = str->data + str->length;
+    ssize_t inserted = 0;
+    PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
+        if(!PCB_IsValidUnicode((int32_t)*c)) continue;
+        cursor = PCB_StoreUTF8Codepoint(cursor, (int32_t)*c);
+        ++inserted;
+    }
+    str->data[str->length += neededLen] = '\0';
+    return inserted;
+}
+
 bool PCB_String_replace_range(
     PCB_String* PCB_restrict str,
     size_t start,
@@ -5435,7 +5505,7 @@ bool PCB_String_replace_range(
     PCB_CHECK_SELF(str, false);
     PCB_CHECK(start >= str->length, false);
     PCB_CHECK(start + length > str->length, false);
-    if(PCB_String_isEmpty(&other)) return true;
+    if(PCB_String_isEmpty(&other)) return PCB_String_remove_range(str, start, length);
     PCB_CHECK(str->data <= other.data && other.data <= str->data + str->length, false);
     char* const after = str->data + start + length;
     if(other.length > length) {
