@@ -3573,6 +3573,24 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_whitespace(PCB_S
  */
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_trim(PCB_StringView sv);
 
+
+/**
+ * `PCB_String` is only 1 of 5 string types exported. The interface for
+ * the remaining 4 is almost identical.
+ * Refer to `PCB_String_*` variants for behavior.
+ */
+PCBAPI void    PCBCALL PCB_WString_destroy(PCB_WString* PCB_restrict str);
+PCBAPI bool    PCBCALL PCB_WString_reserve(PCB_WString* PCB_restrict str, const size_t howMany);
+//----------------------------------------------------------------------------
+PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str);
+PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany);
+
+PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str);
+PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany);
+
+PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str);
+PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany);
+
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
  */
@@ -4919,22 +4937,39 @@ size_t PCB_strlen_char8 (const PCB_char8*  str) { const PCB_char8*  s = str; whi
 size_t PCB_strlen_char16(const PCB_char16* str) { const PCB_char16* s = str; while(*s++) {} return (size_t)(s - str); }
 size_t PCB_strlen_char32(const PCB_char32* str) { const PCB_char32* s = str; while(*s++) {} return (size_t)(s - str); }
 
-void PCB_String_destroy(PCB_String* PCB_restrict str) {
-    PCB_CHECK_SELF(str,);
-    PCB_Vec_destroy(str);
+//poor man's C++ templates
+#define PCB__Str_destroy(Type) \
+void Type##_destroy(Type* PCB_restrict str) { \
+    PCB_CHECK_SELF(str,); \
+    PCB_Vec_destroy(str); \
 }
+PCB__Str_destroy(PCB_String)    //PCB_String_destroy()
+PCB__Str_destroy(PCB_WString)   //PCB_WString_destroy()
+PCB__Str_destroy(PCB_U8String)  //PCB_U8String_destroy()
+PCB__Str_destroy(PCB_U16String) //PCB_U16String_destroy()
+PCB__Str_destroy(PCB_U32String) //PCB_U32String_destroy()
+#undef PCB__Str_destroy
 
-bool PCB_String_reserve(PCB_String* PCB_restrict str, const size_t howMany) {
-    PCB_CHECK_SELF(str, false);
-    const size_t newSize = str->length + howMany + 1; //'\0'
-    if(newSize <= str->capacity) return true;
-    size_t newCapacity = str->capacity == 0 ? PCB_VEC_INITIAL_CAPACITY : str->capacity;
-    while(newSize > newCapacity) newCapacity *= 2;
-    char* newData = (char*)PCB_realloc(str->data, newCapacity);
-    if(newData == NULL) return false;
-    str->data = newData; str->capacity = newCapacity;
-    return true;
+#define PCB__Str_reserve(Type, charType) \
+bool Type##_reserve(Type* PCB_restrict str, const size_t howMany) { \
+    PCB_CHECK_SELF(str, false); \
+    const size_t newSize = str->length + howMany + 1; /*'\0'*/ \
+    if(newSize <= str->capacity) return true; \
+    if(newSize > (SIZE_MAX)/2 / sizeof(*str->data)) return false; \
+    size_t newCapacity = str->capacity == 0 ? PCB_VEC_INITIAL_CAPACITY : str->capacity; \
+    while(newSize > newCapacity) newCapacity *= 2; \
+    if(newCapacity > (SIZE_MAX/2) / sizeof(*str->data)) return false; \
+    charType* newData = (charType*)PCB_realloc(str->data, newCapacity * sizeof(*str->data)); \
+    if(newData == NULL) return false; \
+    str->data = newData; str->capacity = newCapacity; \
+    return true; \
 }
+PCB__Str_reserve(PCB_String,    char)       //PCB_String_reserve()
+PCB__Str_reserve(PCB_WString,   wchar_t)    //PCB_WString_reserve()
+PCB__Str_reserve(PCB_U8String,  PCB_char8)  //PCB_U8String_reserve()
+PCB__Str_reserve(PCB_U16String, PCB_char16) //PCB_U16String_reserve()
+PCB__Str_reserve(PCB_U32String, PCB_char32) //PCB_U32String_reserve()
+#undef PCB__Str_reserve
 
 bool PCB_String_resize(PCB_String* PCB_restrict str, const size_t targetLength) {
     PCB_CHECK_SELF(str, false);
