@@ -3590,18 +3590,22 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_trim(PCB_StringView sv);
 PCBAPI void    PCBCALL PCB_WString_destroy(PCB_WString* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_WString_reserve(PCB_WString* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_WString_reserve_to(PCB_WString* PCB_restrict str, const size_t cap);
+PCBAPI bool    PCBCALL PCB_WString_resize(PCB_WString* PCB_restrict str, const size_t targetLength);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_U8String_reserve_to(PCB_U8String* PCB_restrict str, const size_t cap);
+PCBAPI bool    PCBCALL PCB_U8String_resize(PCB_U8String* PCB_restrict str, const size_t targetLength);
 
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_U16String_reserve_to(PCB_U16String* PCB_restrict str, const size_t cap);
+PCBAPI bool    PCBCALL PCB_U16String_resize(PCB_U16String* PCB_restrict str, const size_t targetLength);
 
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany);
 PCBAPI bool    PCBCALL PCB_U32String_reserve_to(PCB_U32String* PCB_restrict str, const size_t cap);
+PCBAPI bool    PCBCALL PCB_U32String_resize(PCB_U32String* PCB_restrict str, const size_t targetLength);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -5002,16 +5006,22 @@ PCB__Str_reserve_to(PCB_U8String,  PCB_char8)   //PCB_U8String_reserve_to()
 PCB__Str_reserve_to(PCB_U16String, PCB_char16)  //PCB_U16String_reserve_to()
 PCB__Str_reserve_to(PCB_U32String, PCB_char32)  //PCB_U32String_reserve_to()
 
-bool PCB_String_resize(PCB_String* PCB_restrict str, const size_t targetLength) {
-    PCB_CHECK_SELF(str, false);
-    if(targetLength == str->length) return true;
-    else if(targetLength < str->length) {
-        str->data[targetLength] = '\0';
-        str->length = targetLength;
-        return true;
-    }
-    return PCB_String_reserve(str, targetLength - str->length);
+#define PCB__Str_resize(Type) \
+bool Type##_resize(Type* PCB_restrict str, const size_t targetLength) { \
+    PCB_CHECK_SELF(str, false); \
+    if(targetLength == str->length) return true; \
+    else if(targetLength < str->length) { \
+        str->data[str->length = targetLength] = '\0'; \
+        return true; \
+    } \
+    return Type##_reserve(str, targetLength - str->length); \
 }
+PCB__Str_resize(PCB_String)    //PCB_String_resize()
+PCB__Str_resize(PCB_WString)   //PCB_WString_resize()
+PCB__Str_resize(PCB_U8String)  //PCB_U8String_resize()
+PCB__Str_resize(PCB_U16String) //PCB_U16String_resize()
+PCB__Str_resize(PCB_U32String) //PCB_U32String_resize()
+#undef PCB__Str_resize
 
 bool PCB_String_append(PCB_String* str, const PCB_String* other) {
     PCB_CHECK_SELF(str, false);
