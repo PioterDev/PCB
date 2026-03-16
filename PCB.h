@@ -2806,6 +2806,14 @@ PCBAPI bool PCBCALL PCB_String_reserve(
     const size_t howMany
 );
 /**
+ * @brief Reserves bytes in `str` so that its capacity is at least `cap`.
+ * @return whether the operation succeeded: fails on realloc failure.
+ */
+PCBAPI bool PCBCALL PCB_String_reserve_to(
+    PCB_String* PCB_restrict str,
+    const size_t cap
+);
+/**
  * @brief Resizes `str` to fit a string of `targetLength` length.
  * Truncates the string to `targetLength` if `targetLength < str->length`.
  * Does nothing if `targetLength == str->length`.
@@ -3581,15 +3589,19 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_trim(PCB_StringView sv);
  */
 PCBAPI void    PCBCALL PCB_WString_destroy(PCB_WString* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_WString_reserve(PCB_WString* PCB_restrict str, const size_t howMany);
+PCBAPI bool    PCBCALL PCB_WString_reserve_to(PCB_WString* PCB_restrict str, const size_t cap);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany);
+PCBAPI bool    PCBCALL PCB_U8String_reserve_to(PCB_U8String* PCB_restrict str, const size_t cap);
 
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany);
+PCBAPI bool    PCBCALL PCB_U16String_reserve_to(PCB_U16String* PCB_restrict str, const size_t cap);
 
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany);
+PCBAPI bool    PCBCALL PCB_U32String_reserve_to(PCB_U32String* PCB_restrict str, const size_t cap);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -4970,6 +4982,25 @@ PCB__Str_reserve(PCB_U8String,  PCB_char8)  //PCB_U8String_reserve()
 PCB__Str_reserve(PCB_U16String, PCB_char16) //PCB_U16String_reserve()
 PCB__Str_reserve(PCB_U32String, PCB_char32) //PCB_U32String_reserve()
 #undef PCB__Str_reserve
+
+#define PCB__Str_reserve_to(Type, charType) \
+bool Type##_reserve_to(Type* PCB_restrict str, const size_t cap) { \
+    PCB_CHECK_SELF(str, false); \
+    if(cap <= str->capacity) return true; \
+    if(cap > (SIZE_MAX)/2 / sizeof(*str->data)) return false; \
+    size_t newCapacity = str->capacity == 0 ? PCB_VEC_INITIAL_CAPACITY : str->capacity; \
+    while(cap > newCapacity) newCapacity *= 2; \
+    if(newCapacity > (SIZE_MAX/2) / sizeof(*str->data)) return false; \
+    charType* newData = (charType*)PCB_realloc(str->data, newCapacity * sizeof(*str->data)); \
+    if(newData == NULL) return false; \
+    str->data = newData; str->capacity = newCapacity; \
+    return true; \
+}
+PCB__Str_reserve_to(PCB_String,    char)        //PCB_String_reserve_to()
+PCB__Str_reserve_to(PCB_WString,   wchar_t)     //PCB_WString_reserve_to()
+PCB__Str_reserve_to(PCB_U8String,  PCB_char8)   //PCB_U8String_reserve_to()
+PCB__Str_reserve_to(PCB_U16String, PCB_char16)  //PCB_U16String_reserve_to()
+PCB__Str_reserve_to(PCB_U32String, PCB_char32)  //PCB_U32String_reserve_to()
 
 bool PCB_String_resize(PCB_String* PCB_restrict str, const size_t targetLength) {
     PCB_CHECK_SELF(str, false);
