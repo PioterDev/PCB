@@ -3629,6 +3629,7 @@ PCBAPI bool PCBCALL PCB_WString_replace_range_chars(PCB_WString* PCB_restrict st
 PCBAPI bool PCBCALL PCB_WString_remove_range(PCB_WString* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool PCBCALL PCB_WString_setSuffix_char(PCB_WString* PCB_restrict str, const wchar_t c);
 PCBAPI bool PCBCALL PCB_WString_truncate_until_char(PCB_WString* PCB_restrict str, const wchar_t c);
+PCBAPI bool PCBCALL PCB_WString_eq(const PCB_WString* a, const PCB_WString* b);
 PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str);
 PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out);
 //----------------------------------------------------------------------------
@@ -3651,6 +3652,7 @@ PCBAPI bool    PCBCALL PCB_U8String_replace_range_chars(PCB_U8String* PCB_restri
 PCBAPI bool    PCBCALL PCB_U8String_remove_range(PCB_U8String* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool    PCBCALL PCB_U8String_setSuffix_char(PCB_U8String* PCB_restrict str, const PCB_char8 c);
 PCBAPI bool    PCBCALL PCB_U8String_truncate_until_char(PCB_U8String* PCB_restrict str, const PCB_char8 c);
+PCBAPI bool    PCBCALL PCB_U8String_eq(const PCB_U8String* a, const PCB_U8String* b);
 PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str);
 PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out);
 
@@ -3673,6 +3675,7 @@ PCBAPI bool    PCBCALL PCB_U16String_replace_range_chars(PCB_U16String* PCB_rest
 PCBAPI bool    PCBCALL PCB_U16String_remove_range(PCB_U16String* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool    PCBCALL PCB_U16String_setSuffix_char(PCB_U16String* PCB_restrict str, const PCB_char16 c);
 PCBAPI bool    PCBCALL PCB_U16String_truncate_until_char(PCB_U16String* PCB_restrict str, const PCB_char16 c);
+PCBAPI bool    PCBCALL PCB_U16String_eq(const PCB_U16String* a, const PCB_U16String* b);
 PCBAPI PCB_char16 PCBCALL PCB_U16String_pop(PCB_U16String* PCB_restrict str);
 PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, size_t howMany, PCB_char16* PCB_restrict out);
 
@@ -3695,6 +3698,7 @@ PCBAPI bool    PCBCALL PCB_U32String_replace_range_chars(PCB_U32String* PCB_rest
 PCBAPI bool    PCBCALL PCB_U32String_remove_range(PCB_U32String* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool    PCBCALL PCB_U32String_setSuffix_char(PCB_U32String* PCB_restrict str, const PCB_char32 c);
 PCBAPI bool    PCBCALL PCB_U32String_truncate_until_char(PCB_U32String* PCB_restrict str, const PCB_char32 c);
+PCBAPI bool    PCBCALL PCB_U32String_eq(const PCB_U32String* a, const PCB_U32String* b);
 PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str);
 PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out);
 
@@ -5759,12 +5763,19 @@ int PCB_String_compare_cstr_ci(
     return strncasecmp(a->data, b, a->length);
 }
 
-bool PCB_String_eq(const PCB_String* a, const PCB_String* b) {
-    PCB_CHECK_SELF(a, false); PCB_CHECK_SELF(b, false);
-    if(a->data == NULL || b->data == NULL) return false;
-    if(a->length != b->length) return false;
-    return PCB_memcmp(a->data, b->data, a->length);
+#define PCB__Str_eq(Type) \
+bool Type##_eq(const Type* a, const Type* b) { \
+    PCB_CHECK_SELF(a, false); PCB_CHECK_SELF(b, false); \
+    if(a->data == NULL || b->data == NULL) return false; \
+    if(a->length != b->length) return false; \
+    return PCB_memcmp(a->data, b->data, a->length*sizeof(*a->data)); \
 }
+PCB__Str_eq(PCB_String)    //PCB_String_eq()
+PCB__Str_eq(PCB_WString)   //PCB_WString_eq()
+PCB__Str_eq(PCB_U8String)  //PCB_U8String_eq()
+PCB__Str_eq(PCB_U16String) //PCB_U16String_eq()
+PCB__Str_eq(PCB_U32String) //PCB_U32String_eq()
+#undef PCB__Str_eq
 
 bool PCB_String_startsWith(const PCB_String* str, const PCB_String* other) {
     PCB_CHECK_SELF(str, false);
