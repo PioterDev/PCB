@@ -3621,6 +3621,9 @@ PCBAPI bool PCBCALL PCB_WString_insert_sv(PCB_WString* PCB_restrict str, PCB_WSt
 PCBAPI bool PCBCALL PCB_WString_insert_cstr(PCB_WString* PCB_restrict str, const wchar_t* PCB_maybe_restrict cstr, size_t position);
 PCBAPI ssize_t PCBCALL PCB_WString_insert_cstrs(PCB_WString* PCB_restrict str, PCB_WCStringsView cstrs, size_t position);
 PCBAPI bool PCBCALL PCB_WString_insert_chars(PCB_WString* PCB_restrict str, const wchar_t c, size_t howManyTimes, size_t position);
+PCBAPI bool PCBCALL PCB_WString_replace_range(PCB_WString* PCB_restrict str, size_t start, size_t length, PCB_WStringView other);
+PCBAPI bool PCBCALL PCB_WString_replace_range_chars(PCB_WString* PCB_restrict str, size_t start, size_t length, const wchar_t c);
+PCBAPI bool PCBCALL PCB_WString_remove_range(PCB_WString* PCB_restrict str, size_t start, size_t length);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany);
@@ -3636,6 +3639,9 @@ PCBAPI bool    PCBCALL PCB_U8String_insert_sv(PCB_U8String* PCB_restrict str, PC
 PCBAPI bool    PCBCALL PCB_U8String_insert_cstr(PCB_U8String* PCB_restrict str, const PCB_char8* PCB_maybe_restrict cstr, size_t position);
 PCBAPI ssize_t PCBCALL PCB_U8String_insert_cstrs(PCB_U8String* PCB_restrict str, PCB_U8CStringsView cstrs, size_t position);
 PCBAPI bool    PCBCALL PCB_U8String_insert_chars(PCB_U8String* PCB_restrict str, const PCB_char8 c, size_t howManyTimes, size_t position);
+PCBAPI bool    PCBCALL PCB_U8String_replace_range(PCB_U8String* PCB_restrict str, size_t start, size_t length, PCB_U8StringView other);
+PCBAPI bool    PCBCALL PCB_U8String_replace_range_chars(PCB_U8String* PCB_restrict str, size_t start, size_t length, const PCB_char8 c);
+PCBAPI bool    PCBCALL PCB_U8String_remove_range(PCB_U8String* PCB_restrict str, size_t start, size_t length);
 
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany);
@@ -3651,6 +3657,9 @@ PCBAPI bool    PCBCALL PCB_U16String_insert_sv(PCB_U16String* PCB_restrict str, 
 PCBAPI bool    PCBCALL PCB_U16String_insert_cstr(PCB_U16String* PCB_restrict str, const PCB_char16* PCB_maybe_restrict cstr, size_t position);
 PCBAPI ssize_t PCBCALL PCB_U16String_insert_cstrs(PCB_U16String* PCB_restrict str, PCB_U16CStringsView cstrs, size_t position);
 PCBAPI bool    PCBCALL PCB_U16String_insert_chars(PCB_U16String* PCB_restrict str, const PCB_char16 c, size_t howManyTimes, size_t position);
+PCBAPI bool    PCBCALL PCB_U16String_replace_range(PCB_U16String* PCB_restrict str, size_t start, size_t length, PCB_U16StringView other);
+PCBAPI bool    PCBCALL PCB_U16String_replace_range_chars(PCB_U16String* PCB_restrict str, size_t start, size_t length, const PCB_char16 c);
+PCBAPI bool    PCBCALL PCB_U16String_remove_range(PCB_U16String* PCB_restrict str, size_t start, size_t length);
 
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany);
@@ -3666,6 +3675,9 @@ PCBAPI bool    PCBCALL PCB_U32String_insert_sv(PCB_U32String* PCB_restrict str, 
 PCBAPI bool    PCBCALL PCB_U32String_insert_cstr(PCB_U32String* PCB_restrict str, const PCB_char32* PCB_maybe_restrict cstr, size_t position);
 PCBAPI ssize_t PCBCALL PCB_U32String_insert_cstrs(PCB_U32String* PCB_restrict str, PCB_U32CStringsView cstrs, size_t position);
 PCBAPI bool    PCBCALL PCB_U32String_insert_chars(PCB_U32String* PCB_restrict str, const PCB_char32 c, size_t howManyTimes, size_t position);
+PCBAPI bool    PCBCALL PCB_U32String_replace_range(PCB_U32String* PCB_restrict str, size_t start, size_t length, PCB_U32StringView other);
+PCBAPI bool    PCBCALL PCB_U32String_replace_range_chars(PCB_U32String* PCB_restrict str, size_t start, size_t length, const PCB_char32 c);
+PCBAPI bool    PCBCALL PCB_U32String_remove_range(PCB_U32String* PCB_restrict str, size_t start, size_t length);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -5564,64 +5576,76 @@ ssize_t PCB_String_insert_codepoints(
     return inserted;
 }
 
-bool PCB_String_replace_range(
-    PCB_String* PCB_restrict str,
-    size_t start,
-    size_t length,
-    PCB_StringView other
-) {
-    PCB_CHECK_SELF(str, false);
-    PCB_CHECK(start >= str->length, false);
-    PCB_CHECK(start + length > str->length, false);
-    if(PCB_String_isEmpty(&other)) return PCB_String_remove_range(str, start, length);
-    PCB_CHECK(str->data <= other.data && other.data <= str->data + str->length, false);
-    char* const after = str->data + start + length;
-    if(other.length > length) {
-        const size_t diff = other.length - length;
-        if(!PCB_String_reserve(str, diff)) return false;
-        PCB_memmove(after + diff, after, str->length - (start + length));
-        PCB_memcpy(str->data + start, other.data, other.length);
-        str->data[str->length += diff] = '\0';
-    }
-    else if(other.length < length) {
-        const size_t diff = length - other.length;
-        PCB_memcpy(str->data + start, other.data, other.length);
-        PCB_memmove(after - diff, after, str->length - (start + length));
-        str->data[str->length -= diff] = '\0';
-    } else {
-        PCB_memcpy(str->data + start, other.data, length);
-    }
-    return true;
+#define PCB__Str_replace_range(Type, svType, charType) \
+bool Type##_replace_range( \
+    Type* PCB_restrict str, size_t start, size_t length, svType other \
+) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK(start >= str->length, false); \
+    PCB_CHECK(start + length > str->length, false); \
+    if(PCB_String_isEmpty(&other)) return Type##_remove_range(str, start, length); \
+    PCB_CHECK(str->data <= other.data && other.data <= str->data + str->length, false); \
+    charType* const after = str->data + start + length; \
+    if(other.length > length) { \
+        const size_t diff = other.length - length; \
+        if(!Type##_reserve(str, diff)) return false; \
+        PCB_memmove(after + diff, after, (str->length - (start + length))*sizeof(*str->data)); \
+        PCB_memcpy(str->data + start, other.data, other.length*sizeof(*str->data)); \
+        str->data[str->length += diff] = '\0'; \
+    } else if(other.length < length) { \
+        const size_t diff = length - other.length; \
+        PCB_memcpy(str->data + start, other.data, other.length*sizeof(*str->data)); \
+        PCB_memmove(after - diff, after, (str->length - (start + length))*sizeof(*str->data)); \
+        str->data[str->length -= diff] = '\0'; \
+    } else { \
+        PCB_memcpy(str->data + start, other.data, length*sizeof(*str->data)); \
+    } \
+    return true; \
 }
+PCB__Str_replace_range(PCB_String,    PCB_StringView,    char)       //PCB_String_replace_range()
+PCB__Str_replace_range(PCB_WString,   PCB_WStringView,   wchar_t)    //PCB_WString_replace_range()
+PCB__Str_replace_range(PCB_U8String,  PCB_U8StringView,  PCB_char8)  //PCB_U8String_replace_range()
+PCB__Str_replace_range(PCB_U16String, PCB_U16StringView, PCB_char16) //PCB_U16String_replace_range()
+PCB__Str_replace_range(PCB_U32String, PCB_U32StringView, PCB_char32) //PCB_U32String_replace_range()
+#undef PCB__Str_replace_range
 
-bool PCB_String_replace_range_chars(
-    PCB_String* str,
-    size_t start,
-    size_t length,
-    char c
-) {
-    PCB_CHECK_SELF(str, false);
-    PCB_CHECK(start >= str->length, false);
-    PCB_CHECK(start + length > str->length, false);
-    PCB_CHECK(c == '\0', false);
-    PCB_memset(str->data + start, c, length);
-    return true;
+#define PCB__Str_replace_range_chars(Type, charType) \
+bool Type##_replace_range_chars( \
+    Type* PCB_restrict str, size_t start, size_t length, charType c \
+) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK(start >= str->length, false); \
+    PCB_CHECK(start + length > str->length, false); \
+    PCB_CHECK(c == '\0', false); \
+    for(charType* cursor = str->data + start; length > 0; *cursor++ = c, --length) {} \
+    return true; \
 }
+PCB__Str_replace_range_chars(PCB_String,    char)       //PCB_String_replace_range_chars()
+PCB__Str_replace_range_chars(PCB_WString,   wchar_t)    //PCB_WString_replace_range_chars()
+PCB__Str_replace_range_chars(PCB_U8String,  PCB_char8)  //PCB_U8String_replace_range_chars()
+PCB__Str_replace_range_chars(PCB_U16String, PCB_char16) //PCB_U16String_replace_range_chars()
+PCB__Str_replace_range_chars(PCB_U32String, PCB_char32) //PCB_U32String_replace_range_chars()
+#undef PCB__Str_replace_range_chars
 
-bool PCB_String_remove_range(
-    PCB_String* PCB_restrict str, size_t start, size_t length
-) {
-    PCB_CHECK_SELF(str, false);
-    PCB_CHECK(start >= str->length, false);
-    PCB_CHECK(start + length > str->length, false);
-    if(length == 0) return true; //would cause a redundant memmove
-    PCB_memmove(
-        str->data + start,
-        str->data + start + length,
-        str->length - (start + length) + 1 //'\0'
-    );
-    str->length -= length; return true;
+#define PCB__Str_remove_range(Type) \
+bool Type##_remove_range(Type* PCB_restrict str, size_t start, size_t length) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK(start >= str->length, false); \
+    PCB_CHECK(start + length > str->length, false); \
+    if(length == 0) return true; /* would cause a redundant memmove */ \
+    PCB_memmove( \
+        str->data + start, \
+        str->data + start + length, \
+        (str->length - (start + length) + 1 /*'\0'*/)*sizeof(*str->data) \
+    ); \
+    str->length -= length; return true; \
 }
+PCB__Str_remove_range(PCB_String)    //PCB_String_remove_range()
+PCB__Str_remove_range(PCB_WString)   //PCB_WString_remove_range()
+PCB__Str_remove_range(PCB_U8String)  //PCB_U8String_remove_range()
+PCB__Str_remove_range(PCB_U16String) //PCB_U16String_remove_range()
+PCB__Str_remove_range(PCB_U32String) //PCB_U32String_remove_range()
+#undef PCB__Str_remove_range
 
 bool PCB_String_setSuffix_char(
     PCB_String* PCB_restrict str, const char c
