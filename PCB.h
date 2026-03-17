@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 14
+#define PCB_VERSION_PATCH 15
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3240,7 +3240,10 @@ PCBAPI char PCBCALL PCB_String_pop(
  * @brief Pops `howMany` characters from `str` into `out`.
  * If `howMany > str->length`, `howMany` is clamped to `str->length`.
  * If `out` is NULL, characters are discarded.
- * The caller must ensure that `out` can hold at least `howMany` bytes.
+ *
+ * The caller must ensure that `out` can hold at least `howMany` `char`s.
+ * `out` will not be null-terminated - it is the caller's responsibility to do so.
+ *
  * Note: it is NOT permitted that `out` overlaps with `str->data`, i.e. points to
  * a range [`str->data`, `str->data + str->length`) as it may trigger undefined
  * behavior.
@@ -3626,6 +3629,8 @@ PCBAPI bool PCBCALL PCB_WString_replace_range_chars(PCB_WString* PCB_restrict st
 PCBAPI bool PCBCALL PCB_WString_remove_range(PCB_WString* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool PCBCALL PCB_WString_setSuffix_char(PCB_WString* PCB_restrict str, const wchar_t c);
 PCBAPI bool PCBCALL PCB_WString_truncate_until_char(PCB_WString* PCB_restrict str, const wchar_t c);
+PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str);
+PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany);
@@ -3646,6 +3651,8 @@ PCBAPI bool    PCBCALL PCB_U8String_replace_range_chars(PCB_U8String* PCB_restri
 PCBAPI bool    PCBCALL PCB_U8String_remove_range(PCB_U8String* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool    PCBCALL PCB_U8String_setSuffix_char(PCB_U8String* PCB_restrict str, const PCB_char8 c);
 PCBAPI bool    PCBCALL PCB_U8String_truncate_until_char(PCB_U8String* PCB_restrict str, const PCB_char8 c);
+PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str);
+PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out);
 
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany);
@@ -3666,6 +3673,8 @@ PCBAPI bool    PCBCALL PCB_U16String_replace_range_chars(PCB_U16String* PCB_rest
 PCBAPI bool    PCBCALL PCB_U16String_remove_range(PCB_U16String* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool    PCBCALL PCB_U16String_setSuffix_char(PCB_U16String* PCB_restrict str, const PCB_char16 c);
 PCBAPI bool    PCBCALL PCB_U16String_truncate_until_char(PCB_U16String* PCB_restrict str, const PCB_char16 c);
+PCBAPI PCB_char16 PCBCALL PCB_U16String_pop(PCB_U16String* PCB_restrict str);
+PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, size_t howMany, PCB_char16* PCB_restrict out);
 
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany);
@@ -3686,6 +3695,8 @@ PCBAPI bool    PCBCALL PCB_U32String_replace_range_chars(PCB_U32String* PCB_rest
 PCBAPI bool    PCBCALL PCB_U32String_remove_range(PCB_U32String* PCB_restrict str, size_t start, size_t length);
 PCBAPI bool    PCBCALL PCB_U32String_setSuffix_char(PCB_U32String* PCB_restrict str, const PCB_char32 c);
 PCBAPI bool    PCBCALL PCB_U32String_truncate_until_char(PCB_U32String* PCB_restrict str, const PCB_char32 c);
+PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str);
+PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out);
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -5834,28 +5845,42 @@ PCB_String PCB_String_toLowerCase_copy(const PCB_String* PCB_restrict str) {
     return copy;
 }
 
-char PCB_String_pop(PCB_String* PCB_restrict str) {
-    PCB_CHECK_SELF(str, 0x15); //NAK, as if "Why are you passing NULL here? I'm disappointed."
-    if(str->length == 0) return '\0';
-    char c = str->data[str->length - 1];
-    str->data[--str->length] = '\0';
-    return c;
+#define PCB__Str_pop(Type, charType) \
+charType Type##_pop(Type* PCB_restrict str) { \
+    PCB_CHECK_SELF(str, 0x15); /*NAK, as if "Why are you passing NULL here? I'm disappointed."*/ \
+    if(str->length == 0) return '\0'; \
+    charType c = str->data[str->length - 1]; \
+    str->data[--str->length] = '\0'; \
+    return c; \
 }
+PCB__Str_pop(PCB_String,    char)       //PCB_String_pop()
+PCB__Str_pop(PCB_WString,   wchar_t)    //PCB_WString_pop()
+PCB__Str_pop(PCB_U8String,  PCB_char8)  //PCB_U8String_pop()
+PCB__Str_pop(PCB_U16String, PCB_char16) //PCB_U16String_pop()
+PCB__Str_pop(PCB_U32String, PCB_char32) //PCB_U32String_pop()
+#undef PCB__Str_pop
 
-size_t PCB_String_pop_many(
-    PCB_String* PCB_restrict str, size_t howMany, char* PCB_restrict out
-) {
-    PCB_CHECK_SELF(str, 0);
-    if(howMany == 0) return 0;
-    if(PCB_String_isEmpty(str)) return 0;
-    if(howMany > str->length) howMany = str->length;
-    if(out != NULL) {
-        PCB_CHECK(str->data <= out && out <= str->data + str->length, 0);
-        PCB_memcpy(out, str->data + str->length - howMany, howMany + 1);
-    }
-    str->data[str->length -= howMany] = '\0';
-    return howMany;
+#define PCB__Str_pop_many(Type, charType) \
+size_t Type##_pop_many( \
+    Type* PCB_restrict str, size_t howMany, charType* PCB_restrict out \
+) { \
+    PCB_CHECK_SELF(str, 0); \
+    if(howMany == 0) return 0; \
+    if(PCB_String_isEmpty(str)) return 0; \
+    if(howMany > str->length) howMany = str->length; \
+    if(out != NULL) { \
+        PCB_CHECK(str->data <= out && out <= str->data + str->length, 0); \
+        PCB_memcpy(out, str->data + str->length - howMany, howMany*sizeof(*str->data)); \
+    } \
+    str->data[str->length -= howMany] = '\0'; \
+    return howMany; \
 }
+PCB__Str_pop_many(PCB_String,    char)       //PCB_String_pop_many()
+PCB__Str_pop_many(PCB_WString,   wchar_t)    //PCB_WString_pop_many()
+PCB__Str_pop_many(PCB_U8String,  PCB_char8)  //PCB_U8String_pop_many()
+PCB__Str_pop_many(PCB_U16String, PCB_char16) //PCB_U16String_pop_many()
+PCB__Str_pop_many(PCB_U32String, PCB_char32) //PCB_U32String_pop_many()
+#undef PCB__Str_pop_many
 
 size_t PCB_String_removeSuffix(PCB_String* str, const PCB_String* other) {
     PCB_CHECK_SELF(str, 0);
