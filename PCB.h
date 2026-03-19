@@ -2911,6 +2911,15 @@ PCBAPI bool PCBCALL PCB_String_appendf(
     ...
 ) PCB_Printf_Format(2, 3);
 /**
+ * @brief Appends a `printf`-like formatted string to `str`, argument version.
+ * @sa PCB_String_appendf
+ */
+PCBAPI bool PCBCALL PCB_String_appendfv(
+    PCB_String* PCB_restrict str,
+    const char* PCB_maybe_restrict fmt,
+    va_list ap
+) PCB_Printf_Format(2, 0);
+/**
  * @brief Appends a Unicode `codepoint` to `str`.
  * @return whether the operation succeeded: fails on realloc failure or
  * if `codepoint` is invalid.
@@ -3021,6 +3030,17 @@ PCBAPI bool PCBCALL PCB_String_insertf(
     size_t position,
     ...
 ) PCB_Printf_Format(2, 4);
+/**
+ * @brief Inserts a `printf`-like formatted string into `str` at position `position`,
+ * argument version.
+ * @sa PCB_String_insertf
+ */
+PCBAPI bool PCBCALL PCB_String_insertfv(
+    PCB_String* PCB_restrict str,
+    const char* PCB_maybe_restrict fmt,
+    size_t position,
+    va_list ap
+) PCB_Printf_Format(2, 0);
 /**
  * @brief Inserts a Unicode `codepoint` at position `position` into `str`.
  * Inserting 0 is not allowed.
@@ -5278,25 +5298,40 @@ bool PCB_String_appendf(
     PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt, ...
 ) {
 #ifdef PCB_HAS_STDIO_H
+    va_list args;
+    va_start(args, fmt);
+    bool result = PCB_String_appendfv(str, fmt, args);
+    va_end(args);
+    return result;
+#else
+    (void)str; (void)fmt;
+    return false;
+#endif //PCB_HAS_STDIO_H
+}
+
+bool PCB_String_appendfv(
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt, va_list ap
+) {
+#ifdef PCB_HAS_STDIO_H
     PCB_CHECK_SELF(str, false);
     PCB_CHECK(fmt == NULL, false);
     PCB_CHECK(str->data <= fmt && fmt <= str->data + str->length, false);
 
     va_list args;
-    va_start(args, fmt);
+    va_copy(args, ap);
     //'\0' is implicitly stored at the end
-    const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args);
+    const size_t req = (unsigned int)PCB_vsnprintf(NULL, 0, fmt, args);
     va_end(args);
+    if(req == 0) return true;
+    if(!PCB_String_reserve(str, req)) return false;
 
-    if(!PCB_String_reserve(str, lengthRequired)) return false;
-
-    va_start(args, fmt); //                               '\0'
-    PCB_vsnprintf(str->data + str->length, lengthRequired + 1, fmt, args);
+    va_copy(args, ap); //                      '\0'
+    PCB_vsnprintf(str->data + str->length, req + 1, fmt, args);
     va_end(args);
-    str->length += lengthRequired;
+    str->length += req;
     return true;
 #else
-    (void)str; (void)fmt;
+    (void)str; (void)fmt; (void)ap;
     return false;
 #endif //PCB_HAS_STDIO_H
 }
@@ -5528,27 +5563,50 @@ bool PCB_String_insertf(
     size_t position, ...
 ) {
 #ifdef PCB_HAS_STDIO_H
+    va_list args;
+    va_start(args, position);
+    bool result = PCB_String_insertfv(str, fmt, position, args);
+    va_end(args);
+    return result;
+#else
+    (void)str; (void)fmt; (void)position;
+    return false;
+#endif //PCB_HAS_STDIO_H
+}
+
+bool PCB_String_insertfv(
+    PCB_String* PCB_restrict str, const char* PCB_maybe_restrict fmt,
+    size_t position, va_list ap
+) {
+#ifdef PCB_HAS_STDIO_H
     PCB_CHECK_SELF(str, false);
     PCB_CHECK(position > str->length, false);
     PCB_CHECK(str->data <= fmt && fmt <= str->data + str->length, false);
 
     va_list args;
-    va_start(args, position);
-    const size_t lengthRequired = (size_t)PCB_vsnprintf(NULL, 0, fmt, args);
+    va_copy(args, ap);
+    const size_t req = (unsigned int)PCB_vsnprintf(NULL, 0, fmt, args);
     va_end(args);
-    if(!PCB_String_reserve(str, lengthRequired)) return false;
 
+    if(req == 0) return true;
+    if(!PCB_String_reserve(str, req)) return false;
     //PCB_vsnprintf will override the last character with '\0', so we need to save it
-    char overridden = str->data[position];
-    PCB_memmove(str->data + position + lengthRequired, str->data + position, str->length - position);
-    va_start(args, position);
-    PCB_vsnprintf(str->data + position, lengthRequired + 1, fmt, args);
+    char overridden = str->data[position]; //"aaaxbb"
+    PCB_memmove(
+        str->data + position + req,
+        str->data + position,
+        str->length - position
+    ); //"aaa---xbb"
+
+    va_copy(args, ap);
+    PCB_vsnprintf(str->data + position, req + 1, fmt, args); //"aaaccc0bb"
     va_end(args);
-    str->data[position + lengthRequired] = overridden;
-    str->data[str->length += lengthRequired] = '\0';
+
+    str->data[position + req] = overridden; //"aaacccxbb"
+    str->data[str->length += req] = '\0';
     return true;
 #else
-    (void)str; (void)fmt; (void)position;
+    (void)str; (void)fmt; (void)position; (void)ap;
     return false;
 #endif //PCB_HAS_STDIO_H
 }
