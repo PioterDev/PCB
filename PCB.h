@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 18
+#define PCB_VERSION_PATCH 19
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6226,7 +6226,7 @@ PCB_Strings PCB_StringView_split_copy(
 }
 
 PCB_StringViews PCB_StringView_split_whitespace(PCB_StringView sv) {
-    PCB_CHECK(PCB_String_isEmpty(&sv), PCB_ZEROED_T(PCB_StringViews));
+    if(PCB_String_isEmpty(&sv)) return PCB_ZEROED_T(PCB_StringViews);
     PCB_StringViews views = PCB_ZEROED;
     const char*     cur = NULL;
     while(true) {
@@ -6243,7 +6243,7 @@ PCB_StringViews PCB_StringView_split_whitespace(PCB_StringView sv) {
 }
 
 PCB_Strings PCB_StringView_split_whitespace_copy(PCB_StringView sv) {
-    PCB_CHECK(PCB_String_isEmpty(&sv), PCB_ZEROED_T(PCB_Strings));
+    if(PCB_String_isEmpty(&sv)) return PCB_ZEROED_T(PCB_Strings);
     PCB_Strings strs = PCB_ZEROED;
     const char* cur  = NULL;
     PCB_String str;
@@ -6262,9 +6262,9 @@ PCB_Strings PCB_StringView_split_whitespace_copy(PCB_StringView sv) {
 PCB_StringView PCB_StringView_findCharFrom_n(
     PCB_StringView sv, PCB_StringView accept, size_t n
 ) {
-    PCB_CHECK(PCB_String_isEmpty(&sv),     PCB_ZEROED_T(PCB_StringView));
-    PCB_CHECK(PCB_String_isEmpty(&accept), PCB_ZEROED_T(PCB_StringView));
-    PCB_CHECK(n == 0,                      PCB_ZEROED_T(PCB_StringView));
+    PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
+    if(PCB_String_isEmpty(&sv))     return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&accept)) return PCB_ZEROED_T(PCB_StringView);
     PCB_StringView cur = sv;
     while(true) {
         for(size_t i = 0; i < accept.length; i++) {
@@ -6284,9 +6284,9 @@ PCB_StringView PCB_StringView_findCharFrom_n(
 PCB_StringView PCB_StringView_findCharNotFrom_n(
     PCB_StringView sv, PCB_StringView accept, size_t n
 ) {
-    PCB_CHECK(PCB_String_isEmpty(&sv),     PCB_ZEROED_T(PCB_StringView));
-    PCB_CHECK(PCB_String_isEmpty(&accept), PCB_ZEROED_T(PCB_StringView));
-    PCB_CHECK(n == 0,                      PCB_ZEROED_T(PCB_StringView));
+    PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
+    if(PCB_String_isEmpty(&sv))     return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&accept)) return PCB_ZEROED_T(PCB_StringView);
     PCB_StringView cur = sv;
     while(true) {
         bool anyOfAccept = false;
