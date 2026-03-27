@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 20
+#define PCB_VERSION_PATCH 21
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4872,7 +4872,7 @@ bool PCB_mkdir(const char* path) {
     return true;
 #elif PCB_PLATFORM_WINDOWS
     errno = 0;
-    if(!CreateDirectory(path, NULL)) {
+    if(!CreateDirectoryA(path, NULL)) {
         DWORD err = GetLastError();
         if(err == ERROR_ALREADY_EXISTS) return true;
         PCB_logLatestError("Failed to create directory \"%s\"", path);
