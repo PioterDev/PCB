@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 17
+#define PCB_VERSION_PATCH 18
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3845,8 +3845,8 @@ PCBAPI uint8_t PCBCALL PCB_GetUTF8Length(uint32_t codepoint);
  * You've been warned.
  * @return position after the encoded codepoint
  */
-PCBAPI char* PCBCALL PCB_StoreUTF8Codepoint(
-    char* buf,
+PCBAPI PCB_char8* PCBCALL PCB_StoreUTF8Codepoint(
+    PCB_char8* buf,
     uint32_t codepoint
 ) PCB_Nonnull_Arg(1) PCB_Nonnull_Return;
 
@@ -5439,7 +5439,7 @@ bool PCB_String_append_codepoint(PCB_String* PCB_restrict str, uint32_t codepoin
     PCB_CHECK(!PCB_IsValidUnicode(codepoint), false);
     uint8_t l = PCB_GetUTF8Length_unchecked(codepoint);
     if(!PCB_String_reserve(str, l)) return false;
-    PCB_StoreUTF8Codepoint(str->data + str->length, codepoint);
+    PCB_StoreUTF8Codepoint((PCB_char8*)str->data + str->length, codepoint);
     str->data[str->length += l] = '\0';
     return true;
 }
@@ -5450,18 +5450,18 @@ ssize_t PCB_String_append_codepoints(
     PCB_CHECK_SELF(str, -1);
     if(PCB_String_isEmpty(&codepoints)) return 0;
     size_t neededLen = 0;
-    for(size_t i = 0; i < codepoints.length; i++) {
-        neededLen += (size_t)PCB_GetUTF8Length((int32_t)codepoints.data[i]);
+    PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
+        neededLen += (size_t)PCB_GetUTF8Length(*c);
         if(neededLen + str->length > SIZE_MAX/2) return -1;
     }
     if(neededLen == 0) return 0;
     if(!PCB_String_reserve(str, neededLen)) return -1;
 
-    char* cursor = str->data + str->length;
+    PCB_char8* cursor = (PCB_char8*)str->data + str->length;
     ssize_t appended = 0;
     PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
-        if(!PCB_IsValidUnicode((int32_t)*c)) continue;
-        cursor = PCB_StoreUTF8Codepoint(cursor, (int32_t)*c);
+        if(!PCB_IsValidUnicode(*c)) continue;
+        cursor = PCB_StoreUTF8Codepoint(cursor, *c);
         ++appended;
     }
     str->data[str->length += neededLen] = '\0';
@@ -5722,7 +5722,7 @@ bool PCB_String_insert_codepoint(
         str->length - position
     );
 
-    PCB_StoreUTF8Codepoint(str->data + position, codepoint);
+    PCB_StoreUTF8Codepoint((PCB_char8*)str->data + position, codepoint);
     str->data[str->length += l] = '\0';
     return true;
 }
@@ -5735,18 +5735,18 @@ ssize_t PCB_String_insert_codepoints(
     if(PCB_Vec_isEmpty(&codepoints)) return 0;
     size_t neededLen = 0;
     PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
-        neededLen += (size_t)PCB_GetUTF8Length((int32_t)*c);
+        neededLen += (size_t)PCB_GetUTF8Length(*c);
         if(neededLen + str->length > SIZE_MAX/2) return -1;
     }
     if(neededLen == 0) return 0;
     if(!PCB_String_reserve(str, neededLen)) return 0;
     PCB_memmove(str->data + position + neededLen, str->data + position, str->length - position);
 
-    char* cursor = str->data + str->length;
+    PCB_char8* cursor = (PCB_char8*)str->data + str->length;
     ssize_t inserted = 0;
     PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
-        if(!PCB_IsValidUnicode((int32_t)*c)) continue;
-        cursor = PCB_StoreUTF8Codepoint(cursor, (int32_t)*c);
+        if(!PCB_IsValidUnicode(*c)) continue;
+        cursor = PCB_StoreUTF8Codepoint(cursor, *c);
         ++inserted;
     }
     str->data[str->length += neededLen] = '\0';
@@ -6412,8 +6412,8 @@ PCB_Codepoint PCB_StringView_GetCodepoint(PCB_StringView sv, size_t index) {
 PCB_Codepoint PCB_StringView_GetCodepoint_unchecked(PCB_StringView sv, size_t index) {
 #define PCB__ISCONT(byte) ((byte & 0xC0) == 0x80)
 #define PCB__CP_ERR(code, bytesToSkip) PCB_CLITERAL(PCB_Codepoint){ code, bytesToSkip }
-    const unsigned char* cursor = (const unsigned char*)(sv.data + index);
-    const unsigned char* const end = (const unsigned char*)(sv.data + sv.length);
+    const PCB_char8* cursor = (const PCB_char8*)(sv.data + index);
+    const PCB_char8* const end = (const PCB_char8*)(sv.data + sv.length);
     uint8_t len = PCB__CPLFFC_UTF8(*cursor);
     if(len == 0) return PCB__CP_ERR(-1, 1);
     else if(len == 254) return PCB__CP_ERR(-6, 1);
@@ -6484,7 +6484,6 @@ bool PCB_IsValidUnicode(uint32_t codepoint) {
     // const uint32_t ls2b = codepoint & 0xFFFF;
     // if(ls2b == 0xFFFE || ls2b == 0xFFFF) return false; //also reserved
 
-    if(codepoint < 0x000000) return false;
 #if !(defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT))
     if(codepoint > 0x10FFFF) return false;
 #else
@@ -6512,9 +6511,9 @@ uint8_t PCB_GetUTF8Length(uint32_t codepoint) {
 }
 
 //modified from https://gist.github.com/tylerneylon/9773800
-char* PCB_StoreUTF8Codepoint(char* buf, uint32_t codepoint) {
+PCB_char8* PCB_StoreUTF8Codepoint(PCB_char8* buf, uint32_t codepoint) {
     if(codepoint <= 0x7F) {
-        *(uint8_t*)buf = (uint8_t)(codepoint & 0x7F);
+        *buf = (uint8_t)(codepoint & 0x7F);
         return buf + 1;
     }
     uint8_t c[6] = PCB_ZEROED; int i = 0; uint8_t first_max = 0x1F;
@@ -6523,7 +6522,7 @@ char* PCB_StoreUTF8Codepoint(char* buf, uint32_t codepoint) {
         codepoint >>= 6; first_max >>= 1;
     }
     c[i++] = (uint8_t)(codepoint & first_max) | (~first_max << 2);
-    while(i > 0) *(uint8_t*)buf++ = c[--i];
+    while(i > 0) *buf++ = c[--i];
     return buf;
 }
 #undef PCB__strlen_char
