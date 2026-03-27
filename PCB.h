@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 19
+#define PCB_VERSION_PATCH 20
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4844,13 +4844,13 @@ void PCB_logLatestError(const char* fmt, ...) {
     PCB_log(PCB_LOGLEVEL_ERROR_NL, "%s", ""); //quick'n'dirty hack
     va_list args;
     va_start(args, fmt);
-    PCB_vfprintf(stderr, fmt, args);
+    PCB_vfprintf(PCB_stderr, fmt, args);
     va_end(args);
 #if PCB_PLATFORM_WINDOWS
-    if(addNl) PCB_fprintf(stderr, ": %s\n", buf);
-    else PCB_fprintf(stderr, ": %s", buf);
+    if(addNl) PCB_fprintf(PCB_stderr, ": %s\n", buf);
+    else PCB_fprintf(PCB_stderr, ": %s", buf);
 #else
-    PCB_fprintf(stderr, ": %s\n", buf);
+    PCB_fprintf(PCB_stderr, ": %s\n", buf);
 #endif
 }
 #endif //PCB_IMPLEMENTATION_ERR
@@ -5896,7 +5896,7 @@ int PCB_String_compare_ci(const PCB_String* a, const PCB_String* b) {
     PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
     if(a->data == NULL) return b->data != NULL;
     else if(b->data == NULL) return -1;
-    return strncasecmp(a->data, b->data, a->length);
+    return PCB_strncasecmp(a->data, b->data, a->length);
 }
 
 int PCB_String_compare_cstr(
@@ -5914,7 +5914,7 @@ int PCB_String_compare_cstr_ci(
     PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
     if(a->data == NULL) return b != NULL;
     else if(b == NULL) return -1;
-    return strncasecmp(a->data, b, a->length);
+    return PCB_strncasecmp(a->data, b, a->length);
 }
 
 #define PCB__Str_eq(Type) \
