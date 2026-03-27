@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 21
+#define PCB_VERSION_PATCH 22
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4400,7 +4400,7 @@ PCBAPI int PCBCALL PCB_isspace(int ch);
 #endif //PCB_isspace
 
 #if !defined(PCB__ASSERT_HANDLED)
-PCBAPI PCB_NoReturn void PCBCALL PCB__assert_fail(
+PCBAPI PCB_Noreturn void PCBCALL PCB__assert_fail(
     const char* exprStr, const char* file, unsigned int line, const char* func
 );
 #endif //PCB_HAS_ASSERT_H
