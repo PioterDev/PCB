@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 23
+#define PCB_VERSION_PATCH 24
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -2395,14 +2395,14 @@ typedef PCB_CStrings PCB_ShellCommand;
 #if defined(__cpp_char8_t) && __cpp_char8_t+0 >= 201811L
 typedef char8_t PCB_char8;
 #else
-typedef unsigned char PCB_char8;
+typedef char PCB_char8;
 #endif //__cpp_char8_t FTM
 #elif defined(__STDC_VERSION__)
 //TODO: MinGW doesn't provide char8_t in C23. Is this a bug?
 #if __STDC_VERSION__+0 >= 202311L && defined(PCB_HAS_UCHAR_H)
 typedef char8_t PCB_char8;
 #else
-typedef unsigned char PCB_char8;
+typedef char PCB_char8;
 #endif //C23 && <uchar.h>
 #endif //language
 
@@ -6520,9 +6520,9 @@ PCB_Codepoint PCB_StringView_GetCodepoint(PCB_StringView sv, size_t index) {
 PCB_Codepoint PCB_StringView_GetCodepoint_unchecked(PCB_StringView sv, size_t index) {
 #define PCB__ISCONT(byte) ((byte & 0xC0) == 0x80)
 #define PCB__CP_ERR(code, bytesToSkip) PCB_CLITERAL(PCB_Codepoint){ code, bytesToSkip }
-    const PCB_char8* cursor = (const PCB_char8*)(sv.data + index);
-    const PCB_char8* const end = (const PCB_char8*)(sv.data + sv.length);
-    uint8_t len = PCB__CPLFFC_UTF8(*cursor);
+    const unsigned char* cursor = (const unsigned char*)(sv.data + index);
+    const unsigned char* const end = (const unsigned char*)(sv.data + sv.length);
+    uint8_t len = PCB__CPLFFC_UTF8((unsigned char)*cursor);
     if(len == 0) return PCB__CP_ERR(-1, 1);
     else if(len == 254) return PCB__CP_ERR(-6, 1);
     else if(len == 255) return PCB__CP_ERR(-3, 1);
@@ -6621,15 +6621,15 @@ uint8_t PCB_GetUTF8Length(uint32_t codepoint) {
 //modified from https://gist.github.com/tylerneylon/9773800
 PCB_char8* PCB_StoreUTF8Codepoint(PCB_char8* buf, uint32_t codepoint) {
     if(codepoint <= 0x7F) {
-        *buf = (uint8_t)(codepoint & 0x7F);
+        *buf = (PCB_char8)(uint8_t)(codepoint & 0x7F);
         return buf + 1;
     }
-    uint8_t c[6] = PCB_ZEROED; int i = 0; uint8_t first_max = 0x1F;
+    PCB_char8 c[6] = PCB_ZEROED; int i = 0; uint8_t first_max = 0x1F;
     while(codepoint > first_max) {
-        c[i++] = (uint8_t)(codepoint & 0x3F) | 0x80;
+        c[i++] = (PCB_char8)((uint8_t)(codepoint & 0x3F) | 0x80);
         codepoint >>= 6; first_max >>= 1;
     }
-    c[i++] = (uint8_t)(codepoint & first_max) | (~first_max << 2);
+    c[i++] = (PCB_char8)((uint8_t)(codepoint & first_max) | (~first_max << 2));
     while(i > 0) *buf++ = c[--i];
     return buf;
 }
