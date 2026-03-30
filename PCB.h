@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 22
+#define PCB_VERSION_PATCH 23
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -938,10 +938,12 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 //Section 1.6: Define functions/macros that the library uses from libc.
 #ifndef PCB_realloc
 #ifdef PCB_HAS_STDLIB_H
-#define PCB_realloc realloc
+#define PCB_realloc(oldPtr, newSize) (errno = 0, realloc(oldPtr, newSize))
+#define PCB_realloc_failed() (errno != 0)
 #else
 #error "PCB Error: PCB requires PCB_realloc defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
-#define PCB_realloc(oldPtr, newSize) NULL
+#define PCB_realloc(oldPtr, newSize) NULL //stub
+#define PCB_realloc_failed() 1 //stub
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_realloc
 
@@ -950,7 +952,7 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_free(ptr) free(ptr)
 #else
 #error "PCB Error: PCB requires PCB_free defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
-#define PCB_free(ptr)
+#define PCB_free(ptr) //stub
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_free
 
@@ -1191,6 +1193,13 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_CONCAT(x, y) PCB__CONCAT(x, y)
 #endif //PCB_CONCAT
 
+//Macro used for "mangling" names by adding the line number to the name.
+//Portable and sufficient for most use cases.
+//You may find this useful in your code, hence it's public.
+#ifndef PCB_MANGLE
+#define PCB_MANGLE(x) PCB_CONCAT(PCB_CONCAT(x, _), __LINE__)
+#endif //PCB_MANGLE
+
 //Macro controlling certain safety checks within the library.
 #ifndef PCB_SAFETY_CHECKS
 #define PCB_SAFETY_CHECKS 1
@@ -1324,21 +1333,42 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_VEC_INITIAL_CAPACITY 64
 #endif //PCB_VEC_INITIAL_CAPACITY
 
+#ifndef PCB_Vec_realloc_fail_action
+#ifdef PCB_VEC_REALLOC_SAFE
+#define PCB_Vec_realloc_fail_action() break
+#else
+#define PCB_Vec_realloc_fail_action() \
+    PCB_assert(0 && "Realloc failed (download more RAM lmao)")
+#endif //PCB_VEC_REALLOC_SAFE
+#endif //PCB_Vec_realloc_fail_action
+
+#ifndef PCB_Vec_integer_overflow_action
+#ifdef PCB_VEC_OVERFLOW_SAFE
+#define PCB_Vec_integer_overflow_action() break
+#else
+#define PCB_Vec_integer_overflow_action() \
+    PCB_assert(0 && "Integer overflow (download more address space lmao)")
+#endif //PCB_VEC_REALLOC_SAFE
+#endif //PCB_Vec_integer_overflow_action
+
 #ifndef PCB_Vec_reserve
 #ifdef __cplusplus
-#define PCB_Vec_reserve(vec, howMany) do {                  \
-    size_t new__capacity__ = (vec)->capacity;               \
-    if(new__capacity__ == 0)                                \
-        new__capacity__ = PCB_VEC_INITIAL_CAPACITY;         \
-    while((vec)->capacity + (howMany) > new__capacity__) {  \
-        new__capacity__ *= 2;                               \
-    } if(new__capacity__ == (vec)->capacity) break;         \
-    void* new__data__ = (void*)PCB_realloc(                 \
-        (vec)->data, new__capacity__ * sizeof(*(vec)->data) \
-    ); if(new__data__ == NULL) break;                       \
-    PCB_memcpy(                                             \
-        &(vec)->data, &new__data__, sizeof(new__data__)     \
-    ); (vec)->capacity = new__capacity__;                   \
+#define PCB_Vec_reserve(vec, howMany) do {                          \
+    const size_t PCB_MANGLE(N) = (howMany);                         \
+    if(PCB_MANGLE(N) == 0) { break; }                               \
+    size_t PCB_MANGLE(c) = (vec)->capacity;                         \
+    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;\
+    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {          \
+        PCB_MANGLE(c) *= 2;                                         \
+    }                                                               \
+    if(PCB_MANGLE(c) <= (vec)->capacity) { break; }                 \
+    if(PCB_MANGLE(c) > (SIZE_MAX/2) / sizeof(*(vec)->data)) {       \
+        PCB_Vec_integer_overflow_action();                          \
+    } void* PCB_MANGLE(d) = (void*)PCB_realloc(                     \
+        (vec)->data, PCB_MANGLE(c) * sizeof(*(vec)->data)           \
+    ); if(PCB_MANGLE(d) == NULL) { PCB_Vec_realloc_fail_action(); } \
+    PCB_memcpy(&(vec)->data, &PCB_MANGLE(d), sizeof(PCB_MANGLE(d)));\
+    (vec)->capacity = PCB_MANGLE(c);                                \
 } while(0)
 #else
 /**
@@ -1346,21 +1376,33 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  *
  * If reallocation fails, `vec`'s capacity remains unchanged.
  */
-#define PCB_Vec_reserve(vec, howMany) do {                  \
-    size_t new__capacity__ = (vec)->capacity;               \
-    if(new__capacity__ == 0)                                \
-        new__capacity__ = PCB_VEC_INITIAL_CAPACITY;         \
-    while((vec)->capacity + (howMany) > new__capacity__) {  \
-        new__capacity__ *= 2;                               \
-    } if(new__capacity__ == (vec)->capacity) break;         \
-    void* new__data__ = (void*)PCB_realloc(                 \
-        (vec)->data, new__capacity__ * sizeof(*(vec)->data) \
-    ); if(new__data__ == NULL) break;                       \
-    (vec)->data = new__data__;                              \
-    (vec)->capacity = new__capacity__;                      \
+#define PCB_Vec_reserve(vec, howMany) do {                          \
+    const size_t PCB_MANGLE(N) = (howMany);                         \
+    if(PCB_MANGLE(N) == 0) { break; }                               \
+    size_t PCB_MANGLE(c) = (vec)->capacity;                         \
+    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;\
+    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {          \
+        PCB_MANGLE(c) *= 2;                                         \
+    }                                                               \
+    if(PCB_MANGLE(c) <= (vec)->capacity) { break; }                 \
+    if(PCB_MANGLE(c) > (SIZE_MAX/2) / sizeof(*(vec)->data)) {       \
+        PCB_Vec_integer_overflow_action();                          \
+    } void* PCB_MANGLE(d) = (void*)PCB_realloc(                     \
+        (vec)->data, PCB_MANGLE(c) * sizeof(*(vec)->data)           \
+    ); if(PCB_MANGLE(d) == NULL) { PCB_Vec_realloc_fail_action(); } \
+    (vec)->data = PCB_MANGLE(d); (vec)->capacity = PCB_MANGLE(c);   \
 } while(0)
 #endif //C++
 #endif //PCB_Vec_reserve
+
+#ifndef PCB_Vec_reserve_check
+#ifdef PCB_VEC_REALLOC_SAFE
+#define PCB_Vec_reserve_check(vec, howMany) \
+    { PCB_Vec_reserve(vec, howMany);  if(PCB_realloc_failed()) break; }
+#else
+#define PCB_Vec_reserve_check(vec, howMany) PCB_Vec_reserve(vec, howMany)
+#endif //PCB_VEC_REALLOC_SAFE
+#endif //PCB_Vec_reserve_check
 
 #ifndef PCB_Vec_free
 #define PCB_Vec_free(vec) PCB_free((vec)->data)
@@ -1377,18 +1419,35 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 } while(0)
 #endif //PCB_Vec_destroy
 
+#ifndef PCB_Vec_do_append_unchecked
+/**
+ * @brief Actually appends `item` to `vec`.
+ * If `vec->length >= vec->capacity`, the behavior is undefined.
+ * You can use this instead of `PCB_Vec_append` if you know you have enough
+ * space to append to reduce binary size.
+ */
+#define PCB_Vec_do_append_unchecked(vec, item) \
+    (vec)->data[(vec)->length++] = (item)
+#endif //PCB_Vec_do_append_unchecked
+
+#ifndef PCB_Vec_do_append
+#ifdef PCB_DISABLE_ASSERT
+#define PCB_Vec_do_append(vec, item) PCB_Vec_do_append_unchecked(vec, item)
+#else
+#define PCB_Vec_do_append(vec, item) \
+    (vec)->data[(PCB_assert((vec)->length < (vec)->capacity), (vec)->length++)] = (item)
+#endif //PCB_DISABLE_ASSERT
+#endif //PCB_Vec_do_append
+
 #ifndef PCB_Vec_append
 /**
  * @brief Appends `item` to `vec`.
  *
  * If reallocation fails, `vec`'s capacity remains unchanged.
  */
-#define PCB_Vec_append(vec, item) do {       \
-    const size_t cu__P__ = (vec)->capacity;  \
-    if((vec)->length == (vec)->capacity) {   \
-        PCB_Vec_reserve(vec, 1);             \
-        if((vec)->capacity == cu__P__) break;\
-    } (vec)->data[(vec)->length++] = (item); \
+#define PCB_Vec_append(vec, item) do {      \
+    PCB_Vec_reserve_check(vec, 1);          \
+    PCB_Vec_do_append_unchecked(vec, item); \
 } while(0)
 #endif //PCB_Vec_append
 
@@ -1400,12 +1459,11 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  * but requires specifying the type of arguments provided since C doesn't have
  * type inference before C23 and `typeof` is a GNU extension, so it's not portable.
  */
-#define PCB_Vec_append_multiple(vec, items, howMany) do {           \
-    if((vec)->length + howMany > (vec)->capacity) {                 \
-        PCB_Vec_reserve(vec, howMany);                              \
-    } for(size_t IiindeX__ = 0; IiindeX__ < howMany; IiindeX__++) { \
-        (vec)->data[IiindeX__ + (vec)->length] = (items)[IiindeX__];\
-    } (vec)->length += (howMany);                                   \
+#define PCB_Vec_append_multiple(vec, items, howMany) do {                       \
+    PCB_Vec_reserve_check(vec, howMany);                                        \
+    for(size_t PCB_MANGLE(j) = 0; PCB_MANGLE(j) < (howMany); PCB_MANGLE(j)++) { \
+        (vec)->data[PCB_MANGLE(j) + (vec)->length] = (items)[PCB_MANGLE(j)];    \
+    } (vec)->length += (howMany);                                               \
 } while(0)
 #endif //PCB_Vec_append_multiple
 
@@ -1417,10 +1475,10 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  * type inference before C23 and `typeof` is a GNU
  * extension that is not portable.
  */
-#define PCB_Vec_append_variadic(vec, type, ...) do {          \
-    type itEMs__[] = { __VA_ARGS__ };                         \
-    size_t hOw_mAnY__ = sizeof(itEMs__) / sizeof(itEMs__[0]); \
-    PCB_Vec_append_multiple(vec, itEMs__, hOw_mAnY__);        \
+#define PCB_Vec_append_variadic(vec, type, ...) do {                    \
+    type PCB_MANGLE(items)[] = { __VA_ARGS__ };                         \
+    size_t PCB_MANGLE(count) = PCB_ARRAY_LEN(PCB_MANGLE(items));        \
+    PCB_Vec_append_multiple(vec, PCB_MANGLE(items), PCB_MANGLE(count)); \
 } while(0)
 #endif //PCB_Vec_append_variadic
 
@@ -1440,7 +1498,7 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  * @brief Pops the last element from `vec`.
  */
 #define PCB_Vec_pop(vec) \
-    (PCB_assert((vec)->length > 0), (vec)->data[--(vec)->length])
+    (vec)->data[PCB_assert((vec)->length > 0), --(vec)->length]
 #endif //PCB_DISABLE_ASSERT
 #endif //PCB_Vec_pop
 
@@ -1460,33 +1518,74 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  * @brief Returns a pointer to the last element of `vec`.
  */
 #define PCB_Vec_last(vec) \
-    (PCB_assert((vec)->length > 0), &(vec)->data[(vec)->length - 1])
+    (&(vec)->data[PCB_assert((vec)->length > 0), (vec)->length - 1])
 #endif //PCB_DISABLE_ASSERT
 #endif //PCB_Vec_last
 
 #ifndef PCB_Vec_clear
 /**
- * @brief Clears `vec`...which literally only reset its length.
- * Do not use if elements hold data that needs to be destroyed.
+ * @brief Clears `vec`...which literally only resets its length.
+ * Use `PCB_Vec_clear_d` if elements hold data that needs to be destroyed.
  */
 #define PCB_Vec_clear(vec) ((vec)->length = 0)
 #endif //PCB_Vec_clear
+
+#ifndef PCB_Vec_clear_d
+/**
+ * @brief Executes `destructor(ptr-to-element)` on each element and sets
+ * the number of elements to 0.
+ */
+#define PCB_Vec_clear_d(vec, destructor) do {       \
+    for(                                            \
+        size_t PCB_MANGLE(i) = 0;                   \
+        PCB_MANGLE(i) < (vec)->length;              \
+        PCB_MANGLE(i)++                             \
+    ) { destructor(&(vec)->data[PCB_MANGLE(i)]); }  \
+    (vec)->length = 0;                              \
+} while(0)
+#endif //PCB_Vec_clear_d
+
+//Aliases
+#ifndef PCB_Vec_reset
+#define PCB_Vec_reset(vec) PCB_Vec_clear(vec)
+#endif //PCB_Vec_reset
+
+#ifndef PCB_Vec_reset_d
+#define PCB_Vec_reset_d(vec, destructor) PCB_Vec_clear_d(vec, destructor)
+#endif //PCB_Vec_reset_d
+
+//This (op) is kind of a stupid way to not make a 2nd macro, but it works...
+#ifndef PCB__Vec_check_index
+#ifdef PCB_VEC_OOB_SAFE
+#define PCB__Vec_check_index(vec, index, op) if((index) op (vec)->length) break
+#else
+#ifdef PCB_DISABLE_ASSERT
+#define PCB__Vec_check_index(vec, index, op)
+#else
+#define PCB__Vec_check_index(vec, index, op) PCB_assert(!((index) op (vec)->length))
+#endif //PCB_DISABLE_ASSERT
+#endif //PCB_VEC_OOB_SAFE
+#endif //PCB__Vec_check_index
 
 #ifndef PCB_Vec_insert
 /**
  * @brief Inserts `item` into `vec` at position `index`.
  *
- * If `index` >= current length of `vec`, nothing happens.
+ * If `index` > current length of `vec`, nothing happens.
  */
-#define PCB_Vec_insert(vec, item, index)                     \
-while((index) < (vec)->length) {                             \
-    if((vec)->length == (vec)->capacity)                     \
-        PCB_Vec_reserve(vec, 1);                             \
-    PCB_memmove(                                             \
-        (vec)->data + (index) + 1, (vec)->data + (index),    \
-        ((vec)->length - (index)) * sizeof(*(vec)->data)     \
-    ); (vec)->data[(index)] = (item); ++(vec)->length; break;\
-}
+#define PCB_Vec_insert(vec, item, index) do {   \
+    const size_t PCB_MANGLE(i) = (index);       \
+    PCB__Vec_check_index(vec, PCB_MANGLE(i), >);\
+    PCB_Vec_reserve_check(vec, 1);              \
+    PCB_memmove(                                \
+        (vec)->data + PCB_MANGLE(i) + 1,        \
+        (vec)->data + PCB_MANGLE(i),            \
+        ((vec)->length - PCB_MANGLE(i)) *       \
+            sizeof(*(vec)->data)                \
+    );                                          \
+    (vec)->data[PCB_MANGLE(i)] = (item);        \
+    ++(vec)->length;                            \
+} while(0)
 #endif //PCB_Vec_insert
 
 #ifndef PCB_Vec_erase
@@ -1494,14 +1593,16 @@ while((index) < (vec)->length) {                             \
  * @brief Erases the element at index `index` from `vec`.
  *
  * If the element holds any important value, it needs to be copied beforehand.
- * If `index` >= current length of `vec`, nothing happens.
  */
-#define PCB_Vec_erase(vec, index)                           \
-while((index) < (vec)->length) {                            \
-    PCB_memmove(                                            \
-        (vec)->data + (index), (vec)->data + (index) + 1,   \
-        ((vec)->length - (index) - 1) * sizeof(*(vec)->data)\
-    ); --(vec)->length; break;                              \
+#define PCB_Vec_erase(vec, index) do {              \
+    const size_t PCB_MANGLE(i) = (index);           \
+    PCB__Vec_check_index(vec, PCB_MANGLE(i), >=);   \
+    PCB_memmove(                                    \
+        (vec)->data + PCB_MANGLE(i),                \
+        (vec)->data + PCB_MANGLE(i) + 1,            \
+        ((vec)->length - PCB_MANGLE(i) - 1) *       \
+            sizeof(*(vec)->data)                    \
+    ); --(vec)->length;                             \
 }
 #endif //PCB_Vec_erase
 
@@ -1511,14 +1612,18 @@ while((index) < (vec)->length) {                            \
 
 #ifndef PCB_Vec_forEach
 /**
- * @brief Executes an expression on every element of `vec`.
+ * @brief Executes `expr` on every element of `vec`.
  *
  * `expr` can be a function receiving a pointer to the element
  * or a macro for inline expressions.
  * An example usage with a macro is as follows:
  * ```c
  * //struct with `data`, `length` and `capacity` fields
- * Vec_int v = {0};
+ * typedef struct {
+ *   int* data;
+ *   size_t length;
+ *   size_t capacity;
+ * } Ints v = PCB_ZEROED;
  * ...
  * #define EXPR(ptr) printf("%d ", *ptr)
  * PCB_Vec_forEach(&v, EXPR);
@@ -1526,9 +1631,12 @@ while((index) < (vec)->length) {                            \
  * ...
  * ```
  */
-#define PCB_Vec_forEach(vec, expr) \
-    for(size_t iINDex__ = 0; iINDex__ < (vec)->length; iINDex__++) \
-        { expr(&(vec)->data[iINDex__]); }
+#define PCB_Vec_forEach(vec, expr)      \
+for(                                    \
+    size_t PCB_MANGLE(i) = 0;           \
+    PCB_MANGLE(i) < (vec)->length;      \
+    PCB_MANGLE(i)++                     \
+) { expr(&(vec)->data[PCB_MANGLE(i)]); }
 #endif //PCB_Vec_forEach
 
 #ifndef PCB_Vec_forEach_it
