@@ -3848,6 +3848,7 @@ PCBAPI bool PCBCALL PCB_WString_replace_range_chars(PCB_WString* PCB_restrict st
 PCBAPI bool PCBCALL PCB_WString_remove_range(PCB_WString* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_setSuffix_char(PCB_WString* PCB_restrict str, const wchar_t c) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_truncate_until_char(PCB_WString* PCB_restrict str, const wchar_t c) PCB_Nonnull_Arg(1);
+PCBAPI PCB_WString PCBCALL PCB_WString_clone(const PCB_WString* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_eq(const PCB_WString* a, const PCB_WString* b) PCB_Nonnull_Arg(1, 2);
 PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out) PCB_Nonnull_Arg(1);
@@ -3871,6 +3872,7 @@ PCBAPI bool    PCBCALL PCB_U8String_replace_range_chars(PCB_U8String* PCB_restri
 PCBAPI bool    PCBCALL PCB_U8String_remove_range(PCB_U8String* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_setSuffix_char(PCB_U8String* PCB_restrict str, const PCB_char8 c) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_truncate_until_char(PCB_U8String* PCB_restrict str, const PCB_char8 c) PCB_Nonnull_Arg(1);
+PCBAPI PCB_U8String PCBCALL PCB_U8String_clone(const PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_eq(const PCB_U8String* a, const PCB_U8String* b) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out) PCB_Nonnull_Arg(1);
@@ -3894,6 +3896,7 @@ PCBAPI bool    PCBCALL PCB_U16String_replace_range_chars(PCB_U16String* PCB_rest
 PCBAPI bool    PCBCALL PCB_U16String_remove_range(PCB_U16String* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_setSuffix_char(PCB_U16String* PCB_restrict str, const PCB_char16 c) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_truncate_until_char(PCB_U16String* PCB_restrict str, const PCB_char16 c) PCB_Nonnull_Arg(1);
+PCBAPI PCB_U16String PCBCALL PCB_U16String_clone(const PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_eq(const PCB_U16String* a, const PCB_U16String* b) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_char16 PCBCALL PCB_U16String_pop(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, size_t howMany, PCB_char16* PCB_restrict out) PCB_Nonnull_Arg(1);
@@ -3917,6 +3920,7 @@ PCBAPI bool    PCBCALL PCB_U32String_replace_range_chars(PCB_U32String* PCB_rest
 PCBAPI bool    PCBCALL PCB_U32String_remove_range(PCB_U32String* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_setSuffix_char(PCB_U32String* PCB_restrict str, const PCB_char32 c) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_truncate_until_char(PCB_U32String* PCB_restrict str, const PCB_char32 c) PCB_Nonnull_Arg(1);
+PCBAPI PCB_U32String PCBCALL PCB_U32String_clone(const PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_eq(const PCB_U32String* a, const PCB_U32String* b) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out) PCB_Nonnull_Arg(1);
@@ -5976,17 +5980,16 @@ PCB__Str_truncate_until_char(PCB_U16String, PCB_char16) //PCB_U16String_truncate
 PCB__Str_truncate_until_char(PCB_U32String, PCB_char32) //PCB_U32String_truncate_until_char()
 #undef PCB__Str_truncate_until_char
 
-PCB_String PCB_String_clone(const PCB_String* PCB_restrict str) {
-    PCB_CHECK_SELF(str, false);
-    PCB_CHECK(PCB_String_isEmpty(str), PCB_ZEROED_T(PCB_String));
-    PCB_String s = PCB_ZEROED;
-    s.data = (char*)PCB_realloc(NULL, str->length + 1);
-    if(s.data == NULL) return s;
-    s.length = str->length;
-    s.capacity = str->capacity;
-    PCB_memcpy(s.data, str->data, s.length + 1);
-    return s;
+#define PCB__Str_clone(Type) \
+Type Type##_clone(const Type* PCB_restrict str) { \
+    Type s = PCB_ZEROED; Type##_append(&s, str); return s; \
 }
+PCB__Str_clone(PCB_String)    //PCB_String_clone()
+PCB__Str_clone(PCB_WString)   //PCB_WString_clone()
+PCB__Str_clone(PCB_U8String)  //PCB_U8String_clone()
+PCB__Str_clone(PCB_U16String) //PCB_U16String_clone()
+PCB__Str_clone(PCB_U32String) //PCB_U32String_clone()
+#undef PCB__Str_clone
 
 int PCB_String_compare(const PCB_String* a, const PCB_String* b) {
     PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
