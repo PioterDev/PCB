@@ -742,8 +742,10 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 //Using C++'s constructor trickery we can construct
 //an empty object with a static lifetime, which means
 //running a function at startup.
-#define PCB_BeforeMain(f) static void f(void); \
-struct f##__ { f##__() { f(); } }; static f##__ f##_; \
+#define PCB_BeforeMain(f)           \
+static void f(void);                \
+struct f##_i { f##_i() { f(); } };  \
+static f##_i f##_i_;                \
 static void f(void)
 #else //C
 #if PCB_COMPILER_MSVC
@@ -768,6 +770,10 @@ static void f(void)
 #endif //Compilers
 #endif //C++?
 #endif //PCB_BeforeMain
+
+#ifndef PCB_InitFn
+#define PCB_InitFn(f) PCB_BeforeMain(f)
+#endif //PCB_InitFn
 
 #ifndef PCB_Unreachable
 #if PCB_COMPILER_GCC >= 40500 || PCB_COMPILER_CLANG >= 30400
@@ -2143,11 +2149,10 @@ for(                                                                \
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/shm.h>
 #include <sys/wait.h>
 #include <dirent.h>
-#include <spawn.h>
 #include <signal.h>
+#include <sys/utsname.h>
 #endif //platform-specific APIs
 
 #ifdef __SANITIZE_ADDRESS__
@@ -4612,6 +4617,49 @@ PCBAPI PCB_Noreturn void PCBCALL PCB__assert_fail(
 #define PCB__logDebug(...)
 #endif //PCB_DEBUG_SELF
 
+#if PCB_PLATFORM_POSIX
+static struct {
+    struct utsname strings;
+    struct {
+        uint32_t major, minor, patch;
+    } version;
+} PCB__SYSTEM_INFO;
+
+PCB_InitFn(PCB__SYSTEM_INFO_GET) {
+    int ret = uname(&PCB__SYSTEM_INFO.strings);
+    if(ret < 0) return; //only EFAULT is possible, maybe we should _exit?
+    const unsigned char *C = (const unsigned char*)PCB__SYSTEM_INFO.strings.release;
+    uint32_t v;
+
+    //6.14.3-whatever
+    //^
+    v = 0;
+    for(; *C >= '0' && *C <= '9'; C++) { v = v*10 + (*C - '0'); }
+    PCB__SYSTEM_INFO.version.major = v;
+    if(*C != '.') return;
+    C++;
+
+    //6.14.3-whatever
+    //  ^
+    v = 0;
+    for(; *C >= '0' && *C <= '9'; C++) { v = v*10 + (*C - '0'); }
+    PCB__SYSTEM_INFO.version.minor = v;
+    //on some systems (like Sun) version returned in uname(2) lacks the patch component.
+    //See https://man.freebsd.org/cgi/man.cgi?query=uname&sektion=1&manpath=SunOS+5.8
+    if(*C != '.') return;
+    C++;
+
+    //6.14.3-whatever
+    //     ^
+    v = 0;
+    for(; *C >= '0' && *C <= '9'; C++) { v = v*10 + (*C - '0'); }
+    PCB__SYSTEM_INFO.version.patch = v;
+    //We only care about kernel version (for now at least).
+    //And holy hell, there's so much C++ here!
+}
+
+#endif //Currently private as providing similar info on Windows is,
+       //as always, a major PITA.
 #endif //PCB_IMPLEMENTATION_ANY
 
 #ifdef PCB_IMPLEMENTATION_LIBC_FALLBACKS
