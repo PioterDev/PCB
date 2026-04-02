@@ -26,11 +26,11 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 6
+#define PCB_VERSION_MINOR 7
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 24
+#define PCB_VERSION_PATCH 0
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -7181,42 +7181,6 @@ int PCB_Processes_waitForAll(PCB_Processes* processes) {
     return PCB_Processes_waitForRange(processes, 0, processes->length);
 }
 
-//check whether `vfork` is available according to vfork(2)...I love you glibc <3
-#if PCB_PLATFORM_POSIX
-#ifdef PCB_HAS_VFORK
-#error "PCB_HAS_VFORK macro should not be defined prior to this place"
-#else
-#ifdef __GLIBC__
-#if __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 12
-//and now, hell begins
-#if (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE+0 >= 500) && !(defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200809L)
-#define PCB_TEMP 1
-#else
-#define PCB_TEMP 0
-#endif //temporary convenience macro
-#if __GLIBC_MINOR__ == 19
-#if PCB_TEMP && defined(_DEFAULT_SOURCE) && defined(_BSD_SOURCE)
-#define PCB_HAS_VFORK
-#endif //glibc 2.19 check
-#elif __GLIBC_MINOR__ > 19
-#if PCB_TEMP && defined(_DEFAULT_SOURCE)
-#define PCB_HAS_VFORK
-#endif //glibc >2.19 check
-#else
-#if PCB_TEMP && defined(_BSD_SOURCE)
-#define PCB_HAS_VFORK
-#endif //glibc 2.12-2.18 check
-#endif //glibc 2.12+ checks
-#undef PCB_TEMP
-#else
-#if defined(_BSD_SOURCE) || (defined(_XOPEN_SOURCE) && (_XOPEN_SOURCE+0) >= 500)
-#define PCB_HAS_VFORK
-#endif //glibc check (<2.12)
-#endif //glibc checks
-#endif //glibc
-#endif //PCB_HAS_VFORK
-#endif //POSIX-only thing
-
 PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     PCB_CHECK_SELF(command, PCB_Process_init());
     if(command->data == NULL || command->length < 1) {
@@ -7276,10 +7240,6 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     }
     int code = 0;
     PCB_Process child = PCB_Process_init();
-#ifdef PCB_HAS_VFORK
-    child.handle = vfork();
-#else
-    //TODO: maybe the exit code is sufficient to pass error codes?
     //checking what error has occured in the child is impossible with fork(2) without some IPC
     int tmpPipe[2] = { -1, -1 };
     ssize_t r = -1;
@@ -7292,7 +7252,6 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
         code = -errno; goto end;
     }
     child.handle = fork();
-#endif //PCB_HAS_VFORK?
     if(child.handle == -1) {
         PCB_logLatestError("Failed to create a child process");
         code = -errno; goto end;
@@ -7300,16 +7259,10 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     else if(child.handle == 0) {
         close(tmpPipe[0]);
         execvp(command->data[0], (char* const*)command->data);
-        code = errno;
-#ifdef PCB_HAS_VFORK
-        PCB_logLatestError("Failed to execute shell command");
-#else
+        code = -errno;
         write(tmpPipe[1], &code, sizeof(code));
-        close(tmpPipe[1]);
-#endif //PCB_HAS_VFORK?
         _exit(255);
     }
-#ifndef PCB_HAS_VFORK
     close(tmpPipe[1]); tmpPipe[1] = -1;
 repeat:
     r = read(tmpPipe[0], &code, sizeof(code));
@@ -7317,18 +7270,14 @@ repeat:
         if(errno == EINTR) goto repeat;
         PCB_Unreachable; //at least it should be...
     } else if(r > 0) {
-        errno = code;
-        code = -code;
+        errno = -code;
     } //0 means nothing was written and no error has occured
-#endif //PCB_HAS_VFORK
 end:
-#ifndef PCB_HAS_VFORK
     if(tmpPipe[1] >= 0) close(tmpPipe[1]);
     if(tmpPipe[0] >= 0) close(tmpPipe[0]);
-#endif //!PCB_HAS_VFORK?
     if(code != 0) {
         if(child.handle > 0) waitpid(child.handle, NULL, 0); //reap the child on error
-        child.handle = -code;
+        child.handle = code;
     }
     if(!hadNullLast) --command->length;
     return child;
