@@ -1075,6 +1075,30 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_strnlen
 //TODO: strpbrk
 
+#ifndef PCB_wcscmp
+#ifdef PCB__HAS_WCHAR_H
+#define PCB_wcscmp wcscmp
+#endif //PCB__HAS_WCHAR_H
+#endif //PCB_wcscmp
+
+#ifndef PCB_wcsncmp
+#ifdef PCB__HAS_WCHAR_H
+#define PCB_wcsncmp wcsncmp
+#endif //PCB__HAS_WCHAR_H
+#endif //PCB_wcsncmp
+
+#ifndef PCB_wcslen
+#ifdef PCB__HAS_WCHAR_H
+#define PCB_wcslen wcslen
+#endif //PCB__HAS_WCHAR_H
+#endif //PCB_wcslen
+
+#ifndef PCB_wcsnlen
+#ifdef PCB__HAS_WCHAR_H
+#define PCB_wcsnlen wcsnlen
+#endif //PCB__HAS_WCHAR_H
+#endif //PCB_wcsnlen
+
 #ifndef PCB_isspace
 #ifdef PCB_HAS_CTYPE_H
 #define PCB_isspace isspace
@@ -3056,6 +3080,18 @@ PCBAPI PCB_File PCBCALL PCB_IO_get_stderr(void);
 PCBAPI size_t PCBCALL PCB_strlen_char8 (const PCB_char8*  str) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_strlen_char16(const PCB_char16* str) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_strlen_char32(const PCB_char32* str) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strnlen_char8 (const PCB_char8*  str, size_t maxlen) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strnlen_char16(const PCB_char16* str, size_t maxlen) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strnlen_char32(const PCB_char32* str, size_t maxlen) PCB_Nonnull_Arg(1);
+
+PCBAPI int PCBCALL PCB_strcmp_char8 (const PCB_char8*  s1, const PCB_char8*  s2) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strcmp_char16(const PCB_char16* s1, const PCB_char16* s2) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strcmp_char32(const PCB_char32* s1, const PCB_char32* s2) PCB_Nonnull_Arg(1, 2);
+
+PCBAPI int PCBCALL PCB_strncmp_char8 (const PCB_char8*  s1, const PCB_char8*  s2, size_t n) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strncmp_char16(const PCB_char16* s1, const PCB_char16* s2, size_t n) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strncmp_char32(const PCB_char32* s1, const PCB_char32* s2, size_t n) PCB_Nonnull_Arg(1, 2);
+
 
 /**
  * @brief Frees `str`'s buffer and resets fields to 0.
@@ -4594,6 +4630,22 @@ PCBAPI size_t PCBCALL PCB_strlen(const char *s) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_strnlen(const char *s, size_t n) PCB_Nonnull_Arg(1);
 #endif //PCB_strnlen
 
+#ifndef PCB_wcscmp
+PCBAPI int PCBCALL PCB_wcscmp(const wchar_t *s1, const wchar_t *s2) PCB_Nonnull_Arg(1, 2);
+#endif //PCB_wcscmp
+
+#ifndef PCB_wcsncmp
+PCBAPI int PCBCALL PCB_wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n) PCB_Nonnull_Arg(1, 2);
+#endif //PCB_wcsncmp
+
+#ifndef PCB_wcslen
+PCBAPI int PCBCALL PCB_wcslen(const wchar_t *s) PCB_Nonnull_Arg(1);
+#endif //PCB_wcslen
+
+#ifndef PCB_wcsnlen
+PCBAPI int PCBCALL PCB_wcsnlen(const wchar_t *s, size_t n) PCB_Nonnull_Arg(1);
+#endif //PCB_wcsnlen
+
 #ifndef PCB_isspace
 PCBAPI int PCBCALL PCB_isspace(int ch);
 #endif //PCB_isspace
@@ -4829,6 +4881,30 @@ int PCB_memcmp(const void* p1, const void* p2, size_t n) {
 }
 #define PCB_memcmp PCB_memcmp
 #endif //PCB_memcmp
+
+#ifndef PCB_wcscmp
+int PCB_wcscmp(const wchar_t *s1, const wchar_t *s2) {
+    while(*s1 && *s1 == *s2) { ++s1; ++s2; }
+    return (*s1 > *s2) - (*s1 < *s2);
+}
+#define PCB_wcscmp PCB_wcscmp
+#endif //PCB_wcscmp
+
+#ifndef PCB_wcsncmp
+int PCB_wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n) {
+    while(n > 0 && *s1 && *s1 == *s2) { ++s1; ++s2; --n; }
+    return n == 0 ? 0 : ((*s1 > *s2) - (*s1 < *s2));
+}
+#define PCB_wcsncmp PCB_wcsncmp
+#endif //PCB_wcsncmp
+
+#ifndef PCB_wcslen
+size_t PCB_wcslen(const wchar_t* s) {
+    const wchar_t* cursor = s; while(*cursor) ++cursor;
+    return (size_t)(cursor - s);
+}
+#define PCB_wcslen PCB_wcslen
+#endif //PCB_wcslen
 
 #ifndef PCB_isspace
 int PCB_isspace(int ch) {
@@ -5410,17 +5486,42 @@ PCB_File PCB_IO_get_stderr(void) {
 
 //Section 3.4: Strings, string views, vectors of strings...
 #ifdef PCB_IMPLEMENTATION_STRING
-size_t PCB_strlen_char8 (const PCB_char8*  str) { const PCB_char8*  s = str; while(*s++) {} return (size_t)(s - str); }
-size_t PCB_strlen_char16(const PCB_char16* str) { const PCB_char16* s = str; while(*s++) {} return (size_t)(s - str); }
-size_t PCB_strlen_char32(const PCB_char32* str) { const PCB_char32* s = str; while(*s++) {} return (size_t)(s - str); }
+size_t PCB_strlen_char8 (const PCB_char8   *str) { const PCB_char8*  s = str; while(*s) {++s;} return (size_t)(s - str); }
+size_t PCB_strlen_char16(const PCB_char16  *str) { const PCB_char16* s = str; while(*s) {++s;} return (size_t)(s - str); }
+size_t PCB_strlen_char32(const PCB_char32  *str) { const PCB_char32* s = str; while(*s) {++s;} return (size_t)(s - str); }
+
+size_t PCB_strnlen_char8 (const PCB_char8  *str, size_t n) { const PCB_char8  *s = str; while(n > 0 && *s) {--n; ++s;} return (size_t)(s - str); }
+size_t PCB_strnlen_char16(const PCB_char16 *str, size_t n) { const PCB_char16 *s = str; while(n > 0 && *s) {--n; ++s;} return (size_t)(s - str); }
+size_t PCB_strnlen_char32(const PCB_char32 *str, size_t n) { const PCB_char32 *s = str; while(n > 0 && *s) {--n; ++s;} return (size_t)(s - str); }
+
+int PCB_strcmp_char8 (const PCB_char8*   s1, const PCB_char8*  s2) {
+    while(*s1 && *s1 == *s2) { ++s1; ++s2; }
+    return (*s1 > *s2) - (*s1 < *s2);
+}
+int PCB_strcmp_char16(const PCB_char16*  s1, const PCB_char16* s2) {
+    while(*s1 && *s1 == *s2) { ++s1; ++s2; }
+    return (*s1 > *s2) - (*s1 < *s2);
+}
+int PCB_strcmp_char32(const PCB_char32*  s1, const PCB_char32* s2) {
+    while(*s1 && *s1 == *s2) { ++s1; ++s2; }
+    return (*s1 > *s2) - (*s1 < *s2);
+}
+
+int PCB_strncmp_char8(const PCB_char8*   s1, const PCB_char8*  s2, size_t n) {
+    while(n > 0 && *s1 && *s1 == *s2) { ++s1; ++s2; --n; }
+    return n == 0 ? 0 : ((*s1 > *s2) - (*s1 < *s2));
+}
+int PCB_strncmp_char16(const PCB_char16* s1, const PCB_char16* s2, size_t n) {
+    while(n > 0 && *s1 && *s1 == *s2) { ++s1; ++s2; --n; }
+    return n == 0 ? 0 : ((*s1 > *s2) - (*s1 < *s2));
+}
+int PCB_strncmp_char32(const PCB_char32* s1, const PCB_char32* s2, size_t n) {
+    while(n > 0 && *s1 && *s1 == *s2) { ++s1; ++s2; --n; }
+    return n == 0 ? 0 : ((*s1 > *s2) - (*s1 < *s2));
+}
 
 #define PCB__strlen_char(str) PCB_strlen(str)
-
-#ifdef PCB__HAS_WCHAR_H
-#define PCB__strlen_wchar_t(str) wcslen(str)
-#else
-static size_t PCB__strlen_wchar_t(const wchar_t* str) { const wchar_t* s = str; while(*s++) {} return (size_t)(s - str); }
-#endif //PCB__HAS_WCHAR_H
+#define PCB__strlen_wchar_t(str) PCB_wcslen(str)
 
 //`PCB__strlen_##charType` with `PCB_char(8|16|32)` expand to these identifiers.
 #define PCB__strlen_PCB_char8  PCB_strlen_char8
