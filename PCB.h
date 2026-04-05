@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 2
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -2643,6 +2643,7 @@ typedef struct {
     size_t capacity;
     PCB_Arena* next;
     PCB_Arena_Flags flags;
+    uint32_t refcount;
     PCB_Arena_Alloc_Meta last;
 } PCB_Arena_Prefix;
 
@@ -4269,7 +4270,7 @@ PCBAPI size_t PCBCALL PCB_Arena_allocated(PCB_Arena* arena) PCB_Nonnull_Arg(1);
  */
 PCBAPI size_t PCBCALL PCB_Arena_allocatable(PCB_Arena* arena) PCB_Nonnull_Arg(1);
 /**
- * @brief Get `arena`'s current capacity.
+ * @brief Get `arena`'s current capacity in bytes.
  */
 PCBAPI size_t PCBCALL PCB_Arena_capacity(PCB_Arena* arena) PCB_Nonnull_Arg(1);
 /**
@@ -4283,7 +4284,7 @@ PCBAPI size_t PCBCALL PCB_Arena_allocated_all(PCB_Arena* arena) PCB_Nonnull_Arg(
  */
 PCBAPI size_t PCBCALL PCB_Arena_allocatable_all(PCB_Arena* arena) PCB_Nonnull_Arg(1);
 /**
- * @brief Get `arena`'s current capacity,
+ * @brief Get `arena`'s current capacity in bytes,
  * including its successor nodes.
  */
 PCBAPI size_t PCBCALL PCB_Arena_capacity_all(PCB_Arena* arena) PCB_Nonnull_Arg(1);
@@ -4292,6 +4293,10 @@ PCBAPI size_t PCBCALL PCB_Arena_capacity_all(PCB_Arena* arena) PCB_Nonnull_Arg(1
  * @sa PCB_Arena_next
  */
 PCBAPI PCB_Arena_Flags PCBCALL PCB_Arena_flags(PCB_Arena* arena) PCB_Nonnull_Arg(1);
+/**
+ * @brief Increment `arena`'s reference count. Does not affect successor nodes.
+ */
+PCBAPI void PCBCALL PCB_Arena_reference(PCB_Arena* arena) PCB_Nonnull_Arg(1);
 /**
  * @brief Enables storing additional metadata before each allocation.
  * This can only be done if `arena` is empty, including all of its successors.
@@ -4354,7 +4359,7 @@ for(                                                                \
 #endif //PCB_Arena_scope
 /**
  * @brief Free `ptr`, which was previously allocated with
- * `PCB_Arena_(c)alloc` or `PCB_Arena_aligned_(c)alloc`, from `arena`.
+ * `PCB_Arena_(z)alloc` or `PCB_Arena_aligned_(z)alloc`, from `arena`.
  * This is a no-op if `ptr` was not the last thing allocated in `arena` or
  * one of its successors or `arena` does not store allocation metadata.
  * The memory is simply leaked.
@@ -4386,7 +4391,7 @@ PCBAPI void PCBCALL PCB_Arena_free(PCB_Arena* arena, void* ptr) PCB_Nonnull_Arg(
  * is returned. It is not recommended to blindly reassign `ptr` to the value
  * returned.
  *
- * If `ptr` was created using `PCB_Arena_aligned_(c)alloc` and a new buffer
+ * If `ptr` was created using `PCB_Arena_aligned_(z)alloc` and a new buffer
  * is created, the new buffer is aligned to at least the original alignment.
  * If `ptr` is not a pointer originally returned by one of the alloc functions,
  * the behavior is undefined.
@@ -4416,8 +4421,9 @@ PCBAPI void* PCBCALL PCB_Arena_realloc(
  */
 PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena) PCB_Nonnull_Arg(1);
 /**
- * @brief Destroys `arena`, i.e. frees blocks contained within it.
- * After this call, `arena` becomes a dangling pointer!
+ * @brief Decrements `arena`'s reference count. If it reaches 0,
+ * destroys `arena`, i.e. frees the backing store.
+ * `arena`'s successors are destroyed in identical manner.
  *
  * Do not call this function if `arena` was created with `PCB_Arena_init_in`.
  * In that case the caller is responsible for managing the backing store.
@@ -7926,6 +7932,11 @@ PCB_Arena_Flags PCB_Arena_flags(PCB_Arena* arena) {
     return ((PCB_Arena_Prefix*)arena)->flags;
 }
 
+void PCB_Arena_reference(PCB_Arena* arena) {
+    PCB_CHECK_SELF(arena,);
+    ++((PCB_Arena_Prefix*)arena)->refcount;
+}
+
 bool PCB_Arena_enable_allocMeta(PCB_Arena* arena, bool enable) {
     PCB_CHECK_SELF(arena, false);
     PCB__Arena_forEach_node(current, next) {
@@ -8073,13 +8084,16 @@ void PCB_Arena_reset(PCB_Arena* arena) {
 
 void PCB_Arena_destroy(PCB_Arena* arena) {
     if(arena == NULL) return;
-    PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)(((PCB_Arena_Prefix*)arena)->next);
-    while(true) {
-        PCB_free(arena);
-        arena = (PCB_Arena*)next;
-        if(arena == NULL) break;
+    PCB_Arena_Prefix* a    = (PCB_Arena_Prefix*)arena;
+    PCB_Arena_Prefix* next = (PCB_Arena_Prefix*)a->next;
+    do {
+        PCB__logTrace("%s: refcount = %u", __func__, a->refcount);
+        if(--a->refcount != 0) return;
+        PCB_free(a);
+        a = next;
+        if(a == NULL) break;
         next = (PCB_Arena_Prefix*)next->next;
-    }
+    } while(1);
 }
 
 #ifdef PCB_HAS_STDIO_H
