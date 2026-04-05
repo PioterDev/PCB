@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 0
+#define PCB_VERSION_PATCH 1
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -836,6 +836,42 @@ static void f(void)
 #endif //compilers
 #endif //C++ && __cpp_decltype || C
 #endif //PCB_Typeof
+
+//NOTE: For compatibility with older language versions, you need to *always*
+//pass `msg`, but it may be an empty token, i.e. passing ',' after `expr`
+//is enough to satisfy this macro.
+#ifndef PCB_static_assert
+#if defined(__cplusplus) && defined(__cpp_static_assert) && __cpp_static_assert+0 >= 200410L
+#define PCB_static_assert(expr, msg) static_assert(expr, msg "")
+#elif defined(__STDC_VERSION__)
+#if __STDC_VERSION__+0 >= 202311L
+#if PCB_COMPILER_GCC >= 90000 || PCB_COMPILER_CLANG >= 90000 || PCB_COMPILER_MSVC
+#define PCB_static_assert(expr, msg) static_assert(expr, msg "")
+#endif //GCC 9 || Clang 9 || surprisingly MSVC?
+#elif __STDC_VERSION__ >= 201112L
+//https://releases.llvm.org/3.0/docs/ClangReleaseNotes.html
+#if PCB_COMPILER_GCC >= 40600 || PCB_COMPILER_CLANG >= 30000 || PCB_COMPILER_MSVC
+#define PCB_static_assert(expr, msg) _Static_assert(expr, msg "")
+#endif //GCC 4.6 || Clang 3 || surprisingly MSVC?
+#endif //C23 || C11
+#endif //C++ && __cpp_static_assert FTM || C
+
+#ifndef PCB_static_assert
+/*
+ * Sorry, MSVC99 users, you'll have to live with "unused variable" warnings.
+ * It's only like this for MSVC99 because otherwise it'd make using this macro annoying for everyone.
+ * The workaround is as follows:
+ * ```c
+ * PCB_PushDiagnostics()
+ * PCB_IgnoreDiagnostic(4189) //or another
+ * PCB_static_assert(...);
+ * PCB_PopDiagnostics()
+ *```
+ */
+#define PCB_static_assert(expr, msg)    \
+PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
+#endif //hackish fallbacks
+#endif //PCB_static_assert
 
 #ifndef PCB_HAS_INCLUDE
 #if (PCB_COMPILER_GCC >= 50000) || \
@@ -2153,6 +2189,12 @@ for(                                                                \
 #include <dirent.h>
 #include <signal.h>
 #include <sys/utsname.h>
+#if PCB_PLATFORM_LINUX
+#include <sys/syscall.h>
+#include <linux/sched.h>
+#include <sched.h>
+#include <poll.h>
+#endif //Linux-specific definitions
 #endif //platform-specific APIs
 
 #ifdef __SANITIZE_ADDRESS__
@@ -2501,14 +2543,18 @@ typedef struct {
 } PCB_Codepoint;
 
 
-
+//NOTE: Zero-initialization of this structure is non-portable.
+//ALWAYS use `PCB_Process_init`.
 typedef struct {
 #if PCB_PLATFORM_WINDOWS
     HANDLE handle;
-    DWORD status;
 #elif PCB_PLATFORM_POSIX
     pid_t handle;
-    int status;
+    int status; //required due to wait(2) semantics
+#if PCB_PLATFORM_LINUX
+    int pidfd;
+#endif //Linux >=5.3 allows opening a file descriptor for processes
+       //we can use this to efficiently wait for many processes with poll(2)
 #else
     int handle; //stub
 #endif //platform-dependent handles to processes
@@ -2518,7 +2564,8 @@ typedef struct {
 #if PCB_PLATFORM_WINDOWS
 #define PCB_PROCESS_INVALID_HANDLE INVALID_HANDLE_VALUE
 #elif PCB_PLATFORM_POSIX
-/* 0 is the kernel (or part of it), i.e. no userspace process can be 0.
+/*
+ * 0 is the kernel (or part of it), i.e. no userspace process can be 0.
  * Any negative PID is also invalid as defined by POSIX.
  * See https://pubs.opengroup.org/onlinepubs/9699919799/.
  */
@@ -2532,6 +2579,15 @@ typedef struct {
     PCB_Process* data;
     size_t length;
     size_t capacity;
+    /**
+     * If the implementation has to fallback to polling (
+     *   Windows: `length > MAXIMUM_WAIT_OBJECTS`;
+     *   Linux: <5.3 (no pidfd support);
+     *   or because a better method isn't yet implemented
+     * ), wait functions will sleep for this many microseconds
+     * between consecutive polls, or a default amount if 0.
+     */
+    size_t poll_us;
 } PCB_Processes;
 
 
@@ -3990,86 +4046,86 @@ PCBAPI PCB_char8* PCBCALL PCB_StoreUTF8Codepoint(
 
 
 /**
- * @brief Returns a `PCB_Process` structure with data
- * about itself. Not implemented.
+ * @brief Returns a `PCB_Process` structure with data about itself.
  */
 PCBAPI PCB_Process PCBCALL PCB_Process_self(void);
 /**
- * @brief Create a `process` struct with invalid fields (all other functions
- * rely on this fact). This function MUST be used instead of standard
+ * @brief Create a `PCB_Process` struct with invalid fields (all other functions
+ * rely on this fact). This function MUST be used instead of usual
  * zero-initialization, otherwise the behavior is undefined.
-*/
+ */
 PCBAPI PCB_Process PCBCALL PCB_Process_init(void);
 /**
- * @brief Checks whether `process` is a valid process.
- * NOTE: does NOT check whether `process` is an existing process.
+ * @brief Checks whether process `p` is a valid process.
+ * NOTE: does NOT check whether `p` is an existing process.
  */
-PCBAPI bool PCBCALL PCB_Process_isValid(const PCB_Process* process) PCB_Nonnull_Arg(1);
+PCBAPI bool PCBCALL PCB_Process_isValid(const PCB_Process* p) PCB_Nonnull_Arg(1);
 /**
- * @brief Waits for `process` to exit.
- * @return `true` if `process` exited, `false` on error; call `PCB_GetError()`
+ * @brief Waits for process `p` to exit.
+ * @return `true` if `p` exited, `false` on error; call `PCB_GetError()`
  * to get the error code.
  */
-PCBAPI bool PCBCALL PCB_Process_waitForExit(PCB_Process* process) PCB_Nonnull_Arg(1);
+PCBAPI bool PCBCALL PCB_Process_waitForExit(PCB_Process* p) PCB_Nonnull_Arg(1);
 /**
-* @brief Checks if `process` exited.
-* @return `true` if `process` exited, `false` if not, -1 on error;
-* call `PCB_GetError()` to get the error code.
-*/
-PCBAPI int PCBCALL PCB_Process_checkExit(PCB_Process* process) PCB_Nonnull_Arg(1);
+ * @brief Checks if process `p` exited.
+ * @return `true` if `p` exited, `false` if not, -1 on error;
+ * call `PCB_GetError()` to get the error code.
+ */
+PCBAPI int PCBCALL PCB_Process_checkExit(PCB_Process* p) PCB_Nonnull_Arg(1);
 /**
-* @brief Get the exit code of `process`.
-* @return
-* On Windows: `process->status` (it is mapped directly to an exit code there),
-* On POSIX systems:
-* - value in the range of [0, 255] for a normal exit,
-* - `-s-1` if terminated by a signal with a numeric value `s`,
-* - -1 otherwise - this can mean that `process` was stopped/continued; use
-* `WIFSTOPPED`, `WSTOPSIG`, `WIFCONTINUED` macros inside
-* `#if PCB_PLATFORM_POSIX` on `process->status`
-* to handle that case since it's platform-specific.
-*/
-PCBAPI int PCBCALL PCB_Process_getExitCode(const PCB_Process* process) PCB_Nonnull_Arg(1);
+ * @brief Get the exit code of process `p`.
+ *
+ * You should only call it after `p` has exited.
+ * Otherwise, on POSIX systems, the result will most likely be incorrect.
+ * @return
+ * On POSIX systems:
+ *
+ * - value in the range of [0, 255] for a normal exit,
+ *
+ * - `-s-1` if terminated by a signal with a numeric value `s`,
+ *
+ * - -1 otherwise - this can mean that `process` was stopped/continued; use
+ *   `WIFSTOPPED`, `WSTOPSIG`, `WIFCONTINUED` macros inside
+ *   `#if PCB_PLATFORM_POSIX` on `p->status`
+ *   to handle that case since it's platform-specific.
+ * On Windows, the entire range is used for exit codes.
+ *
+ * Abnormal exits are logged as errors. See the implementation for what is
+ * considered an "abnormal" exit.
+ */
+PCBAPI int PCBCALL PCB_Process_getExitCode(const PCB_Process* p) PCB_Nonnull_Arg(1);
 /**
- * @brief Destroys the passed `process` structure, invalidates
+ * @brief Destroys the passed `p` process structure, invalidates
  * its member fields.
  */
-PCBAPI void PCBCALL PCB_Process_destroy(PCB_Process* process);
+PCBAPI void PCBCALL PCB_Process_destroy(PCB_Process* p);
 
 /**
  * @brief Waits for any process in `processes` to exit.
- * The entry for the process that exits is invalidated by calling
- * `PCB_Process_destroy` on it.
- * @return the exit code of the exited process or -1 on error;
- * call `PCB_GetError()` to get the error code.
+ * @return index of the exited process, -1 on error (call `PCB_GetError()`
+ * to get the error code) or `-x-1` where `x` is the invalid entry index.
  */
 PCBAPI int PCBCALL PCB_Processes_waitForAny(PCB_Processes* processes) PCB_Nonnull_Arg(1);
 /**
- * @brief Waits for a subset of processes in `processes` in a range of
- * [`start`, `end`). Ignores invalid entries.
- * Contrary to `PCB_Processes_waitForAny` it does NOT invalidate entries.
+ * @brief Waits for a subset of processes in `ps` in a range of
+ * [`start`, `end`).
  * @return
- * - 0 if all processes exited with code 0,
- * - -1 if `processes == NULL` (errno is set to EFAULT) or
- *   `end > processes->length` (errno is set to EINVAL),
- * - `n` if `n`th (at index `n-1`) process did not exit with code 0
- * (subtract 1 to get the index), call `PCB_Process_getExitCode` on it
- * to get the exit code,
- * - `-n-1` if waiting for the `n`th (at index `n-1`) process failed
+ * - 0 on success,
+ * -1 if `ps == NULL` (errno is set to EFAULT) or
+ *   `end > ps->length || start >= end` (errno is set to EINVAL),
+ * `-n-1` if waiting for the `n`th (at index `n-1`) process failed
  * (flip the sign and add 2 to get the index).
  *
- * In the last 2 cases, processes after the `n`th one are NOT waited on;
+ * In the last case, processes after the `n`th one are NOT waited on;
  * the caller must retry waiting on the rest.
  */
 PCBAPI int PCBCALL PCB_Processes_waitForRange(
-    PCB_Processes* PCB_restrict processes,
+    PCB_Processes* PCB_restrict ps,
     size_t start,
     size_t end
 ) PCB_Nonnull_Arg(1);
 /**
  * @brief Waits for all processes in `processes` to exit.
- * Ignores invalid entries.
- * Contrary to `PCB_Processes_waitForAny` it does NOT invalidate entries.
  * This function is equivalent to
  * `PCB_Processes_waitForRange(processes, 0, processes->length)`.
  * Read its documentation before using this function.
@@ -4658,6 +4714,12 @@ PCB_InitFn(PCB__SYSTEM_INFO_GET) {
     //And holy hell, there's so much C++ here!
 }
 
+static bool PCB__Linux_has_pidfd(void) {
+    return (PCB__SYSTEM_INFO.version.major > 5 || (
+        PCB__SYSTEM_INFO.version.major == 5 &&
+        PCB__SYSTEM_INFO.version.minor >= 3
+    ));
+}
 #endif //Currently private as providing similar info on Windows is,
        //as always, a major PITA.
 #endif //PCB_IMPLEMENTATION_ANY
@@ -7065,164 +7127,243 @@ PCB_maybe_inline PCB_StringView PCB_StringView_trim(PCB_StringView sv) {
 //Section 3.5: Platform-independent (sort of) process functions.
 #ifdef PCB_IMPLEMENTATION_PROCESS
 PCB_Process PCB_Process_self(void) {
-    PCB_TODO("PCB_Process_self");
+    PCB_Process p = PCB_Process_init();
 #if PCB_PLATFORM_WINDOWS
-
+    p.handle = GetCurrentProcess();
 #elif PCB_PLATFORM_POSIX
-
-#endif
+    p.handle = getpid();
+#if PCB_PLATFORM_LINUX
+    if(PCB__Linux_has_pidfd()) p.pidfd = syscall(SYS_pidfd_open, p.handle, 0);
+#endif //pidfd
+#endif //platforms
+    return p;
 }
 
 PCB_Process PCB_Process_init(void) {
     PCB_Process p = PCB_ZEROED;
     p.handle = PCB_PROCESS_INVALID_HANDLE;
-#if PCB_PLATFORM_WINDOWS
-    p.status = STILL_ACTIVE;
-#endif //platform
+#if PCB_PLATFORM_LINUX
+    p.pidfd = -1;
+#endif //pidfd
     return p;
 }
 
-bool PCB_Process_isValid(const PCB_Process* process) {
+bool PCB_Process_isValid(const PCB_Process* p) {
+    PCB_CHECK_SELF(p, false);
 #if PCB_PLATFORM_WINDOWS
-    return process->handle != INVALID_HANDLE_VALUE;
+    return p->handle != INVALID_HANDLE_VALUE;
 #elif PCB_PLATFORM_POSIX
-    return process->handle > (pid_t)0;
-#endif
+    return p->handle > 0;
+#else
+    return false;
+#endif //platforms
 }
 
-bool PCB_Process_waitForExit(PCB_Process* process) {
+bool PCB_Process_waitForExit(PCB_Process* p) {
+    PCB_CHECK_SELF(p, false);
 #if PCB_PLATFORM_WINDOWS
-    DWORD val = WaitForSingleObject(process->handle, INFINITE);
+    DWORD val = WaitForSingleObject(p->handle, INFINITE);
     if(val == WAIT_FAILED) {
         errno = 0; return false;
     } //WAIT_TIMEOUT is impossible since INFINITE is provided as wait time
-    PCB_assert(GetExitCodeProcess(process->handle, &process->status));
-    PCB_assert(process->status != STILL_ACTIVE);
     return true;
 #elif PCB_PLATFORM_POSIX
     pid_t id = -1;
-    wait: id = waitpid(process->handle, &process->status, 0);
+wait:
+    id = waitpid(p->handle, &p->status, 0);
     if(id == -1) {
         if(errno == EINTR) goto wait;
         return false;
     }
     PCB_assert(id != 0);
     return true;
-#endif //platform
+#endif //platforms
 }
 
-int PCB_Process_checkExit(PCB_Process* process) {
+int PCB_Process_checkExit(PCB_Process* p) {
+    PCB_CHECK_SELF(p, (PCB_ClearError(), errno = EFAULT, -1) );
 #if PCB_PLATFORM_WINDOWS
-    if(!GetExitCodeProcess(process->handle, &process->status)) {
-        errno = 0; return -1;
-    };
-    return process->status != STILL_ACTIVE;
+    switch(WaitForSingleObject(p->handle, 0)) {
+      case WAIT_FAILED:   errno = 0; return -1;
+      case WAIT_TIMEOUT:  return false;
+      case WAIT_OBJECT_0: return true;
+    }
+    PCB_Unreachable;
 #elif PCB_PLATFORM_POSIX
-    pid_t id = waitpid(process->handle, &process->status, WNOHANG);
+    pid_t id = waitpid(p->handle, &p->status, WNOHANG);
     if(id == -1) return -1;
     if(id == 0) return false; //no child changed state
-    if(WIFEXITED(process->status) || WIFSIGNALED(process->status)) {
+    if(WIFEXITED(p->status) || WIFSIGNALED(p->status)) {
         return true;
     }
     return false;
-#endif //platform
+#endif //platforms
 }
 
-int PCB_Process_getExitCode(const PCB_Process* process) {
+int PCB_Process_getExitCode(const PCB_Process* p) {
+    PCB_CHECK_SELF(p, (PCB_ClearError(), errno = EFAULT, -1) );
 #if PCB_PLATFORM_WINDOWS
-    return process->status;
-#elif PCB_PLATFORM_POSIX
-    if(WIFEXITED(process->status)) return WEXITSTATUS(process->status);
-    if(WIFSIGNALED(process->status)) return -WTERMSIG(process->status) - 1;
-    return -1;
-#endif //platform
-}
-
-void PCB_Process_destroy(PCB_Process* process) {
-#if PCB_PLATFORM_WINDOWS
-    CloseHandle(process->handle);
-    process->status = STILL_ACTIVE;
-#endif //platform
-    process->handle = PCB_PROCESS_INVALID_HANDLE;
-}
-
-int PCB_Processes_waitForAny(PCB_Processes* processes) {
-    if(processes == NULL) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        errno = EFAULT; return -1;
+    DWORD exitCode;
+    if(!GetExitCodeProcess(p->handle, &exitCode)) return -1;
+    bool abnormalExit =
+        exitCode == STATUS_ACCESS_VIOLATION ||
+        exitCode == STATUS_HEAP_CORRUPTION;
+    if(abnormalExit) {
+        const char* cause = NULL;
+        switch(exitCode) {
+          case STATUS_ACCESS_VIOLATION: cause = "Memory access violation"; break;
+          case STATUS_HEAP_CORRUPTION:  cause = "Heap corruption"; break;
+          default: PCB_Unreachable;
+        }
+        PCB_log(
+            PCB_LOGLEVEL_ERROR, "Process %u exited abnormally: %s",
+            (uint32_t)GetProcessId(p->handle), cause
+        );
     }
-    int status = 0;
-    size_t invalid = 0;
-    while(true) {
-        size_t i = 0;
-        for(; i < processes->length; i++) {
-            PCB_Process* p = &processes->data[i];
-            if(!PCB_Process_isValid(p)) { ++invalid; continue; }
-            int check = PCB_Process_checkExit(p);
-            if(check == -1) return -1;
-            if(check) {
-                status = PCB_Process_getExitCode(p);
-                PCB_Process_destroy(p);
-                return status;
-            }
-        }
-        if(i == processes->length) { //no child exited
-            if(invalid == processes->length) { //all entries are invalid
-#if PCB_PLATFORM_WINDOWS
-                SetLastError(0);
-#endif
-                errno = EINVAL; return -1;
-            } //otherwise yield the time slice to wait
-#if PCB_PLATFORM_WINDOWS
-            Sleep(0);
+    return (int)exitCode;
 #elif PCB_PLATFORM_POSIX
-            /* There is no way to yield the time slice
-             * under POSIX in a cross-platform way AFAIK,
-             * ignoring `sched_yield`, which merely yields the CPU.
-             * Therefore, we shall sleep.............
-             */
-            struct timespec t;
-            t.tv_nsec = 20 * 1000 * 1000; t.tv_sec = 0;
-            nanosleep(&t, NULL);
-#endif //platform
+    if(WIFEXITED(p->status)) return WEXITSTATUS(p->status);
+    if(WIFSIGNALED(p->status)) {
+        int signal = WTERMSIG(p->status);
+        const char* cause = NULL;
+        switch(signal) {
+          case SIGABRT: cause = "Aborted"; break;
+          case SIGBUS:  cause = "Bus error"; break;
+          case SIGFPE:  cause = "Floating point exception"; break;
+          case SIGILL:  cause = "Illegal instruction"; break;
+          case SIGKILL: cause = "Killed"; break;
+          case SIGPIPE: cause = "Broken pipe"; break;
+          case SIGSEGV: cause = "Segmentation fault"; break;
+          case SIGQUIT: cause = "Quit"; break;
+          case SIGSYS:  cause = "Bad system call"; break;
+          case SIGTRAP: cause = "Trace/breakpoint trap"; break;
+          default: break; //the rest may or may not be considered "normal"
         }
+        if(cause != NULL) PCB_log(
+            PCB_LOGLEVEL_ERROR, "Process %u exited abnormally: %s",
+            (uint32_t)p->handle, cause
+        );
+        return -signal - 1;
+    }
+    return -1;
+#else
+    return 1;
+#endif //platforms
+}
+
+void PCB_Process_destroy(PCB_Process* p) {
+    if(p == NULL) return;
+#if PCB_PLATFORM_WINDOWS
+    CloseHandle(p->handle);
+#elif PCB_PLATFORM_POSIX
+    p->status = 0;
+#if PCB_PLATFORM_LINUX
+    if(p->pidfd >= 0) { close(p->pidfd); p->pidfd = -1; }
+#endif //pidfd
+#endif //platforms
+    p->handle = PCB_PROCESS_INVALID_HANDLE;
+}
+
+int PCB_Processes_waitForAny(PCB_Processes* ps) {
+    PCB_CHECK_SELF(ps, (PCB_ClearError(), errno = EFAULT, -1) );
+    if(ps->length == 0) return -1;
+    PCB_Vec_enumerate(ps, i, v, it, const PCB_Process) {
+        if(!PCB_Process_isValid(it.v)) return -(int)it.i - 2;
+    }
+#if PCB_PLATFORM_WINDOWS
+    PCB_static_assert(sizeof(PCB_Process) == sizeof(HANDLE), "New member field, cannot cast to HANDLE*");
+    const HANDLE* handles = (const HANDLE*)ps->data;
+    if(ps->length <= MAXIMUM_WAIT_OBJECTS) {
+        DWORD status = WaitForMultipleObjects(
+            (DWORD)ps->length, handles, FALSE, INFINITE
+        );
+        if(status == WAIT_FAILED) return -1;
+        return (int)(status - WAIT_OBJECT_0);
+    }
+    while(true) {
+        for(size_t i = 0; i < ps->length; i += MAXIMUM_WAIT_OBJECTS) {
+            DWORD n = (DWORD)(ps->length - i);
+            if(n > MAXIMUM_WAIT_OBJECTS) n = MAXIMUM_WAIT_OBJECTS;
+            DWORD status = WaitForMultipleObjects(n, handles + i, FALSE, 0);
+            switch(status) {
+              case WAIT_FAILED:  return -1;
+              case WAIT_TIMEOUT: continue;
+              default: break;
+            }
+            //WAIT_ABANDONED should not be possible as it applies to mutexes.
+            return (int)(status - WAIT_OBJECT_0 + i);
+        }
+        if(ps->poll_us == 0) Sleep(0);
+        else Sleep((DWORD)(ps->poll_us/1000 + (ps->poll_us%1000 != 0)));
     }
     PCB_Unreachable;
+#elif PCB_PLATFORM_POSIX
+#if PCB_PLATFORM_LINUX
+    if(PCB__Linux_has_pidfd()) do {
+        //TODO: temporary allocator
+        struct pollfd* polls = PCB_realloc(NULL, ps->length*sizeof(*polls));
+        if(polls == NULL) break; //try checkExit-based polling
+        for(size_t i = 0; i < ps->length; i++) {
+            polls[i].fd = ps->data[i].pidfd;
+            polls[i].events = POLLIN;
+        }
+        int exited = -1;
+    retry:
+        if(poll(polls, ps->length, -1/*infinite*/) > 0) {
+            while(!(polls[++exited].revents & POLLIN)) {}
+        } else switch(errno) {
+          case EINTR: goto retry;
+          default: break;
+        }
+        PCB_free(polls);
+        return exited;
+    } while(0);
+#endif //pidfd
+    while(true) {
+        for(size_t i = 0; i < ps->length; i++) {
+            switch(PCB_Process_checkExit(&ps->data[i])) {
+              case true: return (int)i;
+              case false: break;
+              case -1: return -1;
+              default: PCB_Unreachable;
+            }
+        }
+        struct timespec t;
+        if(ps->poll_us > 1e6) {
+            t.tv_sec  = (ssize_t)(ps->poll_us/1000000);
+            t.tv_nsec = (int)(ps->poll_us%1000000 * 1000);
+        } else {
+            t.tv_nsec = (ssize_t)(ps->poll_us * 1000);
+            t.tv_sec  = 0;
+            if(t.tv_nsec == 0) t.tv_nsec = 1000000;
+        }
+        nanosleep(&t, NULL);
+    }
+    PCB_Unreachable;
+#else
+    return -1;
+#endif //platforms
 }
 
-//TODO: untested
 int PCB_Processes_waitForRange(
-    PCB_Processes* PCB_restrict processes,
+    PCB_Processes* PCB_restrict ps,
     size_t start,
     size_t end
 ) {
-    if(processes == NULL) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        errno = EFAULT; return -1;
+    PCB_CHECK_SELF(ps, (PCB_ClearError(), errno = EFAULT, -1) );
+    PCB_CHECK(end > ps->length || start >= end, (PCB_ClearError(), errno = EINVAL, -1) );
+    PCB_Vec_enumerate(ps, i, v, it, const PCB_Process) {
+        if(!PCB_Process_isValid(it.v)) return -(int)it.i - 2;
     }
-    if(end > processes->length) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        errno = EINVAL; return -1;
-    }
-    int status = 0;
     for(size_t i = start; i < end; i++) {
-        PCB_Process* p = &processes->data[i];
-        if(!PCB_Process_isValid(p)) continue;
+        PCB_Process* p = &ps->data[i];
         if(!PCB_Process_waitForExit(p)) {
             //this is an annoying way to signal which entry errored out,
             //but the only one without using any additional structures.
             return -(int)i - 2;
         }
-        int exitCode = PCB_Process_getExitCode(p);
-        if(exitCode != 0) return (int)(i + 1);
     }
-    return status;
+    return 0;
 }
 
 int PCB_Processes_waitForAll(PCB_Processes* processes) {
@@ -7299,7 +7440,19 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
         PCB_logLatestError("Failed to set the temporary pipe to 'close-on-exec'");
         code = -errno; goto end;
     }
+#if PCB_PLATFORM_LINUX
+    if(PCB__Linux_has_pidfd()) {
+        struct clone_args a = PCB_ZEROED;
+        a.flags = CLONE_PIDFD;
+        a.pidfd = (__aligned_u64)&child.pidfd;
+        a.exit_signal = SIGCHLD;
+        child.handle = (pid_t)syscall(SYS_clone3, &a, sizeof(a));
+    } else {
+        child.handle = fork();
+    }
+#else
     child.handle = fork();
+#endif //pidfd
     if(child.handle == -1) {
         PCB_logLatestError("Failed to create a child process");
         code = -errno; goto end;
