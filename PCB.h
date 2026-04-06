@@ -2030,6 +2030,22 @@ for(                                                                    \
 #define PCB_View_Ptr_A_T(ptr, viewType, end) PCB_View_Ptr_T(ptr, 0, end, viewType)
 #endif //PCB_View_Ptr_A_T
 
+#ifndef PCB_View_raw
+/**
+ * @brief Constructs a view from a raw pointer and length.
+ * Syntax sugar for `PCB_View_Ptr_A`.
+ */
+#define PCB_View_raw(ptr, len) PCB_View_Ptr_A(ptr, len)
+#endif //PCB_View_raw
+
+#ifndef PCB_View_raw_T
+/**
+ * @brief Constructs a view of type `viewType` from a raw pointer and length.
+ * Syntax sugar for `PCB_View_Ptr_A_T`.
+ */
+#define PCB_View_raw_T(ptr, len, viewType) PCB_View_Ptr_A_T(ptr, viewType, len)
+#endif //PCB_View_raw_T
+
 
 
 #ifndef PCB_Slice_Vec
@@ -2149,6 +2165,22 @@ for(                                                                    \
 #define PCB_Slice_Ptr_A_T(ptr, sliceType, end) \
     PCB_Slice_Ptr_T(ptr, 0, end, sliceType)
 #endif //PCB_Slice_Ptr_A_T
+
+#ifndef PCB_Slice_raw
+/**
+ * @brief Constructs a slice from a raw pointer and length.
+ * Syntax sugar for `PCB_Slice_Ptr_A`.
+ */
+#define PCB_Slice_raw(ptr, len) PCB_Slice_Ptr_A(ptr, len)
+#endif //PCB_Slice_raw
+
+#ifndef PCB_Slice_raw_T
+/**
+ * @brief Constructs a slice of type `sliceType` from a raw pointer and length.
+ * Syntax sugar for `PCB_Slice_Ptr_A_T`.
+ */
+#define PCB_Slice_raw_T(ptr, len, sliceType) PCB_Slice_Ptr_A_T(ptr, sliceType, len)
+#endif //PCB_Slice_raw_T
 
 
 
@@ -3964,6 +3996,9 @@ PCBAPI PCB_WString PCBCALL PCB_WString_clone(const PCB_WString* PCB_restrict str
 PCBAPI bool PCBCALL PCB_WString_eq(const PCB_WString* a, const PCB_WString* b) PCB_Nonnull_Arg(1, 2);
 PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out) PCB_Nonnull_Arg(1);
+
+PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_cstr(const wchar_t* PCB_restrict str) PCB_Nonnull_Arg(1);
+PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_parts(const wchar_t* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
@@ -3991,6 +4026,9 @@ PCBAPI bool    PCBCALL PCB_U8String_eq(const PCB_U8String* a, const PCB_U8String
 PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_cstr(const PCB_char8* PCB_restrict str) PCB_Nonnull_Arg(1);
+PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_parts(const PCB_char8* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
+//----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_reserve_to(PCB_U16String* PCB_restrict str, const size_t cap) PCB_Nonnull_Arg(1);
@@ -4017,6 +4055,9 @@ PCBAPI bool    PCBCALL PCB_U16String_eq(const PCB_U16String* a, const PCB_U16Str
 PCBAPI PCB_char16 PCBCALL PCB_U16String_pop(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, size_t howMany, PCB_char16* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_cstr(const PCB_char16* PCB_restrict str) PCB_Nonnull_Arg(1);
+PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_parts(const PCB_char16* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
+//----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_reserve_to(PCB_U32String* PCB_restrict str, const size_t cap) PCB_Nonnull_Arg(1);
@@ -4042,6 +4083,10 @@ PCBAPI PCB_U32String PCBCALL PCB_U32String_clone(const PCB_U32String* PCB_restri
 PCBAPI bool    PCBCALL PCB_U32String_eq(const PCB_U32String* a, const PCB_U32String* b) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out) PCB_Nonnull_Arg(1);
+
+PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_cstr(const PCB_char32* PCB_restrict str) PCB_Nonnull_Arg(1);
+PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_parts(const PCB_char32* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
+//----------------------------------------------------------------------------
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
@@ -6895,6 +6940,14 @@ PCB_char8* PCB_StoreUTF8Codepoint(PCB_char8* buf, uint32_t codepoint) {
 #endif //PCB_IMPLEMENTATION_STRING
 
 #if (!defined(PCB_NO_INLINE_EXPORTS) || (defined(PCB_NO_INLINE_EXPORTS) && defined(PCB_IMPLEMENTATION_STRING))) && !defined(PCB_NO_DECLARATIONS)
+#define PCB__strlen_char(str) PCB_strlen(str)
+#define PCB__strlen_wchar_t(str) PCB_wcslen(str)
+
+//`PCB__strlen_##charType` with `PCB_char(8|16|32)` expand to these identifiers.
+#define PCB__strlen_PCB_char8  PCB_strlen_char8
+#define PCB__strlen_PCB_char16 PCB_strlen_char16
+#define PCB__strlen_PCB_char32 PCB_strlen_char32
+
 PCB_maybe_inline void PCB_String_trim(PCB_String* PCB_restrict str) {
     PCB_String_trim_left (str);
     PCB_String_trim_right(str);
@@ -6907,19 +6960,33 @@ PCB_maybe_inline PCB_StringView PCB_StringView_from_String(
     return PCB_View_Vec_A_T(str, PCB_StringView);
 }
 
-PCB_maybe_inline PCB_StringView PCB_StringView_from_cstr(
-    const char* PCB_restrict str
-) {
-    PCB_CHECK_NULL(str, PCB_ZEROED_T(PCB_StringView));
-    return PCB_CLITERAL(PCB_StringView){ str, PCB_strlen(str) };
+#define PCB__SV_from_cstr(Type, charType) \
+PCB_maybe_inline Type Type##_from_cstr( \
+    const charType* PCB_restrict str \
+) { \
+    PCB_CHECK_NULL(str, PCB_ZEROED_T(Type)); \
+    return PCB_CLITERAL(Type){ str, PCB__strlen_##charType(str) }; \
 }
+PCB__SV_from_cstr(PCB_StringView,    char)       //PCB_StringView_from_cstr()
+PCB__SV_from_cstr(PCB_WStringView,   wchar_t)    //PCB_WStringView_from_cstr()
+PCB__SV_from_cstr(PCB_U8StringView,  PCB_char8)  //PCB_U8StringView_from_cstr()
+PCB__SV_from_cstr(PCB_U16StringView, PCB_char16) //PCB_U16StringView_from_cstr()
+PCB__SV_from_cstr(PCB_U32StringView, PCB_char32) //PCB_U32StringView_from_cstr()
+#undef PCB__SV_from_cstr
 
-PCB_maybe_inline PCB_StringView PCB_StringView_from_parts(
-    const char* PCB_restrict ptr, size_t length
-) {
-    PCB_CHECK_NULL(ptr, PCB_ZEROED_T(PCB_StringView));
-    return PCB_View_Ptr_A_T(ptr, PCB_StringView, length);
+#define PCB__SV_from_parts(Type, charType) \
+PCB_maybe_inline Type Type##_from_parts( \
+    const charType* PCB_restrict ptr, size_t length \
+) { \
+    PCB_CHECK_NULL(ptr, PCB_ZEROED_T(Type)); \
+    return PCB_View_raw_T(ptr, length, Type); \
 }
+PCB__SV_from_parts(PCB_StringView,    char)       //PCB_StringView_from_parts()
+PCB__SV_from_parts(PCB_WStringView,   wchar_t)    //PCB_WStringView_from_parts()
+PCB__SV_from_parts(PCB_U8StringView,  PCB_char8)  //PCB_U8StringView_from_parts()
+PCB__SV_from_parts(PCB_U16StringView, PCB_char16) //PCB_U16StringView_from_parts()
+PCB__SV_from_parts(PCB_U32StringView, PCB_char32) //PCB_U32StringView_from_parts()
+#undef PCB__SV_from_parts
 
 
 PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_cstr(
@@ -7229,6 +7296,11 @@ PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_whitespace(
 PCB_maybe_inline PCB_StringView PCB_StringView_trim(PCB_StringView sv) {
     return PCB_StringView_trim_right(PCB_StringView_trim_left(sv));
 }
+#undef PCB__strlen_char
+#undef PCB__strlen_wchar_t
+#undef PCB__strlen_PCB_char8
+#undef PCB__strlen_PCB_char16
+#undef PCB__strlen_PCB_char32
 #endif //PCB_IMPLEMENTATION_STRING (inline)
 
 //Section 3.5: Platform-independent (sort of) process functions.
