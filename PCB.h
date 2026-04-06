@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 2
+#define PCB_VERSION_PATCH 3
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6894,7 +6894,7 @@ PCB_char8* PCB_StoreUTF8Codepoint(PCB_char8* buf, uint32_t codepoint) {
 #undef PCB__strlen_PCB_char32
 #endif //PCB_IMPLEMENTATION_STRING
 
-#if !defined(PCB_NO_INLINE_EXPORTS) || (defined(PCB_NO_INLINE_EXPORTS) && defined(PCB_IMPLEMENTATION_STRING))
+#if (!defined(PCB_NO_INLINE_EXPORTS) || (defined(PCB_NO_INLINE_EXPORTS) && defined(PCB_IMPLEMENTATION_STRING))) && !defined(PCB_NO_DECLARATIONS)
 PCB_maybe_inline void PCB_String_trim(PCB_String* PCB_restrict str) {
     PCB_String_trim_left (str);
     PCB_String_trim_right(str);
