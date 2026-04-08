@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 3
+#define PCB_VERSION_PATCH 4
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3657,8 +3657,12 @@ PCB_maybe_inline void PCBCALL PCB_String_trim(
 /**
  * @brief Find `n`th occurence of a substring `sub` in `sv`.
  * `n` cannot be 0.
- * @return non-empty `PCB_StringView` on success or an empty one on invalid
- * arguments or if `sub` was not found.
+ * @return a sub`PCB_StringView` starting from the `n`th occurence of `sub`
+ * up until the end of `sv`
+ * or an empty one on invalid arguments or if `sub` was not found.
+ *
+ * To get everything past the `n`th occurence of `sub` (`s`), see
+ * the implementation of `PCB_StringView_skipPast_sub_n`.
  */
 PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n(
     PCB_StringView sv,
@@ -3668,8 +3672,12 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n(
 /**
  * @brief Find `n`th occurence of a substring `sub` in `sv`, searched from the end.
  * `n` cannot be 0.
- * @return non-empty `PCB_StringView` on success or an empty one on invalid
- * arguments or if `sub` was not found.
+ * @return a sub`PCB_StringView` starting from the `n`th occurence of `sub`
+ * up until the end of `sv`
+ * or an empty one on invalid arguments or if `sub` was not found.
+ *
+ * To get everything up until the `n`th occurence of `sub` (`s`), construct
+ * a `PCB_StringView` via `{sv.data, (size_t)(s.data - sv.data)}`.
  */
 PCBAPI PCB_StringView PCBCALL PCB_StringView_rsubstr_n(
     PCB_StringView sv,
@@ -5398,14 +5406,12 @@ bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
 
 //skip until not separator
 static PCB_StringView PCB__FS_SUNS(PCB_StringView path) {
-    while(path.length > 0) { //skip duplicated separators
-        if(path.data[path.length-1] == PCB_FS_DIR_DELIM) goto cont;
+    for(; path.length > 0; --path.length) { //skip duplicated separators
+        if(path.data[path.length-1] == PCB_FS_DIR_DELIM) continue;
 #if PCB_PLATFORM_WINDOWS
-        if(path.data[path.length-1] == '/') goto cont;
+        if(path.data[path.length-1] == '/') continue;
 #endif
         break;
-    cont:
-        --path.length;
     }
     return path;
 }
@@ -5426,10 +5432,7 @@ PCB_StringView PCB_FS_Basename(PCB_StringView path) {
         dirsep = dirsep_alt; //use rightmost separator
 #endif
     if(PCB_String_isEmpty(&dirsep)) return path;
-    PCB_StringView base = {
-        dirsep.data + 1,
-        path.length - (size_t)(dirsep.data - path.data) - 1
-    };
+    PCB_StringView base = { dirsep.data + 1, dirsep.length - 1 };
     if(base.length > 0) return base;
     path = PCB__FS_SUNS(path);
     //`path` was just separators
@@ -5446,10 +5449,7 @@ PCB_StringView PCB_FS_Basename(PCB_StringView path) {
         dirsep = dirsep_alt;
 #endif
     if(PCB_String_isEmpty(&dirsep)) return path;
-    return PCB_CLITERAL(PCB_StringView){
-        dirsep.data + 1,
-        path.length - (size_t)(dirsep.data - path.data) - 1
-    };
+    return PCB_CLITERAL(PCB_StringView){ dirsep.data + 1, dirsep.length - 1 };
 }
 
 PCB_StringView PCB_FS_Dirname(PCB_StringView path) {
@@ -5482,10 +5482,7 @@ PCB_StringView PCB_FS_Extension(PCB_StringView path) {
 PCB_StringView PCB_FS_Extension_base(PCB_StringView path) {
     PCB_StringView last_dot = PCB_StringView_rsubcstr(path, ".");
     if(PCB_String_isEmpty(&last_dot)) return last_dot;
-    PCB_StringView ext = {
-        last_dot.data + 1,
-        path.length - (size_t)(last_dot.data - path.data) - 1
-    };
+    PCB_StringView ext = { last_dot.data + 1, last_dot.length - 1};
     //It's better to crash than have OOB reads, as seen in Mongobleed.
     if(ext.length == 0) ext.data = NULL;
     return ext;
@@ -6543,6 +6540,7 @@ PCB_StringView PCB_StringView_substr_n(
     PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
     if(PCB_String_isEmpty(&sv))  return PCB_ZEROED_T(PCB_StringView);
     if(PCB_String_isEmpty(&sub)) return PCB_ZEROED_T(PCB_StringView);
+    if(sub.length > sv.length)   return PCB_ZEROED_T(PCB_StringView);
     PCB_StringView s = sub;
     //TODO: "premature optimization is the root of all evil",
     //this loop would benefit greatly from vectorization
@@ -6560,7 +6558,7 @@ PCB_StringView PCB_StringView_substr_n(
         s = sub; //search again
     }
     sv.data -= sub.length;
-    sv.length = sub.length;
+    sv.length += sub.length;
     return sv;
 }
 
@@ -6570,7 +6568,9 @@ PCB_StringView PCB_StringView_rsubstr_n(
     PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
     if(PCB_String_isEmpty(&sv))  return PCB_ZEROED_T(PCB_StringView);
     if(PCB_String_isEmpty(&sub)) return PCB_ZEROED_T(PCB_StringView);
+    if(sub.length > sv.length)   return PCB_ZEROED_T(PCB_StringView);
     PCB_StringView s = sub;
+    const size_t initial = sv.length;
     while(n > 0) {
         while(sv.length > 0 && sv.data[sv.length-1] != s.data[s.length-1]) {
             --sv.length;
@@ -6584,7 +6584,7 @@ PCB_StringView PCB_StringView_rsubstr_n(
         s = sub;
     }
     sv.data += sv.length;
-    sv.length = sub.length;
+    sv.length = initial - sv.length;
     return sv;
 }
 
@@ -6596,11 +6596,11 @@ PCB_StringViews PCB_StringView_split(
     PCB_CHECK(PCB_String_isEmpty(&delim), views);
 
     PCB_StringView cur = PCB_StringView_substr(sv, delim);
-    while(cur.data != NULL && cur.length > 0) {
-        size_t slice_len = (size_t)(&cur.data[0] - &sv.data[0]);
-        PCB_Vec_append(&views, (PCB_CLITERAL(PCB_StringView){ sv.data, slice_len }));
-        sv.length -= slice_len + cur.length;
-        sv.data   += slice_len + cur.length;
+    while(!PCB_String_isEmpty(&cur)) {
+        size_t slice_len = (size_t)(cur.data - sv.data);
+        PCB_Vec_append(&views, PCB_StringView_from_parts(sv.data, slice_len));
+        sv.length -= slice_len + delim.length;
+        sv.data   += slice_len + delim.length;
         cur = PCB_StringView_substr(sv, delim);
     }
     if(sv.length > 0) PCB_Vec_append(&views, sv);
@@ -6615,13 +6615,13 @@ PCB_Strings PCB_StringView_split_copy(
 
     PCB_StringView cur = PCB_StringView_substr(sv, delim);
     PCB_String str;
-    while(cur.data != NULL && cur.length > 0) {
+    while(!PCB_String_isEmpty(&cur)) {
         str = PCB_ZEROED_T(PCB_String);
-        size_t slice_len = (size_t)(&cur.data[0] - &sv.data[0]);
-        PCB_String_append_sv(&str, PCB_CLITERAL(PCB_StringView){sv.data, slice_len});
+        size_t slice_len = (size_t)(cur.data - sv.data);
+        PCB_String_append_sv(&str, PCB_StringView_from_parts(sv.data, slice_len));
         PCB_Vec_append(&strs, str);
-        sv.length -= slice_len + cur.length;
-        sv.data   += slice_len + cur.length;
+        sv.length -= slice_len + delim.length;
+        sv.data   += slice_len + delim.length;
         cur = PCB_StringView_substr(sv, delim);
     }
     if(sv.length > 0) {
@@ -7270,10 +7270,7 @@ PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_sub_n(
 ) {
     PCB_StringView s = PCB_StringView_substr_n(sv, sub, n);
     if(PCB_String_isEmpty(&s)) return s;
-    return PCB_StringView_from_parts(
-        s.data + s.length,
-        (size_t)((sv.data+sv.length)-(s.data+s.length))
-    );
+    return PCB_StringView_from_parts(s.data + sub.length, s.length - sub.length);
 }
 
 PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_sub(
