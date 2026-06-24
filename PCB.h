@@ -783,6 +783,9 @@ static void f(void)
 #endif //PCB_InitFn
 
 #ifndef PCB_Unreachable
+#ifdef PCB_DEBUG
+#define PCB_Unreachable PCB_assert(0 && "Reached an unreachable statement.")
+#else
 #if PCB_COMPILER_GCC >= 40500 || PCB_COMPILER_CLANG >= 30400
 #define PCB_Unreachable __builtin_unreachable()
 #elif PCB_COMPILER_MSVC
@@ -793,8 +796,9 @@ static void f(void)
 #elif PCB_COMPILER_MSVC
 #pragma message "PCB Warning: PCB_Unreachable does not mark unreachability"
 #endif //compilers
-#define PCB_Unreachable
+#define PCB_Unreachable PCB_assert(0)
 #endif //Compilers
+#endif //PCB_DEBUG
 #endif //PCB_Unreachable
 
 #ifndef PCB_Printf_Format
