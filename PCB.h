@@ -478,6 +478,13 @@ extern "C" {
 
 #endif //PCB_ARCH
 
+#ifndef PCB_Target_ISA
+#if PCB_COMPILER_GCC >= 40407 || PCB_COMPILER_CLANG >= 40000
+#define PCB_Target_ISA(isa) __attribute__((__target__(isa)))
+#else
+#define PCB_Target_ISA(isa)
+#endif //compilers
+#endif //PCB_Target_ISA
 
 
 //Section 1.4: Define useful, but often compiler-specific macros
@@ -808,6 +815,24 @@ static void f(void)
 #endif //Compilers
 #endif //PCB_WANT_CLEANUP
 #endif //PCB_Cleanup
+
+//Hints the optimizer that the branch is "likely" to be taken.
+//If you think that this is useless and "the compiler knows best", you're wrong.
+#ifndef PCB_likely
+#if PCB_COMPILER_GCC >= 30004 || PCB_COMPILER_CLANG >= 100000
+#define PCB_likely(cond) __builtin_expect((cond), 1)
+#else
+#define PCB_likely(cond) cond
+#endif //compilers
+#endif //PCB_likely
+
+#ifndef PCB_unlikely
+#if PCB_COMPILER_GCC >= 30004 || PCB_COMPILER_CLANG >= 100000
+#define PCB_unlikely(cond) __builtin_expect((cond), 0)
+#else
+#define PCB_unlikely(cond) cond
+#endif //compilers
+#endif //PCB_unlikely
 
 //Get type of expression.
 //Portable applications must check whether `PCB_Typeof` is #defined before use.
@@ -2228,6 +2253,49 @@ for(                                                                \
 #endif //PCB_Typeof?
 #endif //PCB_Arr_enumerate
 
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+/**
+ * @brief Query processor information and/or its features.
+ * @param cpuinfo must be an array of at least 4 `int`s and corresponds to
+ * EAX, EBX, ECX, EDX registers, in that order.
+ * @param fn main argument for the instruction, corresponds to EAX.
+ * @param subfn additional argument for the instruction, sometimes unused.
+ * Whether it's used depends on `fn`, should be set to 0 if not used.
+ * Corresponds to ECX.
+ *
+ * See one of:
+ * - https://en.wikipedia.org/wiki/CPUID,
+ * - https://www.felixcloutier.com/x86/cpuid,
+ * - Intel® 64 and IA-32 Architectures Software Developer Manuals
+ * for specifics about information returned by CPUID.
+ */
+#ifndef PCB_cpuid
+#if PCB_COMPILER_MSVC
+#define PCB_cpuid(cpuinfo, fn, subfn) __cpuidex(cpuinfo, fn, subfn)
+#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB_cpuid(cpuinfo, fn, subfn) \
+    __asm__(                    \
+        "cpuid\n\t"             \
+        : "=a" ((cpuinfo)[0]),  \
+          "=b" ((cpuinfo)[1]),  \
+          "=c" ((cpuinfo)[2]),  \
+          "=d" ((cpuinfo)[3])   \
+        : "0" (fn),             \
+          "2" (subfn)           \
+    )
+#endif //compilers
+
+#define PCB_cpuid_has_lzcnt(cpuinfo)    ((cpuinfo)[2] & (1 << 5))
+#define PCB_cpuid_has_bmi(cpuinfo)      ((cpuinfo)[1] & (1 << 3))
+#define PCB_cpuid_has_avx2(cpuinfo)     ((cpuinfo)[1] & (1 << 5))
+#define PCB_cpuid_has_avx(cpuinfo)      ((cpuinfo)[2] & (1 << 28))
+#define PCB_cpuid_has_sse4_2(cpuinfo)   ((cpuinfo)[2] & (1 << 20))
+//Note that these require an appropiate cpuid query.
+
+#endif //PCB_cpuid
+#endif //only makes sense for x86(_64)
+
+
 //Section 1.8: Import platform-specific header files
 #if PCB_PLATFORM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
@@ -2256,6 +2324,17 @@ for(                                                                \
 #ifdef __SANITIZE_ADDRESS__
 #include <sanitizer/asan_interface.h>
 #endif //ASan
+
+
+
+//Section 1.9: Import architecture-specific header files
+#if PCB_ARCH_x86_64
+#if PCB_COMPILER_MSVC
+#include <intrin.h>
+#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+//Only needed for the implementation.
+#endif //compilers
+#endif //architectures
 
 
 
@@ -3663,10 +3742,20 @@ PCB_maybe_inline void PCBCALL PCB_String_trim(
  *
  * To get everything past the `n`th occurence of `sub` (`s`), see
  * the implementation of `PCB_StringView_skipPast_sub_n`.
+ *
+ * NOTE: On x86(_64), `sv` and `sub` must not contain a '\0' in the middle.
+ * The vectorized implementation uses `pcmpistrX` instruction, which is much
+ * faster than the alternative `pcmpestrX`, but stops processing after
+ * finding a null byte, so the result with a stray null byte in the middle
+ * may or may not be correct.
+ * We assume that the overwhelming majority of strings do not contain '\0' in
+ * the middle for optimization.
+ * If there is (or may be), for some reason, a null byte in the middle,
+ * you should use `PCB_StringView_substr_n_basic` instead.
  */
 PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n(
     PCB_StringView sv,
-    const PCB_StringView sub,
+    PCB_StringView sub,
     size_t n
 );
 /**
@@ -3732,20 +3821,20 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharFrom_n(
     size_t n
 );
 /**
- * @brief Find the `n`th occurence of any byte NOT in `accept` inside `sv`.
+ * @brief Find the `n`th occurence of any byte NOT in `reject` inside `sv`.
  * @return a sub`PCB_StringView` with:
  *
  * - `data` pointing to the `n`th occurence of a byte in `sv`
- *   matching none of the bytes in `accept`,
+ *   matching none of the bytes in `reject`,
  *
  * - `length` equal to `sv.length` - the amount of bytes skipped
  *
  * or an empty `PCB_StringView` if `sv` is empty or `accept` is empty or `n == 0`
- * or if no byte outside of `accept` was found in `sv`.
+ * or if no byte outside of `reject` was found in `sv`.
  */
 PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n(
     PCB_StringView sv,
-    PCB_StringView accept,
+    PCB_StringView reject,
     size_t n
 );
 /**
@@ -3846,6 +3935,24 @@ PCBAPI PCB_Codepoint PCBCALL PCB_StringView_GetCodepoint_unchecked(
     size_t index
 );
 
+/**
+ * Vectorized versions of certain `PCB_StringView_*` functions.
+ * It is up to you to make sure that they're only called if the CPU supports the target ISA.
+ * Appropiate checks are done internally by generic variants, so you
+ * don't need to do so.
+ * @sa PCB_cpuid
+ */
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n_sse(PCB_StringView sv, PCB_StringView sub, size_t n) PCB_Target_ISA("sse4.2");
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharFrom_n_sse(PCB_StringView sv, PCB_StringView accept, size_t n) PCB_Target_ISA("sse4.2");
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n_sse(PCB_StringView sv, PCB_StringView accept, size_t n) PCB_Target_ISA("sse4.2");
+#endif //x86(_64)
+/**
+ * Non-vectorized versions of the above functions.
+ */
+PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n_basic(PCB_StringView sv, PCB_StringView sub, size_t n);
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharFrom_n_basic(PCB_StringView sv, PCB_StringView accept, size_t n);
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n_basic(PCB_StringView sv, PCB_StringView reject, size_t n);
 
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_String(
     const PCB_String* PCB_restrict str
@@ -4763,6 +4870,12 @@ PCBAPI PCB_Noreturn void PCBCALL PCB__assert_fail(
 #define PCB_IMPLEMENTATION_ANY
 #endif //Any implementation (except libc fallbacks) requested
 
+#if defined(PCB_IMPLEMENTATION_STRING)
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+//https://stackoverflow.com/questions/11228855/header-files-for-x86-simd-intrinsics
+#include <smmintrin.h>
+#endif //x86(_64)
+#endif //This header tanks compile times, only #include it if actually needed
 
 
 #ifdef PCB_IMPLEMENTATION_ANY
@@ -6534,7 +6647,249 @@ PCB_StringView PCB_StringView_trim_right(PCB_StringView sv) {
     return sv;
 }
 
-PCB_StringView PCB_StringView_substr_n(
+#if (PCB_COMPILER_GCC >= 40407 || PCB_COMPILER_CLANG >= 40000) || defined(PCB_HAS_SSE4_2)
+#define PCB__HAS_VECTOR_SV
+#endif //the last is an override for MSVC because, for some reason,
+       //it doesn't define a macro for SSE4.2, but does for AVX and others
+
+#ifdef PCB__HAS_VECTOR_SV
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+//load leading bytes of `sv` to xmm, pad with zeros
+static __m128i PCB__StringView_xmmz(PCB_StringView sv) PCB_Target_ISA("sse4.2");
+//load leading bytes of `sv` to xmm, pad with repetitions from `sv`
+static __m128i PCB__StringView_xmmr(PCB_StringView sv) PCB_Target_ISA("sse4.2");
+
+static __m128i PCB__StringView_xmmz(PCB_StringView sv) {
+    if(PCB_likely(sv.length >= 16)) return _mm_loadu_si128((const __m128i*)sv.data);
+    uint8_t bytes[16] = PCB_ZEROED;
+    for(size_t i = 0; i < sv.length; i++) bytes[i] = (uint8_t)sv.data[i];
+    return _mm_loadu_si128((const __m128i*)bytes);
+}
+
+static __m128i PCB__StringView_xmmr(PCB_StringView sv) {
+    if(PCB_likely(sv.length >= 16)) return _mm_loadu_si128((const __m128i*)sv.data);
+    uint8_t bytes[16]; size_t i = 0;
+    for(; i < sv.length; i++) bytes[i] = (uint8_t)sv.data[i];
+    for(; i < 16;        i++) bytes[i] = (uint8_t)sv.data[0];
+    return _mm_loadu_si128((const __m128i*)bytes);
+}
+
+//https://www.strchr.com/strcmp_and_strlen_using_sse_4.2 may help
+//in understanding the pcmpXstrX instruction.
+
+PCB_StringView PCB_StringView_substr_n_sse(
+    PCB_StringView sv, const PCB_StringView sub, size_t n
+) {
+    PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
+    if(PCB_String_isEmpty(&sv))  return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&sub)) return PCB_ZEROED_T(PCB_StringView);
+    if(sub.length > sv.length)   return PCB_ZEROED_T(PCB_StringView);
+    if(sub.length <= 16) {
+        //Here we are trying to find `sub` by finding either a partial
+        //or full match. In the former `sv` is realigned to check for a full match.
+        //This path is noticeably faster because `sub` is loaded once,
+        //which eliminates cache misses when L1/L2 get full of stuff from `sv`.
+        const __m128i needle = PCB__StringView_xmmz(sub);
+        while(sv.length > 16) {
+            const unsigned int i = (unsigned int)_mm_cmpistri(
+                needle, _mm_loadu_si128((const __m128i*)sv.data),
+                (2) | (3 << 2) //Intel's Software Optimization manual, Section 4.1, imm8
+            );
+            //Not found. This is a hot branch.
+            if(PCB_likely(i == 16)) {
+                sv.data += 16; sv.length -= 16;
+                continue;
+            }
+            if(i + sub.length > 16) { //partial match
+                sv.data += i; sv.length -= i;
+            } else {
+                if(--n == 0) return PCB_StringView_from_parts(sv.data + i, sv.length - i);
+                sv.data += i + sub.length; sv.length -= i + sub.length;
+            }
+        }
+        while(true) {
+            const unsigned int i = (unsigned int)_mm_cmpestri(
+                needle,                   (int)(unsigned int)sub.length,
+                PCB__StringView_xmmz(sv), (int)(unsigned int)sv.length,
+                (2) | (3 << 2)
+            );
+            if(i + sub.length > 16) { //partial match or not found
+                return PCB_ZEROED_T(PCB_StringView);
+            } else {
+                if(--n == 0) return PCB_StringView_from_parts(sv.data + i, sv.length - i);
+                sv.data += i + sub.length; sv.length -= i + sub.length;
+            }
+        }
+        PCB_Unreachable;
+    }
+    //Here we are trying to find `sub` by:
+    //(1) finding a partial match for its first 16 bytes,
+    //(2) skipping the offset,
+    //(3) finding full matches until `s` is empty.
+    //If after (2) there isn't a full match then there's no match and we
+    //forward `sv` by 16 bytes.
+    //This path would be faster if pcmpIstri was used, but I'm too lazy to rewrite this again.
+    PCB_StringView s = sub, in = sv;
+    while(true) {
+        size_t L = s.length <= 16 ? s.length : 16;
+        const unsigned int i = (unsigned int)_mm_cmpestri(
+            PCB__StringView_xmmz(s),  (int)(unsigned int)L,
+            PCB__StringView_xmmz(in), (int)(unsigned int)in.length,
+            (2) | (3 << 2)
+        );
+        if(PCB_likely(i == 16)) goto not_found;
+        if(i != 0) { //partial match
+            if(in.length == sv.length) { //skip so we'll get full matches
+                in.data += i; in.length -= i;
+                continue;
+            } else goto not_found;
+        }
+        if(s.length > 16) { //continue matching
+            if(in.length <= 16) return PCB_ZEROED_T(PCB_StringView);
+             s.data += 16;  s.length -= 16;
+            in.data += 16; in.length -= 16;
+            continue;
+        }
+        if(--n == 0) {
+            //offset by the partial match at the start, if any
+            const unsigned int j = (unsigned int)_mm_cmpestri(
+                _mm_loadu_si128((const __m128i*)sub.data), (int)(unsigned int)sub.length,
+                _mm_loadu_si128((const __m128i*) sv.data), (int)(unsigned int)sv.length,
+                (2) | (3 << 2)
+            );
+            return PCB_StringView_from_parts(sv.data + j, sv.length - j);
+        }
+        in.data += s.length; in.length -= s.length;
+        sv = in; s = sub; continue;
+    not_found:
+        if(sv.length < sub.length) return PCB_ZEROED_T(PCB_StringView);
+        sv.data += 16; sv.length -= 16;
+        in = sv; s = sub;
+    }
+    PCB_Unreachable;
+}
+
+//Originally it seemed like using more registers is beneficial, so this was
+//made to use as many as feasible. After some testing it turned out that
+//the compiler puts `bytes` into the stack, negating such gains.
+//Notably, a variant with 1 register IS much faster.
+//I'm too lazy to refactor this back into a normal function, so it'll stay for now.
+#define PCB__StringView_findCharFrom_n_sse(regs) \
+static PCB_StringView PCB__StringView_findCharFrom_n_sse_##regs(PCB_StringView sv, const PCB_StringView set, size_t n) PCB_Target_ISA("sse4.2"); \
+static PCB_StringView PCB__StringView_findCharFrom_n_sse_##regs(PCB_StringView sv, const PCB_StringView set, size_t n) { \
+    __m128i bytes[regs]; \
+    PCB_StringView s = set; \
+    for(size_t reg = 0; reg < regs; reg++) { \
+        bytes[reg] = PCB__StringView_xmmr(s); \
+        s.data += 16; s.length -= 16; \
+    } \
+    while(true) { \
+        const __m128i in = PCB__StringView_xmmz(sv); \
+        unsigned int i = 17; \
+        for(size_t reg = 0; reg < regs; reg++) { \
+            const unsigned int j = (unsigned int)_mm_cmpestri( \
+                bytes[reg], (int)(unsigned int)(set.length-reg*16), \
+                in,         (int)(unsigned int)sv.length, \
+                (2) | (0 << 2) \
+            ); \
+            if(j < i) i = j; \
+        } \
+        if(i == 16) { /*not found*/ \
+            if(sv.length <= 16) return PCB_ZEROED_T(PCB_StringView); \
+            sv.data += 16; sv.length -= 16; \
+        } else { \
+            sv.data += i; sv.length -= i; \
+            if(--n == 0) return sv; \
+            sv.data += 1; sv.length -= 1; \
+        } \
+    } \
+    PCB_Unreachable; \
+}
+PCB__StringView_findCharFrom_n_sse( 1)
+#undef PCB__StringView_findCharFrom_n_sse
+
+PCB_StringView PCB_StringView_findCharFrom_n_sse(
+    PCB_StringView sv, const PCB_StringView accept, size_t n
+) {
+    PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
+    if(PCB_String_isEmpty(&sv))     return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&accept)) return PCB_ZEROED_T(PCB_StringView);
+    switch((accept.length-1)/16) {
+      case 0:  return PCB__StringView_findCharFrom_n_sse_1( sv, accept, n);
+      default: break; //fallback to this slower implementation
+    }
+    PCB_StringView s = accept;
+    while(true) {
+        const __m128i in = PCB__StringView_xmmz(sv);
+        unsigned int i = 17;
+        while(s.length > 0) {
+            const unsigned int j = (unsigned int)_mm_cmpestri(
+                PCB__StringView_xmmr(s),  (int)(unsigned int)s.length,
+                in,                       (int)(unsigned int)sv.length,
+                (2) | (0 << 2)
+            );
+            if(j < i) i = j;
+            if(s.length > 16) { s.data += 16; s.length -= 16; }
+            else { s.length = 0; }
+        }
+        if(i == 16) { //not found
+            if(sv.length <= 16) return PCB_ZEROED_T(PCB_StringView);
+            sv.data += 16; sv.length -= 16;
+        } else {
+            sv.data += i; sv.length -= i;
+            if(--n == 0) return sv;
+            sv.data += 1; sv.length -= 1;
+        }
+        s = accept;
+    }
+    PCB_Unreachable;
+}
+
+PCB_StringView PCB_StringView_findCharNotFrom_n_sse(
+    PCB_StringView sv, const PCB_StringView reject, size_t n
+) {
+    PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
+    if(PCB_String_isEmpty(&sv))     return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&reject)) return PCB_ZEROED_T(PCB_StringView);
+    PCB_StringView s = reject;
+    while(true) { \
+        const __m128i in = PCB__StringView_xmmz(sv); \
+        __m128i m = PCB_ZEROED; \
+        while(s.length > 0) { \
+            m = _mm_or_si128(m, _mm_cmpestrm( \
+                PCB__StringView_xmmr(s), (int)(unsigned int)s.length,
+                in,                      (int)(unsigned int)sv.length,
+                (2) | (0 << 2) | (1 << 6)
+            ));
+            if(s.length <= 16) s.length = 0;
+            else { s.data += 16; s.length -= 16; }
+        }
+        unsigned int presence = (unsigned int)_mm_movemask_epi8(m);
+        if(presence == 0xFFFF) { /* All bytes from `set` found in `in` */
+            if(sv.length <= 16) return PCB_ZEROED_T(PCB_StringView);
+            sv.data += 16; sv.length -= 16;
+        } else if(presence == 0) { /* No bytes from `set` found in `in` */
+            if(n > 16) {
+                if(sv.length > 16) { sv.data += 16; sv.length -= 16; n -= 16; }
+                else return PCB_ZEROED_T(PCB_StringView);
+            } else if(sv.length >= n) {
+                return PCB_CLITERAL(PCB_StringView){sv.data+n-1,sv.length-n+1};
+            } else return PCB_ZEROED_T(PCB_StringView);
+        } else while(presence > 0) {
+            //TODO: would probably be better to use popcnt here.
+            if(!(presence & 1) && --n == 0) return sv;
+            sv.data += 1; sv.length -= 1;
+            if(sv.length == 0) return PCB_ZEROED_T(PCB_StringView);
+            presence >>= 1;
+        }
+        s = reject;
+    }
+    PCB_Unreachable;
+}
+#endif //PCB_ARCH_x86_64 || PCB_ARCH_x86
+#endif //PCB__HAS_VECTOR_SV
+
+PCB_StringView PCB_StringView_substr_n_basic(
     PCB_StringView sv, const PCB_StringView sub, size_t n
 ) {
     PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
@@ -6542,8 +6897,6 @@ PCB_StringView PCB_StringView_substr_n(
     if(PCB_String_isEmpty(&sub)) return PCB_ZEROED_T(PCB_StringView);
     if(sub.length > sv.length)   return PCB_ZEROED_T(PCB_StringView);
     PCB_StringView s = sub;
-    //TODO: "premature optimization is the root of all evil",
-    //this loop would benefit greatly from vectorization
     while(n > 0) {
         while(sv.length > 0 && sv.data[0] != s.data[0]) {
             sv.data++; sv.length--;
@@ -6562,6 +6915,20 @@ PCB_StringView PCB_StringView_substr_n(
     return sv;
 }
 
+PCB_StringView PCB_StringView_substr_n(
+    PCB_StringView sv, PCB_StringView sub, size_t n
+) {
+#ifdef PCB__HAS_VECTOR_SV
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+    int cpuinfo[4];
+    PCB_cpuid(cpuinfo, 0x1, 0x0);
+    if(PCB_cpuid_has_sse4_2(cpuinfo)) return PCB_StringView_substr_n_sse(sv, sub, n);
+#endif //x86(_64)
+#endif //PCB__HAS_VECTOR_SV
+    return PCB_StringView_substr_n_basic(sv, sub, n);
+}
+
+//this one is harder to vectorize, will do it another time
 PCB_StringView PCB_StringView_rsubstr_n(
     PCB_StringView sv, const PCB_StringView sub, size_t n
 ) {
@@ -6666,7 +7033,7 @@ PCB_Strings PCB_StringView_split_whitespace_copy(PCB_StringView sv) {
     return strs;
 }
 
-PCB_StringView PCB_StringView_findCharFrom_n(
+PCB_StringView PCB_StringView_findCharFrom_n_basic(
     PCB_StringView sv, PCB_StringView accept, size_t n
 ) {
     PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
@@ -6688,21 +7055,34 @@ PCB_StringView PCB_StringView_findCharFrom_n(
     return cur;
 }
 
-PCB_StringView PCB_StringView_findCharNotFrom_n(
+PCB_StringView PCB_StringView_findCharFrom_n(
     PCB_StringView sv, PCB_StringView accept, size_t n
+) {
+#ifdef PCB__HAS_VECTOR_SV
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+    int cpuinfo[4];
+    PCB_cpuid(cpuinfo, 0x1, 0x0);
+    if(PCB_cpuid_has_sse4_2(cpuinfo)) return PCB_StringView_findCharFrom_n_sse(sv, accept, n); 
+#endif //x86(_64)
+#endif //PCB__HAS_VECTOR_SV
+    return PCB_StringView_findCharFrom_n_basic(sv, accept, n);
+}
+
+PCB_StringView PCB_StringView_findCharNotFrom_n_basic(
+    PCB_StringView sv, PCB_StringView reject, size_t n
 ) {
     PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
     if(PCB_String_isEmpty(&sv))     return PCB_ZEROED_T(PCB_StringView);
-    if(PCB_String_isEmpty(&accept)) return PCB_ZEROED_T(PCB_StringView);
+    if(PCB_String_isEmpty(&reject)) return PCB_ZEROED_T(PCB_StringView);
     PCB_StringView cur = sv;
     while(true) {
-        bool anyOfAccept = false;
-        for(size_t i = 0; i < accept.length; i++) {
-            if(*cur.data == accept.data[i]) {
-                anyOfAccept = true; break;
+        bool anyOfReject = false;
+        for(size_t i = 0; i < reject.length; i++) {
+            if(*cur.data == reject.data[i]) {
+                anyOfReject = true; break;
             }
         }
-        if(!anyOfAccept) { --n; }
+        if(!anyOfReject) { --n; }
         if(n == 0) break;
         else {
             cur.data++; cur.length--;
@@ -6710,6 +7090,32 @@ PCB_StringView PCB_StringView_findCharNotFrom_n(
         }
     }
     return cur;
+}
+
+PCB_StringView PCB_StringView_findCharNotFrom_n(
+    PCB_StringView sv, PCB_StringView reject, size_t n
+) {
+#ifdef PCB__HAS_VECTOR_SV
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+    int cpuinfo[4];
+    PCB_cpuid(cpuinfo, 0x1, 0x0);
+    if(!PCB_cpuid_has_sse4_2(cpuinfo)) goto basic;
+
+    //Experimentally found that, for such inputs, the vectorized version actually
+    //performs worse. Tested on Ryzen 5 6600H under gcc 15.2.1 -O2 -mtune=generic
+    //by counting occurences of chars in the Intel Software Optimization Manual
+    //converted to txt via pdftotext.
+    //Also seems to hold on a Ryzen 5600X.
+    //Interestingly, `findCharFrom` doesn't exhibit such characteristics.
+    if(reject.length == 1) goto basic; //never slower, sometimes much faster
+    //actually faster
+    if(reject.length <= 8 && n <= 5) goto basic;
+    if(reject.length*n < 28) goto basic;
+    return PCB_StringView_findCharNotFrom_n_sse(sv, reject, n);
+#endif //x86(_64)
+basic:
+#endif //PCB__HAS_VECTOR_SV
+    return PCB_StringView_findCharNotFrom_n_basic(sv, reject, n);
 }
 
 PCB_StringView PCB_StringView_skipPast(PCB_StringView sv, PCB_StringView s) {
@@ -6729,27 +7135,17 @@ PCB_StringView PCB_StringView_skipPast(PCB_StringView sv, PCB_StringView s) {
 static PCB_ForceInline uint8_t PCB__CPLFFC_UTF8(unsigned int ch) {
 //NOTE: `ch` is NOT a Unicode codepoint, it is a zero-extended 1st byte of
 //the input string
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-#define PCB__unlikely(cond) __builtin_expect(!!(cond), 0)
-#else
-#define PCB__unlikely(cond) (cond)
-#endif
 #if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
-    if(PCB__unlikely(ch > 0xFD)) return 255; //1111111-, invalid
+    if(PCB_unlikely(ch > 0xFD)) return 255; //1111111-, invalid
 #else
-    if(PCB__unlikely(ch > 0xF4)) return 255; //111110xx (>U+10FFFF), 1111110x
+    if(PCB_unlikely(ch > 0xF4)) return 255; //111110xx (>U+10FFFF), 1111110x
 #endif //PCB_UTF8_FULL_RANGE
-    if(PCB__unlikely(ch == 0xC0 || ch == 0xC1)) return 254;
-#undef PCB__unlikely
-#if PCB_ARCH_x86_64
+    if(PCB_unlikely(ch == 0xC0 || ch == 0xC1)) return 254;
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+    int cpuinfo[4];
+    PCB_cpuid(cpuinfo, 0x80000001, 0x0);
+    if(!PCB_cpuid_has_lzcnt(cpuinfo)) goto no_lzcnt;
 #if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-    __asm__ __volatile__ goto (
-        "mov{l} {$2147483649, %%eax | eax, 2147483649}\n\t"
-        "cpuid\n\t"
-        "test{l} {$32, %%ecx | ecx, 32}\n\t"
-        "jz %l0"
-        ::: "eax", "ecx", "edx", "cc" : no_lzcnt
-    );
     __asm__ __volatile__(
         "not{l} %k0\n\t"
         "{sall $24, %k0 | shl %k0, 24}\n\t"
@@ -6762,10 +7158,6 @@ static PCB_ForceInline uint8_t PCB__CPLFFC_UTF8(unsigned int ch) {
     );
     return (uint8_t)ch;
 #elif PCB_COMPILER_MSVC
-    //https://learn.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex
-    int cpuinfo[4];
-    __cpuid(cpuinfo, 0x80000001);
-    if(!(cpuinfo[2] & (1 << 5))) goto no_lzcnt;
     ch = __lzcnt(~ch << 24);
     return (ch > 1 ? ch : ch ^ 1); //0->1 (ASCII), 1->0 (continuation byte)
 #endif //compilers/x86_64
