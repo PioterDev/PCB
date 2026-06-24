@@ -655,6 +655,16 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 #endif //Compilers
 #endif //PCB_ForceInline
 
+#ifndef PCB_NoInline
+#if PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG
+#define PCB_NoInline __attribute__((__noinline__))
+#elif PCB_COMPILER_MSVC
+#define PCB_NoInline __declspec(noinline)
+#else
+#define PCB_NoInline
+#endif //Compilers
+#endif //PCB_NoInline
+
 #ifndef PCB_restrict
 #if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 199901L
 #define PCB_restrict restrict
@@ -2231,6 +2241,22 @@ for(                                                                    \
 
 
 //Section 1.7.5: Other macros
+//Even though C99 describes "z" as the format specifier for size_t, it was not
+//historically recognized for a long time by various printf implementations.
+//This macro provides a portable alternative using appropiate integral types.
+#ifndef PCB_SIZE_FMT
+#if SIZE_MAX == UINT_MAX
+#define PCB_SIZE_FMT "%u"
+#elif SIZE_MAX == ULONG_MAX
+#define PCB_SIZE_FMT "%lu"
+#elif SIZE_MAX == ULLONG_MAX
+#define PCB_SIZE_FMT "%llu"
+#else
+#error "size_t must be at least 16 bits wide. This system isn't compliant with ISO C99."
+#define PCB_SIZE_FMT "%u" //stub
+#endif //sizes of size_t
+#endif //PCB_SIZE_FMT
+
 #ifndef PCB_VA_forEach_until
 #define PCB_VA_forEach_until(args, argType, end, name)      \
 for(                                                        \
@@ -2781,7 +2807,19 @@ PCB_Enum(PCB_Arena_Flags, uint32_t) {
      * if cleared, subsequent frees/mark restores will leak memory;
      * if set, frees/mark restores will go OOB and trigger UB.
      */
-    PCB_ARENA_FLAG_ALLOC_META = 1 << 0
+    PCB_ARENA_FLAG_ALLOC_META = 1 << 0,
+    /**
+     * @brief Log a warning when arena is being destroyed while not being empty.
+     *
+     * When combined with `PCB_ARENA_FLAG_ALLOC_META`, additional logs are made
+     * for each allocation. If the library was compiled and is used with
+     * `PCB_ARENA_TRACE_LOC`, these logs include the location in source code
+     * for where each allocation was made.
+     *
+     * You can set a breakpoint on `PCB__Arena_diagnose_ned` to see the callstack
+     * for non-empty destruction of arenas configured with this flag.
+     */
+    PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY = 1 << 1
 };
 
 typedef struct {
@@ -2789,6 +2827,10 @@ typedef struct {
     //Additional padding of the last allocation, not including this structure.
     //A MSB of 1 marks allocations that have explicit alignment.
     size_t pad;
+#ifdef PCB_ARENA_TRACE_LOC
+    const char *file, *func;
+    intptr_t line;
+#endif //PCB_ARENA_TRACE_LOC
 } PCB_Arena_Alloc_Meta;
 
 /**
@@ -4407,6 +4449,7 @@ PCBAPI PCB_Arena* PCBCALL PCB_Arena_init_in_ex(
     size_t memsize,
     PCB_Arena_Flags flags
 ) PCB_Nonnull_Arg(1);
+#ifndef PCB_ARENA_TRACE_LOC
 /**
  * @brief Allocates `size` bytes in `arena`.
  *
@@ -4473,6 +4516,38 @@ PCBAPI bool PCBCALL PCB_Arena_alloc_whole(
     void** ptr,
     size_t* size
 ) PCB_Nonnull_Arg(1, 3);
+#else
+PCBAPI void* PCBCALL PCB_Arena_alloc_loc(
+    PCB_Arena* arena, size_t size,
+    const char* file, int line, const char* func
+) PCB_Nonnull_Arg(1, 3, 5);
+PCBAPI void* PCBCALL PCB_Arena_zalloc_loc(
+    PCB_Arena* arena, size_t size,
+    const char* file, int line, const char* func
+) PCB_Nonnull_Arg(1, 3, 5);
+PCBAPI void* PCBCALL PCB_Arena_aligned_alloc_loc(
+    PCB_Arena* arena,
+    size_t size,
+    size_t alignment,
+    const char* file, int line, const char* func
+) PCB_Nonnull_Arg(1, 4, 6);
+PCBAPI void* PCBCALL PCB_Arena_aligned_zalloc_loc(
+    PCB_Arena* arena, size_t size, size_t alignment,
+    const char* file, int line, const char* func
+) PCB_Nonnull_Arg(1, 4, 6);
+PCBAPI bool PCBCALL PCB_Arena_alloc_whole_loc(
+    PCB_Arena* arena,
+    void** ptr,
+    size_t* size,
+    const char* file, int line, const char* func
+) PCB_Nonnull_Arg(1, 3, 4, 6);
+#define PCB_Arena_alloc(arena, size) PCB_Arena_alloc_loc(arena, size, __FILE__, __LINE__, __func__)
+#define PCB_Arena_zalloc(arena, size) PCB_Arena_zalloc_loc(arena, size, __FILE__, __LINE__, __func__)
+#define PCB_Arena_aligned_alloc(arena, size, alignment) PCB_Arena_aligned_alloc_loc(arena, size, alignment, __FILE__, __LINE__, __func__)
+#define PCB_Arena_aligned_zalloc(arena, size, alignment) PCB_Arena_aligned_zalloc_loc(arena, size, alignment, __FILE__, __LINE__, __func__)
+#define PCB_Arena_alloc_whole(arena, ptr, size) PCB_Arena_alloc_whole_loc(arena, ptr, size, __FILE__, __LINE__, __func__)
+#endif //PCB_ARENA_TRACE_LOC
+
 /**
  * @brief Returns a pointer to the next arena in the internal linked list
  * or NULL if `arena == NULL` or `arena` doesn't have a next node.
@@ -4522,6 +4597,14 @@ PCBAPI void PCBCALL PCB_Arena_reference(PCB_Arena* arena) PCB_Nonnull_Arg(1);
  * @sa PCB_ARENA_FLAG_ALLOC_META
  */
 PCBAPI bool PCBCALL PCB_Arena_enable_allocMeta(
+    PCB_Arena* arena,
+    bool enable
+) PCB_Nonnull_Arg(1);
+/**
+ * @brief `enable`s the behavior of `PCB_ARENA_WARN_NONEMPTY_ON_DESTROY` flag.
+ * @return this function always succeeds.
+ */
+PCBAPI bool PCBCALL PCB_Arena_enable_wned(
     PCB_Arena* arena,
     bool enable
 ) PCB_Nonnull_Arg(1);
@@ -4647,6 +4730,16 @@ PCBAPI void PCBCALL PCB_Arena_reset(PCB_Arena* arena) PCB_Nonnull_Arg(1);
  * You still need to call this function on `PCB_Arena_next(arena)`.
  */
 PCBAPI void PCBCALL PCB_Arena_destroy(PCB_Arena* arena);
+/**
+ * @brief This function is not meant to be called by user code (note the "__")
+ * and is exported for debugging purposes.
+ *
+ * If `arena` is being destroyed while non-empty
+ * and `PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY` is set, this function gets
+ * called internally. You can set a breakpoint on it in the debugger
+ * to detect such cases without breaking on all destroys.
+ */
+PCBAPI void PCBCALL PCB__Arena_diagnose_ned(PCB_Arena* arena);
 /**
  * @brief `sprintf`s a new string in `arena`, variadic version.
  * @return pointer to the allocated string or NULL on error.
@@ -8229,12 +8322,20 @@ static PCB_ForceInline size_t PCB__Arena_meta_size(PCB_Arena_Prefix* a) {
 
 static inline void PCB__Arena_store_meta(
     PCB_Arena_Prefix* a, void* data, size_t size, size_t pad
+#ifdef PCB_ARENA_TRACE_LOC
+    , const char* file, int line, const char* func
+#endif //PCB_ARENA_TRACE_LOC
 ) {
     PCB_Arena_Alloc_Meta* meta = &a->last;
     if(a->flags & PCB_ARENA_FLAG_ALLOC_META)
         meta = (PCB_Arena_Alloc_Meta*)data;
     meta->size = size;
     meta->pad  = pad;
+#ifdef PCB_ARENA_TRACE_LOC
+    meta->file = file;
+    meta->line = line;
+    meta->func = func;
+#endif //PCB_ARENA_TRACE_LOC
 }
 
 static void* PCB__Arena_realloc_new(
@@ -8339,7 +8440,11 @@ PCB_Arena* PCB_Arena_init_in_ex(void* mem, size_t memsize, PCB_Arena_Flags flags
     return (PCB_Arena*)a;
 }
 
+#ifndef PCB_ARENA_TRACE_LOC
 void* PCB_Arena_alloc(PCB_Arena* arena, size_t size) {
+#else
+void* PCB_Arena_alloc_loc(PCB_Arena* arena, size_t size, const char* file, int line, const char* func) {
+#endif //PCB_ARENA_TRACE_LOC
     PCB_CHECK_SELF(arena, NULL);
     size = PCB__Arena_ceil(size);
     if(size == 0) return NULL;
@@ -8363,7 +8468,11 @@ try_alloc:
 #ifdef __SANITIZE_ADDRESS__
     ASAN_UNPOISON_MEMORY_REGION(data, (size + meta) * sizeof(void*));
 #endif //ASan
+#ifndef PCB_ARENA_TRACE_LOC
     PCB__Arena_store_meta(a, data, size, 0);
+#else
+    PCB__Arena_store_meta(a, data, size, 0, file, line, func);
+#endif //PCB_ARENA_TRACE_LOC
 #ifdef __SANITIZE_ADDRESS__
     ASAN_POISON_MEMORY_REGION(data, meta*sizeof(void*));
 #endif //ASan
@@ -8371,13 +8480,22 @@ try_alloc:
     return (char*)data + meta*sizeof(void*);
 }
 
+#ifndef PCB_ARENA_TRACE_LOC
 void* PCB_Arena_zalloc(PCB_Arena* arena, size_t size) {
     void* mem = PCB_Arena_alloc(arena, size);
+#else
+void* PCB_Arena_zalloc_loc(PCB_Arena* arena, size_t size, const char* file, int line, const char* func) {
+    void* mem = PCB_Arena_alloc_loc(arena, size, file, line, func);
+#endif //PCB_ARENA_TRACE_LOC
     if(mem != NULL) PCB_memset(mem, 0, size);
     return mem;
 }
 
+#ifndef PCB_ARENA_TRACE_LOC
 void* PCB_Arena_aligned_alloc(PCB_Arena* arena, size_t size, size_t alignment) {
+#else
+void* PCB_Arena_aligned_alloc_loc(PCB_Arena* arena, size_t size, size_t alignment, const char* file, int line, const char* func) {
+#endif //PCB_ARENA_TRACE_LOC
     PCB_CHECK_SELF(arena, NULL);
     if(alignment == 0) return NULL;
     const bool pow2 = (alignment & (alignment - 1)) == 0;
@@ -8406,11 +8524,15 @@ try_alloc:
         a = (PCB_Arena_Prefix*)a->next;
         goto try_alloc;
     }
-    data = (char*)data + (pad - meta) * sizeof(void*); //sets MSB
+    data = (char*)data + (pad - meta) * sizeof(void*);
 #ifdef __SANITIZE_ADDRESS__
     ASAN_UNPOISON_MEMORY_REGION(data, (size + meta) * sizeof(void*));
 #endif //ASan
-    PCB__Arena_store_meta(a, data, size, (pad - meta) | (SIZE_MAX ^ (SIZE_MAX>>1)));
+#ifndef PCB_ARENA_TRACE_LOC
+    PCB__Arena_store_meta(a, data, size, (pad - meta) | /*sets MSB*/(SIZE_MAX ^ (SIZE_MAX>>1)));
+#else
+    PCB__Arena_store_meta(a, data, size, (pad - meta) | /*sets MSB*/(SIZE_MAX ^ (SIZE_MAX>>1)), file, line, func);
+#endif //PCB_ARENA_TRACE_LOC
 #ifdef __SANITIZE_ADDRESS__
     ASAN_POISON_MEMORY_REGION(data, meta*sizeof(void*));
 #endif //ASan
@@ -8418,13 +8540,22 @@ try_alloc:
     return (char*)data + meta*sizeof(void*);
 }
 
+#ifndef PCB_ARENA_TRACE_LOC
 void* PCB_Arena_aligned_zalloc(PCB_Arena* arena, size_t size, size_t alignment) {
     void* mem = PCB_Arena_aligned_alloc(arena, size, alignment);
+#else
+void* PCB_Arena_aligned_zalloc_loc(PCB_Arena* arena, size_t size, size_t alignment, const char* file, int line, const char* func) {
+    void* mem = PCB_Arena_aligned_alloc_loc(arena, size, alignment, file, line, func);
+#endif //PCB_ARENA_TRACE_LOC
     if(mem != NULL) PCB_memset(mem, 0, size);
     return mem;
 }
 
+#ifndef PCB_ARENA_TRACE_LOC
 bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
+#else
+bool PCB_Arena_alloc_whole_loc(PCB_Arena* arena, void** ptr, size_t* size, const char* file, int line, const char* func) {
+#endif //PCB_ARENA_TRACE_LOC
     PCB_CHECK_SELF(arena, false);
     PCB_CHECK_NULL(size, false);
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
@@ -8442,7 +8573,11 @@ bool PCB_Arena_alloc_whole(PCB_Arena* arena, void** ptr, size_t* size) {
 #ifdef __SANITIZE_ADDRESS__
         ASAN_UNPOISON_MEMORY_REGION(data, (s + meta) * sizeof(void*));
 #endif //ASan
+#ifndef PCB_ARENA_TRACE_LOC
         PCB__Arena_store_meta(a, data, s, 0);
+#else
+        PCB__Arena_store_meta(a, data, s, 0, file, line, func);
+#endif //PCB_ARENA_TRACE_LOC
 #ifdef __SANITIZE_ADDRESS__
         ASAN_POISON_MEMORY_REGION(data, meta*sizeof(void*));
 #endif //ASan
@@ -8530,6 +8665,17 @@ bool PCB_Arena_enable_allocMeta(PCB_Arena* arena, bool enable) {
             current->flags |=  PCB_ARENA_FLAG_ALLOC_META;
         else //how come does ~ change type to SIGNED int?!
             current->flags &= (PCB_Arena_Flags)~PCB_ARENA_FLAG_ALLOC_META;
+    }
+    return true;
+}
+
+bool PCB_Arena_enable_wned(PCB_Arena* arena, bool enable) {
+    PCB_CHECK_SELF(arena, false);
+    PCB__Arena_forEach_node(current, next) {
+        if(enable)
+            current->flags |=  PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY;
+        else //how come does ~ change type to SIGNED int?!
+            current->flags &= (PCB_Arena_Flags)~PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY;
     }
     return true;
 }
@@ -8665,6 +8811,34 @@ void PCB_Arena_reset(PCB_Arena* arena) {
     }
 }
 
+//Without `PCB_NoInline`, the compiler may inline it, complicating
+//user debugging when we're compiled with optimizations.
+PCB_NoInline void PCB__Arena_diagnose_ned(PCB_Arena* arena) {
+    PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
+    PCB_log(
+        PCB_LOGLEVEL_WARN,
+        PCB_SIZE_FMT " bytes were not deallocated in %p",
+        a->length*sizeof(void*), (void*)a
+    );
+    //No more info available without allocation metadata.
+    if(!(a->flags & PCB_ARENA_FLAG_ALLOC_META)) return;
+    for(size_t l = 0; l < a->length;) {
+        PCB_Arena_Alloc_Meta* m = (PCB_Arena_Alloc_Meta*)(PCB__Arena_start(a) + l*sizeof(void*));
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+#ifdef PCB_ARENA_TRACE_LOC
+            "%s:%d:%s: "
+#endif //PCB_ARENA_TRACE_LOC
+            PCB_SIZE_FMT " bytes",
+#ifdef PCB_ARENA_TRACE_LOC
+            m->file, (int)m->line, m->func,
+#endif //PCB_ARENA_TRACE_LOC
+            m->size*sizeof(void*)
+        );
+        l += m->size + (m->pad & ~(SIZE_MAX ^ (SIZE_MAX>>1))) + sizeof(*m)/sizeof(void*);
+    }
+}
+
 void PCB_Arena_destroy(PCB_Arena* arena) {
     if(arena == NULL) return;
     PCB_Arena_Prefix* a    = (PCB_Arena_Prefix*)arena;
@@ -8672,6 +8846,8 @@ void PCB_Arena_destroy(PCB_Arena* arena) {
     do {
         PCB__logTrace("%s: refcount = %u", __func__, a->refcount);
         if(--a->refcount != 0) return;
+        if(a->length != 0 && a->flags & PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY)
+            PCB__Arena_diagnose_ned((PCB_Arena*)a);
         PCB_free(a);
         a = next;
         if(a == NULL) break;
