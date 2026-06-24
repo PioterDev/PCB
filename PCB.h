@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 4
+#define PCB_VERSION_PATCH 5
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -341,7 +341,7 @@ extern "C" {
 #define PCB_ARCH_ARM 5
 #define PCB_ARCH_ARMv5 1
 #define PCB_ARCH "ARMv5"
-#elif defined(__ARM_ARCH_5T__) || defined(__ARM_ARCH_5TE__) ||
+#elif defined(__ARM_ARCH_5T__) || defined(__ARM_ARCH_5TE__) || \
       defined(__ARM_ARCH_5TEJ__)
 #define PCB_ARCH_ARM 5
 #define PCB_ARCH_ARMv5T 1
