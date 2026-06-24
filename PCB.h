@@ -915,7 +915,16 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 
 
 
-//Section 1.5: Import libc, unless this macro is defined as 0
+//Section 1.5: Import libc, unless `PCB_USE_LIBC` is defined as 0
+
+//These should be universally available on every single platform in
+//a conforming C99+ implementation.
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <limits.h>
+
 #ifndef PCB_USE_LIBC
 #define PCB_USE_LIBC 1
 #endif //PCB_USE_LIBC
@@ -970,10 +979,6 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 
 #endif //PCB_HAS_STRING_H
 
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stddef.h>
 #if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L && PCB_HAS_INCLUDE(<uchar.h>)
 #include <uchar.h>
 #define PCB_HAS_UCHAR_H
