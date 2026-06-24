@@ -1305,6 +1305,18 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_CONCAT(x, y) PCB__CONCAT(x, y)
 #endif //PCB_CONCAT
 
+#ifndef PCB_LOC
+#define PCB_LOC __FILE__ ":" PCB_STRINGIFY(__LINE__)
+#endif //PCB_LOC
+
+#ifndef PCB_LOC_FMT
+#define PCB_LOC_FMT "%s:%d"
+#endif //PCB_LOC_FMT
+
+#ifndef PCB_LOC_ARG
+#define PCB_LOC_ARG __FILE__, __LINE__
+#endif //PCB_LOC_ARG
+
 //Macro used for "mangling" names by adding the line number to the name.
 //Portable and sufficient for most use cases.
 //You may find this useful in your code, hence it's public.
@@ -3016,7 +3028,7 @@ PCBAPI void PCBCALL PCB_log(
 #ifdef PCB_DEBUG
 #if PCB_DEBUG+0 > 2
 #define PCB_logTrace(...) do { \
-    PCB_log(PCB_LOGLEVEL_TRACE_NL, "[" __FILE__ "/%s:" PCB_STRINGIFY(__LINE__) "] ", __func__); \
+    PCB_log(PCB_LOGLEVEL_TRACE_NL, "[" PCB_LOC_FMT ":%s] ", PCB_LOC_ARG, __func__); \
     PCB_log(PCB_LOGLEVEL_NONE, __VA_ARGS__); \
 } while(0)
 #elif PCB_DEBUG+0 == 2
