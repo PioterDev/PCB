@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 5
+#define PCB_VERSION_PATCH 6
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1931,8 +1931,8 @@ for(                                                                    \
 #define PCB_View_Vec(vec, start, end)  {                                \
     ((end) - (start) != 0 ? PCB_assert((vec)->data != NULL) : (void)0,  \
      (vec)->data + (start)),                                            \
-    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),                    \
-     PCB_assert((ssize_t)(end)   <= (ssize_t)(vec)->length),            \
+    (PCB_assert((PCB_ssize_t)(start) <= (PCB_ssize_t)(end)),            \
+     PCB_assert((PCB_ssize_t)(end)   <= (PCB_ssize_t)(vec)->length),    \
      (size_t)((end) - (start)))                                         \
 }
 //For those wondering about casts to ssize_t: it's to suppress warnings about
@@ -1953,11 +1953,11 @@ for(                                                                    \
  * Used similarly to `PCB_View_Vec`, except it's only valid for arrays,
  * like `int arr[16];`.
  */
-#define PCB_View_Arr(arr, start, end) {                 \
-     &(arr)[start],                                     \
-    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),    \
-     PCB_assert((ssize_t)(end)   <= PCB_ARRAY_LEN(arr)),\
-     (size_t)((end) - (start)))                         \
+#define PCB_View_Arr(arr, start, end) {                         \
+     &(arr)[start],                                             \
+    (PCB_assert((PCB_ssize_t)(start) <= (PCB_ssize_t)(end)),    \
+     PCB_assert((PCB_ssize_t)(end)   <= PCB_ARRAY_LEN(arr)),    \
+     (size_t)((end) - (start)))                                 \
 }
 #endif //PCB_DISABLE_ASSERT
 #endif //PCB_View_Arr
@@ -1973,7 +1973,7 @@ for(                                                                    \
 #define PCB_View_Ptr(ptr, start, end) {                         \
     ((end) - (start) != 0 ? PCB_assert((ptr) != NULL) : (void)0,\
      (ptr) + (start)),                                          \
-    (PCB_assert((ssize_t)(start) <= (ssize_t)(end)),            \
+    (PCB_assert((PCB_ssize_t)(start) <= (PCB_ssize_t)(end)),    \
      (size_t)((end) - (start)))                                 \
 }
 #endif //PCB_DISABLE_ASSERT
@@ -2257,6 +2257,20 @@ for(                                                                    \
 #endif //sizes of size_t
 #endif //PCB_SIZE_FMT
 
+//Same for ssize_t.
+#ifndef PCB_SSIZE_FMT
+#if SIZE_MAX == UINT_MAX
+#define PCB_SSIZE_FMT "%d"
+#elif SIZE_MAX == ULONG_MAX
+#define PCB_SSIZE_FMT "%ld"
+#elif SIZE_MAX == ULLONG_MAX
+#define PCB_SSIZE_FMT "%lld"
+#else
+#error "size_t must be at least 16 bits wide. This system isn't compliant with ISO C99."
+#define PCB_SSIZE_FMT "%d" //stub
+#endif //sizes of size_t
+#endif //PCB_SSIZE_FMT
+
 #ifndef PCB_VA_forEach_until
 #define PCB_VA_forEach_until(args, argType, end, name)      \
 for(                                                        \
@@ -2422,6 +2436,24 @@ for(                                                                \
 //The user may not need declarations, for example if only macros are used.
 //This macro allows for a slight preprocessor optimization by omitting declarations.
 #ifndef PCB_NO_DECLARATIONS
+//ssize_t is useful, but POSIX-specific for...reasons.
+//We provide a portable variant.
+//And before you complain that "_t iS a ReSeRvEd IdEnTiFiEr"...shut up.
+#if PCB_PLATFORM_POSIX
+typedef ssize_t PCB_ssize_t;
+#else
+#if SIZE_MAX == UINT_MAX
+typedef int PCB_ssize_t;
+#elif SIZE_MAX == ULONG_MAX
+typedef long PCB_ssize_t;
+#elif SIZE_MAX == ULLONG_MAX
+typedef long long PCB_ssize_t;
+#else
+#error "size_t must be at least 16 bits wide. This system isn't compliant with ISO C99."
+typedef int PCB_ssize_t; //stub
+#endif //sizes
+#endif //PCB_ssize_t
+
 typedef enum {
     PCB_LOGLEVEL_NONE,  PCB_LOGLEVEL_NONE_NL,  //without the prefix
     PCB_LOGLEVEL_TRACE, PCB_LOGLEVEL_TRACE_NL,
@@ -3350,7 +3382,7 @@ PCBAPI bool PCBCALL PCB_String_append_cstr(
  * in `cstrs` are skipped.
  * @return number of entries in `cstrs` appended, -1 on error.
  */
-PCBAPI ssize_t PCBCALL PCB_String_append_cstrs(
+PCBAPI PCB_ssize_t PCBCALL PCB_String_append_cstrs(
     PCB_String* PCB_restrict str,
     PCB_CStringsView cstrs
 ) PCB_Nonnull_Arg(1);
@@ -3362,7 +3394,7 @@ PCBAPI ssize_t PCBCALL PCB_String_append_cstrs(
  * The last argument MUST be `NULL`. Otherwise the behavior is undefined.
  * @return number of C-strings appended, 0 on error.
  */
-PCBAPI ssize_t PCBCALL PCB_String_append_cstr_v(
+PCBAPI PCB_ssize_t PCBCALL PCB_String_append_cstr_v(
     PCB_String* PCB_restrict str,
     ...
 ) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
@@ -3414,7 +3446,7 @@ PCBAPI bool PCBCALL PCB_String_append_codepoint(
  * @brief Appends a UTF-32 sequence of `codepoints` to `str`.
  * @return number of codepoints appended, -1 on error
  */
-PCBAPI ssize_t PCBCALL PCB_String_append_codepoints(
+PCBAPI PCB_ssize_t PCBCALL PCB_String_append_codepoints(
     PCB_String* PCB_restrict str,
     PCB_U32StringView codepoints
 ) PCB_Nonnull_Arg(1);
@@ -3464,7 +3496,7 @@ PCBAPI bool PCBCALL PCB_String_insert_cstr(
  * in `cstrs` are skipped.
  * @return number of entries in `cstrs` inserted, -1 on error.
  */
-PCBAPI ssize_t PCBCALL PCB_String_insert_cstrs(
+PCBAPI PCB_ssize_t PCBCALL PCB_String_insert_cstrs(
     PCB_String* PCB_restrict str,
     PCB_CStringsView cstrs,
     size_t position
@@ -3477,7 +3509,7 @@ PCBAPI ssize_t PCBCALL PCB_String_insert_cstrs(
  *
  * @return number of entries in `cstrs` inserted, -1 on error.
  */
-PCBAPI ssize_t PCBCALL PCB_String_insert_cstr_v(
+PCBAPI PCB_ssize_t PCBCALL PCB_String_insert_cstr_v(
     PCB_String* PCB_restrict str,
     size_t position,
     ...
@@ -3538,7 +3570,7 @@ PCBAPI bool PCBCALL PCB_String_insert_codepoint(
  * @brief Inserts a UTF-32 sequence of `codepoints` to `str` at position `position`.
  * @return number of codepoints inserted, -1 on error
  */
-PCBAPI ssize_t PCBCALL PCB_String_insert_codepoints(
+PCBAPI PCB_ssize_t PCBCALL PCB_String_insert_codepoints(
     PCB_String* PCB_restrict str,
     PCB_U32StringView codepoints,
     size_t position
@@ -4156,14 +4188,14 @@ PCBAPI bool    PCBCALL PCB_WString_resize(PCB_WString* PCB_restrict str, const s
 PCBAPI bool    PCBCALL PCB_WString_append(PCB_WString* str, const PCB_WString* other) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_WString_append_sv(PCB_WString* PCB_restrict str, PCB_WStringView sv) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_WString_append_cstr(PCB_WString* PCB_restrict str, const wchar_t* PCB_maybe_restrict cstr) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_WString_append_cstrs(PCB_WString* PCB_restrict str, PCB_WCStringsView cstrs) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_WString_append_cstr_v(PCB_WString* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_WString_append_cstrs(PCB_WString* PCB_restrict str, PCB_WCStringsView cstrs) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_WString_append_cstr_v(PCB_WString* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_WString_append_chars(PCB_WString* PCB_restrict str, const wchar_t c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_insert(PCB_WString* PCB_maybe_restrict str, const PCB_WString* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool PCBCALL PCB_WString_insert_sv(PCB_WString* PCB_restrict str, PCB_WStringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_insert_cstr(PCB_WString* PCB_restrict str, const wchar_t* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_WString_insert_cstrs(PCB_WString* PCB_restrict str, PCB_WCStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_WString_insert_cstr_v(PCB_WString* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_WString_insert_cstrs(PCB_WString* PCB_restrict str, PCB_WCStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_WString_insert_cstr_v(PCB_WString* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool PCBCALL PCB_WString_insert_chars(PCB_WString* PCB_restrict str, const wchar_t c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_replace_range(PCB_WString* PCB_restrict str, size_t start, size_t length, PCB_WStringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_replace_range_chars(PCB_WString* PCB_restrict str, size_t start, size_t length, const wchar_t c) PCB_Nonnull_Arg(1);
@@ -4185,14 +4217,14 @@ PCBAPI bool    PCBCALL PCB_U8String_resize(PCB_U8String* PCB_restrict str, const
 PCBAPI bool    PCBCALL PCB_U8String_append(PCB_U8String* str, const PCB_U8String* other) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U8String_append_sv(PCB_U8String* PCB_restrict str, PCB_U8StringView sv) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_append_cstr(PCB_U8String* PCB_restrict str, const PCB_char8* PCB_maybe_restrict cstr) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_U8String_append_cstrs(PCB_U8String* PCB_restrict str, PCB_U8CStringsView cstrs) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_U8String_append_cstr_v(PCB_U8String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_U8String_append_cstrs(PCB_U8String* PCB_restrict str, PCB_U8CStringsView cstrs) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_U8String_append_cstr_v(PCB_U8String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U8String_append_chars(PCB_U8String* PCB_restrict str, const PCB_char8 c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_insert(PCB_U8String* PCB_maybe_restrict str, const PCB_U8String* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U8String_insert_sv(PCB_U8String* PCB_restrict str, PCB_U8StringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_insert_cstr(PCB_U8String* PCB_restrict str, const PCB_char8* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_U8String_insert_cstrs(PCB_U8String* PCB_restrict str, PCB_U8CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_U8String_insert_cstr_v(PCB_U8String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_U8String_insert_cstrs(PCB_U8String* PCB_restrict str, PCB_U8CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_U8String_insert_cstr_v(PCB_U8String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U8String_insert_chars(PCB_U8String* PCB_restrict str, const PCB_char8 c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_replace_range(PCB_U8String* PCB_restrict str, size_t start, size_t length, PCB_U8StringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_replace_range_chars(PCB_U8String* PCB_restrict str, size_t start, size_t length, const PCB_char8 c) PCB_Nonnull_Arg(1);
@@ -4214,14 +4246,14 @@ PCBAPI bool    PCBCALL PCB_U16String_resize(PCB_U16String* PCB_restrict str, con
 PCBAPI bool    PCBCALL PCB_U16String_append(PCB_U16String* str, const PCB_U16String* other) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U16String_append_sv(PCB_U16String* PCB_restrict str, PCB_U16StringView sv) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_append_cstr(PCB_U16String* PCB_restrict str, const PCB_char16* PCB_maybe_restrict cstr) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_U16String_append_cstrs(PCB_U16String* PCB_restrict str, PCB_U16CStringsView cstrs) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_U16String_append_cstr_v(PCB_U16String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_U16String_append_cstrs(PCB_U16String* PCB_restrict str, PCB_U16CStringsView cstrs) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_U16String_append_cstr_v(PCB_U16String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U16String_append_chars(PCB_U16String* PCB_restrict str, const PCB_char16 c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_insert(PCB_U16String* PCB_maybe_restrict str, const PCB_U16String* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U16String_insert_sv(PCB_U16String* PCB_restrict str, PCB_U16StringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_insert_cstr(PCB_U16String* PCB_restrict str, const PCB_char16* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_U16String_insert_cstrs(PCB_U16String* PCB_restrict str, PCB_U16CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_U16String_insert_cstr_v(PCB_U16String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_U16String_insert_cstrs(PCB_U16String* PCB_restrict str, PCB_U16CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_U16String_insert_cstr_v(PCB_U16String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U16String_insert_chars(PCB_U16String* PCB_restrict str, const PCB_char16 c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_replace_range(PCB_U16String* PCB_restrict str, size_t start, size_t length, PCB_U16StringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_replace_range_chars(PCB_U16String* PCB_restrict str, size_t start, size_t length, const PCB_char16 c) PCB_Nonnull_Arg(1);
@@ -4243,14 +4275,14 @@ PCBAPI bool    PCBCALL PCB_U32String_resize(PCB_U32String* PCB_restrict str, con
 PCBAPI bool    PCBCALL PCB_U32String_append(PCB_U32String* str, const PCB_U32String* other) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U32String_append_sv(PCB_U32String* PCB_restrict str, PCB_U32StringView sv) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_append_cstr(PCB_U32String* PCB_restrict str, const PCB_char32* PCB_maybe_restrict cstr) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_U32String_append_cstrs(PCB_U32String* PCB_restrict str, PCB_U32CStringsView cstrs) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_U32String_append_cstr_v(PCB_U32String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_U32String_append_cstrs(PCB_U32String* PCB_restrict str, PCB_U32CStringsView cstrs) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_U32String_append_cstr_v(PCB_U32String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U32String_append_chars(PCB_U32String* PCB_restrict str, const PCB_char32 c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_insert(PCB_U32String* PCB_maybe_restrict str, const PCB_U32String* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U32String_insert_sv(PCB_U32String* PCB_restrict str, PCB_U32StringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_insert_cstr(PCB_U32String* PCB_restrict str, const PCB_char32* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
-PCBAPI ssize_t PCBCALL PCB_U32String_insert_cstrs(PCB_U32String* PCB_restrict str, PCB_U32CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
-PCBAPI ssize_t PCBCALL PCB_U32String_insert_cstr_v(PCB_U32String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI PCB_ssize_t PCBCALL PCB_U32String_insert_cstrs(PCB_U32String* PCB_restrict str, PCB_U32CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI PCB_ssize_t PCBCALL PCB_U32String_insert_cstr_v(PCB_U32String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U32String_insert_chars(PCB_U32String* PCB_restrict str, const PCB_char32 c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_replace_range(PCB_U32String* PCB_restrict str, size_t start, size_t length, PCB_U32StringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_replace_range_chars(PCB_U32String* PCB_restrict str, size_t start, size_t length, const PCB_char32 c) PCB_Nonnull_Arg(1);
@@ -5928,7 +5960,7 @@ PCB__Str_append_cstr(PCB_U32String, PCB_char32) //PCB_U32String_append_cstr()
 #undef PCB__Str_append_cstr
 
 #define PCB__Str_append_cstrs(Type, svType, charType) \
-ssize_t Type##_append_cstrs( \
+PCB_ssize_t Type##_append_cstrs( \
     Type* PCB_restrict str, svType cstrs \
 ) { \
     PCB_CHECK_SELF(str, -1); \
@@ -5943,7 +5975,7 @@ ssize_t Type##_append_cstrs( \
     if(cstrsLength == 0) return 0; \
     if(!Type##_reserve(str, cstrsLength)) return -1; \
     charType* cursor = str->data + str->length; \
-    ssize_t appended = 0; \
+    PCB_ssize_t appended = 0; \
     PCB_Vec_forEach_it(&cstrs, it, const charType* const) { \
         if(*it == NULL) continue; \
         if(str->data <= *it && *it <= str->data + str->length) continue; \
@@ -5962,7 +5994,7 @@ PCB__Str_append_cstrs(PCB_U32String, PCB_U32CStringsView, PCB_char32) //PCB_U32S
 #undef PCB__Str_append_cstrs
 
 #define PCB__Str_append_cstr_v(Type, charType) \
-ssize_t Type##_append_cstr_v(Type* PCB_restrict str, ...) { \
+PCB_ssize_t Type##_append_cstr_v(Type* PCB_restrict str, ...) { \
     PCB_CHECK_SELF(str, -1); \
     va_list args; \
     size_t argsLength = 0; \
@@ -5977,7 +6009,7 @@ ssize_t Type##_append_cstr_v(Type* PCB_restrict str, ...) { \
 \
     if(!Type##_reserve(str, argsLength)) return -1; \
 \
-    ssize_t appended = 0; \
+    PCB_ssize_t appended = 0; \
     charType* cursor = str->data + str->length; \
     va_start(args, str); \
     PCB_VA_forEach_until(args, const charType*, NULL, arg) { \
@@ -6069,7 +6101,7 @@ bool PCB_String_append_codepoint(PCB_String* PCB_restrict str, uint32_t codepoin
     return true;
 }
 
-ssize_t PCB_String_append_codepoints(
+PCB_ssize_t PCB_String_append_codepoints(
     PCB_String* PCB_restrict str, PCB_U32StringView codepoints
 ) {
     PCB_CHECK_SELF(str, -1);
@@ -6083,7 +6115,7 @@ ssize_t PCB_String_append_codepoints(
     if(!PCB_String_reserve(str, neededLen)) return -1;
 
     PCB_char8* cursor = (PCB_char8*)str->data + str->length;
-    ssize_t appended = 0;
+    PCB_ssize_t appended = 0;
     PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
         if(!PCB_IsValidUnicode(*c)) continue;
         cursor = PCB_StoreUTF8Codepoint(cursor, *c);
@@ -6175,7 +6207,7 @@ PCB__Str_insert_cstr(PCB_U32String, PCB_char32) //PCB_U32String_insert_cstr()
 #undef PCB__Str_insert_cstr
 
 #define PCB__Str_insert_cstrs(Type, svType, charType) \
-ssize_t Type##_insert_cstrs( \
+PCB_ssize_t Type##_insert_cstrs( \
     Type* PCB_restrict str, svType cstrs, size_t position \
 ) { \
     PCB_CHECK_SELF(str, -1); \
@@ -6199,7 +6231,7 @@ ssize_t Type##_insert_cstrs( \
     ); \
 \
     charType* cursor = str->data + position; \
-    ssize_t appended = 0; \
+    PCB_ssize_t appended = 0; \
     PCB_Vec_forEach_it(&cstrs, it, const charType* const) { \
         if(*it == NULL) continue; \
         if(str->data <= *it && *it <= str->data + str->length) continue; \
@@ -6218,7 +6250,7 @@ PCB__Str_insert_cstrs(PCB_U32String, PCB_U32CStringsView, PCB_char32) //PCB_U32S
 #undef PCB__Str_insert_cstrs
 
 #define PCB__Str_insert_cstr_v(Type, charType) \
-ssize_t Type##_insert_cstr_v( \
+PCB_ssize_t Type##_insert_cstr_v( \
     Type* PCB_restrict str, size_t position, ... \
 ) { \
     PCB_CHECK_SELF(str, -1); \
@@ -6240,7 +6272,7 @@ ssize_t Type##_insert_cstr_v( \
         (str->length - position)*sizeof(*str->data) \
     ); \
 \
-    ssize_t inserted = 0; \
+    PCB_ssize_t inserted = 0; \
     charType* cursor = str->data + position; \
     va_start(args, position); \
     PCB_VA_forEach_until(args, const charType*, NULL, arg) { \
@@ -6359,7 +6391,7 @@ bool PCB_String_insert_codepoint(
     return true;
 }
 
-ssize_t PCB_String_insert_codepoints(
+PCB_ssize_t PCB_String_insert_codepoints(
     PCB_String* PCB_restrict str, PCB_U32StringView codepoints, size_t position
 ) {
     PCB_CHECK_SELF(str, -1);
@@ -6375,7 +6407,7 @@ ssize_t PCB_String_insert_codepoints(
     PCB_memmove(str->data + position + neededLen, str->data + position, str->length - position);
 
     PCB_char8* cursor = (PCB_char8*)str->data + str->length;
-    ssize_t inserted = 0;
+    PCB_ssize_t inserted = 0;
     PCB_Vec_forEach_it(&codepoints, c, const PCB_char32) {
         if(!PCB_IsValidUnicode(*c)) continue;
         cursor = PCB_StoreUTF8Codepoint(cursor, *c);
@@ -8012,10 +8044,10 @@ int PCB_Processes_waitForAny(PCB_Processes* ps) {
         }
         struct timespec t;
         if(ps->poll_us > 1e6) {
-            t.tv_sec  = (ssize_t)(ps->poll_us/1000000);
+            t.tv_sec  = (PCB_ssize_t)(ps->poll_us/1000000);
             t.tv_nsec = (int)(ps->poll_us%1000000 * 1000);
         } else {
-            t.tv_nsec = (ssize_t)(ps->poll_us * 1000);
+            t.tv_nsec = (PCB_ssize_t)(ps->poll_us * 1000);
             t.tv_sec  = 0;
             if(t.tv_nsec == 0) t.tv_nsec = 1000000;
         }
@@ -8113,7 +8145,7 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     PCB_Process child = PCB_Process_init();
     //checking what error has occured in the child is impossible with fork(2) without some IPC
     int tmpPipe[2] = { -1, -1 };
-    ssize_t r = -1;
+    PCB_ssize_t r = -1;
     if(pipe(tmpPipe) < 0) {
         PCB_logLatestError("Failed to create a temporary pipe");
         code = -errno; goto end;
