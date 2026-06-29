@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 7
+#define PCB_VERSION_PATCH 8
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5925,7 +5925,8 @@ bool Type##_append_sv(Type* PCB_restrict str, svType sv) { \
     PCB_CHECK_SELF(str, false); \
     if(PCB_String_isEmpty(&sv)) return true; \
     const charType* PCB_maybe_restrict data = sv.data; \
-    PCB_CHECK(str->data <= data && data <= str->data + str->length, false); \
+    PCB_CHECK((uintptr_t)str->data <= (uintptr_t)data && \
+              (uintptr_t)data <= (uintptr_t)(str->data + str->length), false); \
     if(!Type##_reserve(str, sv.length)) return false; \
     PCB_memcpy(str->data + str->length, data, sv.length * sizeof(*str->data)); \
     str->data[str->length += sv.length] = '\0'; \
@@ -5944,7 +5945,8 @@ bool Type##_append_cstr( \
 ) { \
     PCB_CHECK_SELF(str, false); \
     PCB_CHECK_NULL(cstr, false); \
-    PCB_CHECK(str->data <= cstr && cstr <= str->data + str->length, false); \
+    PCB_CHECK((uintptr_t)str->data <= (uintptr_t)cstr && \
+              (uintptr_t)cstr <= (uintptr_t)(str->data + str->length), false); \
     size_t len = PCB__strlen_##charType(cstr); \
     if(len == 0) return true; \
     if(!Type##_reserve(str, len)) return false; \
@@ -5968,7 +5970,8 @@ PCB_ssize_t Type##_append_cstrs( \
     size_t cstrsLength = 0; \
     PCB_Vec_forEach_it(&cstrs, it, const charType* const) { \
         if(*it == NULL) continue; \
-        if(str->data <= *it && *it <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)*it && \
+           (uintptr_t)*it <= (uintptr_t)(str->data + str->length)) continue; \
         cstrsLength += PCB__strlen_##charType(*it); \
         if(cstrsLength + str->length > (SIZE_MAX/2) / sizeof(*str->data)) return -1; \
     } \
@@ -5978,7 +5981,8 @@ PCB_ssize_t Type##_append_cstrs( \
     PCB_ssize_t appended = 0; \
     PCB_Vec_forEach_it(&cstrs, it, const charType* const) { \
         if(*it == NULL) continue; \
-        if(str->data <= *it && *it <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)*it && \
+           (uintptr_t)*it <= (uintptr_t)(str->data + str->length)) continue; \
         size_t l = PCB__strlen_##charType(*it); \
         PCB_memcpy(cursor, *it, l * sizeof(*str->data)); \
         cursor += l; ++appended; \
@@ -6000,7 +6004,8 @@ PCB_ssize_t Type##_append_cstr_v(Type* PCB_restrict str, ...) { \
     size_t argsLength = 0; \
     va_start(args, str); \
     PCB_VA_forEach_until(args, const charType*, NULL, arg) { \
-        if(str->data <= arg && arg <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)arg && \
+           (uintptr_t)arg <= (uintptr_t)(str->data + str->length)) continue; \
         argsLength += PCB__strlen_##charType(arg); \
         if(argsLength + str->length > SIZE_MAX/2/sizeof(*str->data)) return -1; \
     } \
@@ -6013,7 +6018,8 @@ PCB_ssize_t Type##_append_cstr_v(Type* PCB_restrict str, ...) { \
     charType* cursor = str->data + str->length; \
     va_start(args, str); \
     PCB_VA_forEach_until(args, const charType*, NULL, arg) { \
-        if(str->data <= arg && arg <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)arg && \
+           (uintptr_t)arg <= (uintptr_t)(str->data + str->length)) continue; \
         size_t l = PCB__strlen_##charType(arg); \
         PCB_memcpy(cursor, arg, l*sizeof(*str->data)); \
         cursor += l; ++appended; \
@@ -6070,7 +6076,8 @@ bool PCB_String_appendfv(
 #ifdef PCB_HAS_STDIO_H
     PCB_CHECK_SELF(str, false);
     PCB_CHECK_NULL(fmt, false);
-    PCB_CHECK(str->data <= fmt && fmt <= str->data + str->length, false);
+    PCB_CHECK((uintptr_t)str->data <= (uintptr_t)fmt &&
+              (uintptr_t)fmt <= (uintptr_t)(str->data + str->length), false);
 
     va_list args;
     va_copy(args, ap);
@@ -6158,7 +6165,8 @@ bool Type##_insert_sv(Type* PCB_restrict str, svType sv, size_t position) { \
     PCB_CHECK(position > str->length, false); \
     if(PCB_String_isEmpty(&sv)) return true; \
     const charType* PCB_maybe_restrict data = sv.data; \
-    PCB_CHECK(str->data <= data && data <= str->data + str->length, false); \
+    PCB_CHECK((uintptr_t)str->data <= (uintptr_t)data && \
+              (uintptr_t)data <= (uintptr_t)(str->data + str->length), false); \
 \
     if(!Type##_reserve(str, sv.length)) return false; \
     PCB_memmove( \
@@ -6185,7 +6193,8 @@ bool Type##_insert_cstr( \
     PCB_CHECK_SELF(str, false); \
     PCB_CHECK_NULL(cstr, false); \
     PCB_CHECK(position > str->length, false); \
-    PCB_CHECK(str->data <= cstr && cstr <= str->data + str->length, false); \
+    PCB_CHECK((uintptr_t)str->data <= (uintptr_t)cstr && \
+              (uintptr_t)cstr <= (uintptr_t)(str->data + str->length), false); \
 \
     size_t len = PCB__strlen_##charType(cstr); \
     if(len == 0) return true; \
@@ -6217,7 +6226,8 @@ PCB_ssize_t Type##_insert_cstrs( \
     size_t cstrsLength = 0; \
     PCB_Vec_forEach_it(&cstrs, it, const charType* const) { \
         if(*it == NULL) continue; \
-        if(str->data <= *it && *it <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)*it && \
+           (uintptr_t)*it <= (uintptr_t)(str->data + str->length)) continue; \
         cstrsLength += PCB__strlen_##charType(*it); \
         if(cstrsLength + str->length > (SIZE_MAX/2) / sizeof(*str->data)) return -1; \
     } \
@@ -6234,7 +6244,8 @@ PCB_ssize_t Type##_insert_cstrs( \
     PCB_ssize_t appended = 0; \
     PCB_Vec_forEach_it(&cstrs, it, const charType* const) { \
         if(*it == NULL) continue; \
-        if(str->data <= *it && *it <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)*it && \
+           (uintptr_t)*it <= (uintptr_t)(str->data + str->length)) continue; \
         size_t l = PCB__strlen_##charType(*it); \
         PCB_memcpy(cursor, *it, l * sizeof(*str->data)); \
         cursor += l; ++appended; \
@@ -6258,7 +6269,8 @@ PCB_ssize_t Type##_insert_cstr_v( \
     size_t argsLength = 0; \
     va_start(args, position); \
     PCB_VA_forEach_until(args, const charType*, NULL, arg) { \
-        if(str->data <= arg && arg <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)arg && \
+           (uintptr_t)arg <= (uintptr_t)(str->data + str->length)) continue; \
         argsLength += PCB__strlen_##charType(arg); \
         if(argsLength + str->length > SIZE_MAX/2/sizeof(*str->data)) return -1; \
     } \
@@ -6276,7 +6288,8 @@ PCB_ssize_t Type##_insert_cstr_v( \
     charType* cursor = str->data + position; \
     va_start(args, position); \
     PCB_VA_forEach_until(args, const charType*, NULL, arg) { \
-        if(str->data <= arg && arg <= str->data + str->length) continue; \
+        if((uintptr_t)str->data <= (uintptr_t)arg && \
+           (uintptr_t)arg <= (uintptr_t)(str->data + str->length)) continue; \
         size_t l = PCB__strlen_##charType(arg); \
         PCB_memcpy(cursor, arg, l*sizeof(*str->data)); \
         cursor += l; ++inserted; \
@@ -6341,7 +6354,8 @@ bool PCB_String_insertfv(
 #ifdef PCB_HAS_STDIO_H
     PCB_CHECK_SELF(str, false);
     PCB_CHECK(position > str->length, false);
-    PCB_CHECK(str->data <= fmt && fmt <= str->data + str->length, false);
+    PCB_CHECK((uintptr_t)str->data <= (uintptr_t)fmt &&
+              (uintptr_t)fmt <= (uintptr_t)(str->data + str->length), false);
 
     va_list args;
     va_copy(args, ap);
@@ -6425,7 +6439,8 @@ bool Type##_replace_range( \
     PCB_CHECK(start >= str->length, false); \
     PCB_CHECK(start + length > str->length, false); \
     if(PCB_String_isEmpty(&other)) return Type##_remove_range(str, start, length); \
-    PCB_CHECK(str->data <= other.data && other.data <= str->data + str->length, false); \
+    PCB_CHECK((uintptr_t)str->data <= (uintptr_t)other.data && \
+              (uintptr_t)other.data <= (uintptr_t)(str->data + str->length), false); \
     charType* const after = str->data + start + length; \
     if(other.length > length) { \
         const size_t diff = other.length - length; \
@@ -6697,7 +6712,8 @@ size_t Type##_pop_many( \
     if(PCB_String_isEmpty(str)) return 0; \
     if(howMany > str->length) howMany = str->length; \
     if(out != NULL) { \
-        PCB_CHECK(str->data <= out && out <= str->data + str->length, 0); \
+        PCB_CHECK((uintptr_t)str->data <= (uintptr_t)out && \
+                  (uintptr_t)out <= (uintptr_t)(str->data + str->length), 0); \
         PCB_memcpy(out, str->data + str->length - howMany, howMany*sizeof(*str->data)); \
     } \
     str->data[str->length -= howMany] = '\0'; \
@@ -8273,10 +8289,10 @@ static inline PCB_Arena_Prefix* PCB__Arena_marknode(
     PCB_Arena* arena, PCB_Arena_Mark* mark
 ) {
     const size_t marklen = sizeof(mark->length) + mark->length * sizeof(mark->lengths[0]);
-    char* const m = (char*)mark;
+    const uintptr_t m = (uintptr_t)mark;
     PCB__Arena_forEach_node(current, next) {
-        char* start = PCB__Arena_start(current);
-        char* end   = PCB__Arena_end(current);
+        const uintptr_t start = (uintptr_t)(void*)PCB__Arena_start(current);
+        const uintptr_t end   = (uintptr_t)(void*)PCB__Arena_end(current);
         if(m >= start && m + marklen <= end) return current;
     }
     return NULL;
@@ -8310,9 +8326,9 @@ static inline void PCB__Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
 }
 
 static inline bool PCB__Arena_holds(PCB_Arena_Prefix* a, const void* ptr) {
-    char* start = PCB__Arena_start(a);
-    char* end   = PCB__Arena_end(a); //         `<= end` or `< end`?
-    return (const char*)ptr >= start && (const char*)ptr <= end;
+    uintptr_t start = (uintptr_t)(void*)PCB__Arena_start(a);
+    uintptr_t end   = (uintptr_t)(void*)PCB__Arena_end(a); // `<= end` or `< end`?
+    return (uintptr_t)ptr >= start && (uintptr_t)ptr <= end;
 }
 
 static inline PCB_Arena_Prefix* PCB__Arena_ptrnode(PCB_Arena* arena, const void* ptr) {
