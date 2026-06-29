@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 6
+#define PCB_VERSION_PATCH 7
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -8158,7 +8158,7 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     if(PCB__Linux_has_pidfd()) {
         struct clone_args a = PCB_ZEROED;
         a.flags = CLONE_PIDFD;
-        a.pidfd = (__aligned_u64)&child.pidfd;
+        a.pidfd = (__u64)(uintptr_t)&child.pidfd;
         a.exit_signal = SIGCHLD;
         child.handle = (pid_t)syscall(SYS_clone3, &a, sizeof(a));
     } else {
