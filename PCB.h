@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 9
+#define PCB_VERSION_PATCH 10
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -8027,7 +8027,7 @@ int PCB_Processes_waitForAny(PCB_Processes* ps) {
 #if PCB_PLATFORM_LINUX
     if(PCB__Linux_has_pidfd()) do {
         //TODO: temporary allocator
-        struct pollfd* polls = PCB_realloc(NULL, ps->length*sizeof(*polls));
+        struct pollfd* polls = (struct pollfd*)PCB_realloc(NULL, ps->length*sizeof(*polls));
         if(polls == NULL) break; //try checkExit-based polling
         for(size_t i = 0; i < ps->length; i++) {
             polls[i].fd = ps->data[i].pidfd;
