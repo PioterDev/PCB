@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 10
+#define PCB_VERSION_PATCH 11
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -8481,6 +8481,7 @@ PCB_Arena* PCB_Arena_init_in_ex(void* mem, size_t memsize, PCB_Arena_Flags flags
 #ifdef __SANITIZE_ADDRESS__
     ASAN_POISON_MEMORY_REGION(PCB__Arena_start(a), a->capacity*sizeof(void*));
 #endif //ASan
+    a->refcount = 1;
     return (PCB_Arena*)a;
 }
 
