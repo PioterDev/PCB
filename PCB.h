@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 8
+#define PCB_VERSION_PATCH 9
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -7294,38 +7294,15 @@ PCB_StringView PCB_StringView_skipPast(PCB_StringView sv, PCB_StringView s) {
 
 //PCB_CodepointLengthFromFirstCharacter_UTF8
 //Pay close attention to return values before use.
-static PCB_ForceInline uint8_t PCB__CPLFFC_UTF8(unsigned int ch) {
+static unsigned int PCB__CPLFFC_UTF8(unsigned int ch) {
 //NOTE: `ch` is NOT a Unicode codepoint, it is a zero-extended 1st byte of
 //the input string
 #if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
-    if(PCB_unlikely(ch > 0xFD)) return 255; //1111111-, invalid
+    if(PCB_unlikely(ch > 0xFD)) return 7; //1111111-, invalid
 #else
-    if(PCB_unlikely(ch > 0xF4)) return 255; //111110xx (>U+10FFFF), 1111110x
+    if(PCB_unlikely(ch > 0xF4)) return 5; //111110xx (>U+10FFFF), 1111110x
 #endif //PCB_UTF8_FULL_RANGE
-    if(PCB_unlikely(ch == 0xC0 || ch == 0xC1)) return 254;
-#if PCB_ARCH_x86_64 || PCB_ARCH_x86
-    int cpuinfo[4];
-    PCB_cpuid(cpuinfo, 0x80000001, 0x0);
-    if(!PCB_cpuid_has_lzcnt(cpuinfo)) goto no_lzcnt;
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-    __asm__ __volatile__(
-        "not{l} %k0\n\t"
-        "{sall $24, %k0 | shl %k0, 24}\n\t"
-        "lzcnt{l} %k0, %k0\n\t"
-        "cmp{l $1, %k0 | %k0, 1}\n\t"
-        "jg ret%=\n\t"
-        "xor{l $1, %k0 | %k0, 1}\n" /* 0->1 (ASCII), 1->0 (continuation byte) */
-        "ret%=:\n\t"
-        : "+r" (ch) :: "cc"
-    );
-    return (uint8_t)ch;
-#elif PCB_COMPILER_MSVC
-    ch = __lzcnt(~ch << 24);
-    return (ch > 1 ? ch : ch ^ 1); //0->1 (ASCII), 1->0 (continuation byte)
-#endif //compilers/x86_64
-#endif //architectures
-    if(0) goto no_lzcnt; //suppress "unused label" warnings
-    no_lzcnt:
+    if(PCB_unlikely(ch == 0xC0 || ch == 0xC1)) return 8;
     if(ch <= 0x7F) return 1; /* ASCII */
     if(ch <= 0xBF) return 0; /* 10xxxxxx, continuation byte, invalid input */
     if(ch <= 0xDF) return 2; /* 110xxxxx */
@@ -7349,8 +7326,13 @@ uint8_t PCB_StringView_GetCodepointLength(PCB_StringView sv, size_t index) {
 uint8_t PCB_StringView_GetCodepointLength_unchecked(
     PCB_StringView sv, size_t index
 ) {
-    uint8_t len = PCB__CPLFFC_UTF8((unsigned char)sv.data[index]);
-    if(len == 0 || len >= 254) return 0;
+    uint8_t len = (uint8_t)PCB__CPLFFC_UTF8((unsigned char)sv.data[index]);
+    if(len == 0) return 0;
+#if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
+    if(len >= 7) return 0;
+#else
+    if(len >= 5) return 0;
+#endif
     return len;
 }
 
@@ -7375,10 +7357,24 @@ PCB_Codepoint PCB_StringView_GetCodepoint_unchecked(PCB_StringView sv, size_t in
 #define PCB__CP_ERR(code, bytesToSkip) PCB_CLITERAL(PCB_Codepoint){ code, bytesToSkip }
     const unsigned char* cursor = (const unsigned char*)(sv.data + index);
     const unsigned char* const end = (const unsigned char*)(sv.data + sv.length);
-    uint8_t len = PCB__CPLFFC_UTF8((unsigned char)*cursor);
-    if(len == 0) return PCB__CP_ERR(-1, 1);
-    else if(len == 254) return PCB__CP_ERR(-6, 1);
-    else if(len == 255) return PCB__CP_ERR(-3, 1);
+    unsigned int len = PCB__CPLFFC_UTF8(*cursor);
+    switch(len) {
+      case 0: return PCB__CP_ERR(-1, 1);
+      case 1: break;
+      case 2: //fallthrough
+      case 3: //fallthrough
+      case 4: break;
+      case 5: //fallthrough
+      case 6:
+#if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
+        break;
+#else
+        return PCB__CP_ERR(-3, 1);
+#endif
+      case 7: return PCB__CP_ERR(-3, 1);
+      case 8: return PCB__CP_ERR(-6, 1);
+      default: PCB_Unreachable;
+    }
 
     if((uintptr_t)cursor > (uintptr_t)-1 - len) return PCB__CP_ERR(-18, 0);
 #ifndef PCB_UNICODE_CONFORMANT
