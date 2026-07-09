@@ -930,6 +930,26 @@ static void f(void)
 #endif //compilers
 #endif //PCB_unlikely
 
+/**
+ * @brief "thread" storage class specifier.
+ *
+ * Portable applications MUST check whether `PCB_thread_local` is #defined before use.
+ */
+#ifndef PCB_thread_local
+#ifndef PCB_RTLOAD
+#if (defined(__cplusplus ) && __cplusplus+0 >= 201103L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
+#define PCB_thread_local thread_local
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L
+#define PCB_thread_local _Thread_local
+#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB_thread_local __thread
+#elif PCB_COMPILER_MSVC
+#define PCB_thread_local __declspec(thread)
+#endif //different "thread-local"-ness sources
+#endif //"thread-local"-ness for "plugins" is highly platform-dependent, better to disallow it completely
+#endif //PCB_thread_local
+
 //Get type of expression.
 //Portable applications must check whether `PCB_Typeof` is #defined before use.
 //In C++11+, `PCB_Typeof` expands to `decltype`
@@ -3033,6 +3053,14 @@ typedef enum {
     PCB_BUILDTYPE_EXEC,
     PCB_BUILDTYPE_STATICLIB,
     PCB_BUILDTYPE_DYNAMICLIB,
+    /**
+     * @brief "plugin" in this context means "library loaded at runtime".
+     * Compiler toolchains don't have a notion of building "plugins", so
+     * the specific meaning of this enum value is up to the user.
+     * Otherwise equivalent to `PCB_BUILDTYPE_DYNAMICLIB`.
+     * PCB distinguishes "plugin" and "dynamic library" via the `PCB_RTLOAD` macro.
+     */
+    PCB_BUILDTYPE_PLUGIN = PCB_BUILDTYPE_DYNAMICLIB
 } PCB_BuildType;
 
 typedef struct {
