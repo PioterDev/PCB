@@ -1450,16 +1450,64 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_return_defer(val) PCB_return_defer_var(result, val)
 #endif //PCB_return_defer
 
-//Macro used for ensuring a particular storage type for enums.
-#ifndef PCB_Enum
-#if defined(__cpluslus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
-#define PCB_Enum(name, type) \
+/**
+ * @brief Macro used for ensuring a particular storage type for enums.
+ *
+ * Portable applications MUST check whether `PCB_Enum_Fixed` is #defined before use.
+ */
+#ifndef PCB_Enum_Fixed
+//Natively supported since C++11 and C23.
+#if (defined(__cpluslus) && __cplusplus+0 >= 201103L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
+#define PCB_Enum_Fixed(name, type) \
     enum name : type; typedef enum name name; enum name : type
+//GCC >=15.1.0 supports fixed-width enums in older language versions as an extension.
+//See https://gcc.gnu.org/onlinedocs/gcc-15.1.0/gcc/Enum-Extensions.html.
+#elif PCB_COMPILER_GCC >= 150100
+#ifdef __cplusplus
+//This will complain about using C++11 extensions in C++98.
+//__extension__ for some reason doesn't suppress this. Use `-Wno-c++11-extensions`.
+#define PCB_Enum_Fixed(name, type) enum name : type
+#else
+#define PCB_Enum_Fixed(name, type)  \
+    __extension__ enum name : type; \
+    typedef enum name name;         \
+    __extension__ enum name : type
+#endif //C++
+//Clang >=8.0.0 also seems to support this extension.
+//See https://reviews.llvm.org/D52339.
+#elif PCB_COMPILER_CLANG >= 80000
+#if defined(__has_extension) && __has_extension(cxx_fixed_enum)+0
+#define PCB_Enum_Fixed(name, type)  \
+    __extension__ enum name : type; \
+    typedef enum name name;         \
+    __extension__ enum name : type
+#endif //behind extension flag
+#endif //(C++11+ || C23+) || GCC >= 15.1.0 || Clang >= 8.0.0
+#endif //PCB_Enum_Fixed
+
+/**
+ * @brief Macro used for setting a particular storage type for enums.
+ *
+ * Important! In C below C23, enumeration constants cannot portably
+ * have values that aren't representable as `int`. If you want portability,
+ * you cannot define any enumeration constant greater than 32767 because `int`
+ * is, at worst, 15 bits wide, excluding the sign bit.
+ * To define values above that you MUST use macros or use `const` variables.
+ * Neither will tell you that you're missing something in a switch statement.
+ *
+ * If you want a hard guarantee for enum storage, use `PCB_Enum_Fixed`.
+ * Do note that it is not portable.
+ */
+#ifndef PCB_Enum
+#ifdef PCB_Enum_Fixed
+#define PCB_Enum(name, type) PCB_Enum_Fixed(name, type)
 #else
 #define PCB_Enum(name, type) \
     typedef type name; enum
 #endif
 #endif //PCB_Enum
+
 
 //Section 1.7.2: template<*> struct vector in C let's goooo
 
