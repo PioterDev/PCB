@@ -8645,13 +8645,13 @@ size_t PCB_Arena_allocated(PCB_Arena* arena) {
 }
 
 size_t PCB_Arena_allocatable(PCB_Arena* arena) {
-    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_CHECK_SELF(arena, 0);
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     return (a->capacity - a->length) * sizeof(void*);
 }
 
 size_t PCB_Arena_capacity(PCB_Arena* arena) {
-    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_CHECK_SELF(arena, 0);
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     return a->capacity * sizeof(void*);
 }
@@ -8669,7 +8669,7 @@ size_t PCB_Arena_allocated_all(PCB_Arena* arena) {
 }
 
 size_t PCB_Arena_allocatable_all(PCB_Arena* arena) {
-    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_CHECK_SELF(arena, 0);
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     size_t allocatable = 0;
     do {
@@ -8680,7 +8680,7 @@ size_t PCB_Arena_allocatable_all(PCB_Arena* arena) {
 }
 
 size_t PCB_Arena_capacity_all(PCB_Arena* arena) {
-    PCB_CHECK_SELF(arena, (size_t)-1);
+    PCB_CHECK_SELF(arena, 0);
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     size_t capacity = 0;
     do {
