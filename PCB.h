@@ -144,66 +144,139 @@ extern "C" {
 
 //https://sourceforge.net/p/predef/wiki/OperatingSystems/
 #ifndef PCB_PLATFORM
-#if defined(_WIN32) || defined(WIN32) || defined(__WIN32__) || defined(__NT__)
+#if defined(_WIN32) || defined(WIN32) || defined(__WIN32__) || defined(__NT__) || \
+    defined(_WIN64) || defined(__WIN32__) || defined(__TOS_WIN__) || \
+    defined(__WINDOWS__)
 #define PCB_PLATFORM_WINDOWS 1
-#define PCB_PLATFORM_LINUX 0
-#define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM_MACOS 0
-#define PCB_PLATFORM_IOS 0
-#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "Windows"
 #elif defined(__linux__)
-#define PCB_PLATFORM_WINDOWS 0
+#ifdef __ANDROID__
+#define PCB_PLATFORM_ANDROID 1
+#define PCB_PLATFORM "Android"
+#else
 #define PCB_PLATFORM_LINUX 1
-#define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM_MACOS 0
-#define PCB_PLATFORM_IOS 0
-#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "Linux"
+#endif //Android cannot be considered Linux because the kernel is different
+#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+#define PCB_PLATFORM_FREEBSD 1
+#define PCB_PLATFORM "FreeBSD"
+#elif defined(__NetBSD__)
+#define PCB_PLATFORM_NETBSD 1
+#define PCB_PLATFORM "NetBSD"
+#elif defined(__OpenBSD__)
+#define PCB_PLATFORM_OPENBSD 1
+#define PCB_PLATFORM "OpenBSD"
+#elif defined(__DragonFly__)
+#define PCB_PLATFORM_DRAGONFLY 1
+#define PCB_PLATFORM "DragonFly BSD"
 #elif defined(__APPLE__)
 #include <TargetConditionals.h>
 #if TARGET_OS_IOS
-#define PCB_PLATFORM_WINDOWS 0
-#define PCB_PLATFORM_LINUX 0
-#define PCB_PLATFORM_BSD 0
 #define PCB_PLATFORM_IOS 1
-#define PCB_PLATFORM_MACOS 0
-#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "iOS"
 #elif TARGET_OS_MAC
-#define PCB_PLATFORM_WINDOWS 0
-#define PCB_PLATFORM_LINUX 0
-#define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM_IOS 0
 #define PCB_PLATFORM_MACOS 1
-#define PCB_PLATFORM_WASM 0
 #define PCB_PLATFORM "Mac OS"
 #else
-#error PCB Error: Unsupported Apple platform
+#define PCB_PLATFORM "Unidentified (Bad) Apple"
 #endif //Apple platforms
+#elif defined(__sun) || defined(sun)
+#if defined(__SVR4) || defined(__svr4__)
+#define PCB_PLATFORM_SOLARIS 1
+#define PCB_PLATFORM "Solaris"
+#else
+#define PCB_PLATFORM_SUNOS 1
+#define PCB_PLATFORM "SunOS"
+#endif //Solaris || SunOS
+#define PCB_PLATFORM_SUN 1
+#elif defined(VMS) || defined(__VMS)
+#define PCB_PLATFORM_VMS 1
+#define PCB_PLATFORM "OpenVMS"
+#elif defined(_hpux) || defined(hpux) || defined(__hpux)
+#define PCB_PLATFORM_HPUX 1
+#define PCB_PLATFORM "HP-UX"
+#elif defined(_AIX) || defined(__TOS_AIX__)
+#define PCB_PLATFORM_AIX 1
+#define PCB_PLATFORM "IBM AIX"
+#elif defined(MSDOS) || defined(__MSDOS__) || defined(_MSDOS) || defined(__DOS__)
+#define PCB_PLATFORM_DOS 1
+#define PCB_PLATFORM "MS-DOS"
 #elif defined(__wasm__)
-#define PCB_PLATFORM_WINDOWS 0
-#define PCB_PLATFORM_LINUX 0
-#define PCB_PLATFORM_BSD 0
-#define PCB_PLATFORM_IOS 0
-#define PCB_PLATFORM_MACOS 0
 #define PCB_PLATFORM_WASM 1
 #define PCB_PLATFORM "WebAssembly"
-#error PCB Error: WebAssembly target is currently not supported
 #else
-#error PCB Error: Unsupported platform
-#define PCB_PLATFORM "Unknown"
+#define PCB_PLATFORM_BARE 1
+#define PCB_PLATFORM "Bare metal"
 #endif //platform
+
+#ifndef PCB_PLATFORM_WINDOWS
+#define PCB_PLATFORM_WINDOWS 0
+#endif //PCB_PLATFORM_WINDOWS
+#ifndef PCB_PLATFORM_LINUX
+#define PCB_PLATFORM_LINUX 0
+#endif //PCB_PLATFORM_LINUX
+#ifndef PCB_PLATFORM_ANDROID
+#define PCB_PLATFORM_ANDROID 0
+#endif //PCB_PLATFORM_ANDROID
+#ifndef PCB_PLATFORM_FREEBSD
+#define PCB_PLATFORM_FREEBSD 0
+#endif //PCB_PLATFORM_FREEBSD
+#ifndef PCB_PLATFORM_NETBSD
+#define PCB_PLATFORM_NETBSD 0
+#endif //PCB_PLATFORM_NETBSD
+#ifndef PCB_PLATFORM_OPENBSD
+#define PCB_PLATFORM_OPENBSD 0
+#endif //PCB_PLATFORM_OPENBSD
+#ifndef PCB_PLATFORM_DRAGONFLY
+#define PCB_PLATFORM_DRAGONFLY 0
+#endif //PCB_PLATFORM_DRAGONFLY
+#ifndef PCB_PLATFORM_IOS
+#define PCB_PLATFORM_IOS 0
+#endif //PCB_PLATFORM_IOS
+#ifndef PCB_PLATFORM_MACOS
+#define PCB_PLATFORM_MACOS 0
+#endif //PCB_PLATFORM_MACOS
+#ifndef PCB_PLATFORM_SOLARIS
+#define PCB_PLATFORM_SOLARIS 0
+#endif //PCB_PLATFORM_SOLARIS
+#ifndef PCB_PLATFORM_SUNOS
+#define PCB_PLATFORM_SUNOS 0
+#endif //PCB_PLATFORM_SUNOS
+#ifndef PCB_PLATFORM_SUN
+#define PCB_PLATFORM_SUN 0
+#endif //PCB_PLATFORM_SUN
+#ifndef PCB_PLATFORM_VMS
+#define PCB_PLATFORM_VMS 0
+#endif //PCB_PLATFORM_VMS
+#ifndef PCB_PLATFORM_HPUX
+#define PCB_PLATFORM_HPUX 0
+#endif //PCB_PLATFORM_HPUX
+#ifndef PCB_PLATFORM_AIX
+#define PCB_PLATFORM_AIX 0
+#endif //PCB_PLATFORM_AIX
+#ifndef PCB_PLATFORM_DOS
+#define PCB_PLATFORM_DOS 0
+#endif //PCB_PLATFORM_DOS
+#ifndef PCB_PLATFORM_WASM
+#define PCB_PLATFORM_WASM 0
+#endif //PCB_PLATFORM_WASM
+#ifndef PCB_PLATFORM_BARE
+#define PCB_PLATFORM_BARE 0
+#endif //PCB_PLATFORM_BARE
 #endif //PCB_PLATFORM
 
 //This macro is used for certain #include's of system headers
 //and some function implementations.
-//POSIX-compliant platforms can safely share implementations.
+//Platforms implementing a reasonable subset of POSIX can safely share implementations.
 //Other platforms require dedicated implementations (*ekhem* Windows...).
 #ifndef PCB_PLATFORM_POSIX
 #if PCB_PLATFORM_WINDOWS
 #define PCB_PLATFORM_POSIX 0
-#elif PCB_PLATFORM_LINUX || PCB_PLATFORM_BSD || PCB_PLATFORM_MACOS || PCB_PLATFORM_IOS
+#elif PCB_PLATFORM_LINUX || PCB_PLATFORM_ANDROID || \
+      PCB_PLATFORM_FREEBSD || PCB_PLATFORM_NETBSD || \
+      PCB_PLATFORM_OPENBSD || PCB_PLATFORM_DRAGONFLY || \
+      PCB_PLATFORM_MACOS || PCB_PLATFORM_IOS || \
+      PCB_PLATFORM_SOLARIS || PCB_PLATFORM_HPUX || PCB_PLATFORM_AIX
 #define PCB_PLATFORM_POSIX 1
 #else
 #define PCB_PLATFORM_POSIX 0
@@ -221,6 +294,15 @@ extern "C" {
 #endif //only #define if no feature test macro is #defined
 #endif //Use _GNU_SOURCE on Linux
 #endif //POSIX sources used locally
+
+//BSD variants/systems based on BSD implement similar APIs and
+//can also share certain implementations that are separate from POSIX.
+#if PCB_PLATFORM_FREEBSD || PCB_PLATFORM_NETBSD || \
+    PCB_PLATFORM_OPENBSD || PCB_PLATFORM_DRAGONFLY || \
+    PCB_PLATFORM_MACOS || PCB_PLATFORM_IOS || \
+    PCB_PLATFORM_SOLARIS
+#define PCB_PLATFORM_BSD 1
+#endif //PCB_PLATFORM_BSD
 
 
 
