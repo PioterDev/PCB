@@ -4976,6 +4976,86 @@ PCBAPI char* PCBCALL PCB_Arena_strndup(
     size_t n
 ) PCB_Nonnull_Arg(1, 2);
 
+/**
+ * @brief Get a reference to the temporary storage.
+ * The internal reference count is not incremented.
+ *
+ * You are allowed to do anything you want with this arena, except disabling
+ * allocation metadata. If you do so anyway, certain library functions
+ * using the temporary allocator will fail or cause undefined behavior.
+ */
+PCBAPI PCB_Arena* PCBCALL PCB_temp_get(void);
+#ifndef PCB_ARENA_TRACE_LOC
+//See PCB_Arena_alloc.
+PCBAPI void* PCBCALL PCB_temp_alloc(size_t size);
+//See PCB_Arena_zalloc.
+PCBAPI void* PCBCALL PCB_temp_zalloc(size_t size);
+//See PCB_Arena_aligned_alloc.
+PCBAPI void* PCBCALL PCB_temp_aligned_alloc(size_t size, size_t alignment);
+//See PCB_Arena_aligned_zalloc.
+PCBAPI void* PCBCALL PCB_temp_aligned_zalloc(size_t size, size_t alignment);
+#else
+PCBAPI void* PCBCALL PCB_temp_alloc_loc(
+    size_t size, const char* file, int line, const char* func
+) PCB_Nonnull_Arg(2, 4);
+PCBAPI void* PCBCALL PCB_temp_zalloc_loc(
+    size_t size, const char* file, int line, const char* func
+) PCB_Nonnull_Arg(2, 4);
+PCBAPI void* PCBCALL PCB_temp_aligned_alloc_loc(
+    size_t size, size_t alignment, const char* file, int line, const char* func
+) PCB_Nonnull_Arg(3, 5);
+PCBAPI void* PCBCALL PCB_temp_aligned_zalloc_loc(
+    size_t size, size_t alignment, const char* file, int line, const char* func
+) PCB_Nonnull_Arg(3, 5);
+#define PCB_temp_alloc(arena, size) \
+    PCB_temp_alloc_loc(arena, size, __FILE__, __LINE__, __func__)
+#define PCB_temp_zalloc(arena, size) \
+    PCB_temp_zalloc_loc(arena, size, __FILE__, __LINE__, __func__)
+#define PCB_temp_aligned_alloc(arena, size, alignment) \
+    PCB_temp_aligned_alloc_loc(arena, size, alignment, __FILE__, __LINE__, __func__)
+#define PCB_temp_aligned_zalloc(arena, size, alignment) \
+    PCB_temp_aligned_zalloc_loc(arena, size, alignment, __FILE__, __LINE__, __func__)
+#endif //PCB_ARENA_TRACE_LOC
+//See PCB_Arena_allocated_all.
+PCBAPI size_t PCBCALL PCB_temp_allocated(void);
+//See PCB_Arena_allocatable_all.
+PCBAPI size_t PCBCALL PCB_temp_allocatable(void);
+//See PCB_Arena_capacity_all.
+PCBAPI size_t PCBCALL PCB_temp_capacity(void);
+//See PCB_Arena_mark.
+PCBAPI PCB_Arena_Mark* PCBCALL PCB_temp_mark(void);
+//See PCB_Arena_restore.
+PCBAPI bool PCBCALL PCB_temp_restore(PCB_Arena_Mark* mark) PCB_Nonnull_Arg(1);
+//See PCB_Arena_restore_to.
+PCBAPI bool PCBCALL PCB_temp_restore_to(PCB_Arena_Mark* mark) PCB_Nonnull_Arg(1);
+//See PCB_Arena_scope.
+#define PCB_temp_scope(arena)                               \
+for(                                                        \
+    PCB_Arena_Mark* PCB_MANGLE(m) = PCB_temp_mark();        \
+    PCB_MANGLE(m) != NULL;                                  \
+    PCB_temp_restore(PCB_MANGLE(m)), PCB_MANGLE(m) = NULL   \
+)
+#define PCB_temp_scope_leave PCB_Arena_scope_leave
+//See PCB_Arena_free.
+PCBAPI void PCBCALL PCB_temp_free(void* ptr);
+//See PCB_Arena_realloc.
+PCBAPI void* PCBCALL PCB_temp_realloc(void* ptr, size_t size);
+//See PCB_Arena_reset.
+PCBAPI void PCBCALL PCB_temp_reset(void);
+//See PCB_Arena_asprintf.
+PCBAPI char* PCBCALL PCB_temp_asprintf(
+    const char* fmt, ...
+) PCB_Printf_Format(1, 2) PCB_Nonnull_Arg(1);
+//See PCB_Arena_vasprintf.
+PCBAPI char* PCBCALL PCB_temp_vasprintf(
+    const char* fmt, va_list args
+) PCB_Printf_Format(1, 0) PCB_Nonnull_Arg(1);
+//See PCB_Arena_strdup.
+PCBAPI char* PCBCALL PCB_temp_strdup(const char* str) PCB_Nonnull_Arg(1);
+//See PCB_Arena_strndup.
+PCBAPI char* PCBCALL PCB_temp_strndup(const char* str, size_t n) PCB_Nonnull_Arg(1);
+
+
 
 /**
  * @brief Get the number of cores in the system.
@@ -9120,6 +9200,129 @@ char* PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n) {
     return text;
 }
 
+#ifdef PCB_thread_local
+static PCB_thread_local PCB_Arena* PCB__temp_arena = NULL;
+#endif //TLS available?
+
+PCB_Arena* PCB_temp_get(void) {
+#ifdef PCB_thread_local
+    PCB_Arena* a = PCB__temp_arena;
+    if(a == NULL) {
+        a = PCB_Arena_init_ex(
+#ifdef PCB_TEMP_INITIAL_CAPACITY
+            PCB_TEMP_INITIAL_CAPACITY,
+#else
+            (size_t)1 << 21, //2MiB
+#endif //PCB_TEMP_INITIAL_CAPACITY?
+            PCB_ARENA_FLAG_ALLOC_META | PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY
+        );
+        if(a == NULL) {
+            //This doesn't break strict aliasing rules.
+            const uintptr_t ONE = 1;
+            PCB_memcpy(&PCB__temp_arena, &ONE, sizeof(ONE));
+            return NULL;
+        }
+        PCB__temp_arena = a;
+        return a;
+    }
+    else if ((uintptr_t)a == (uintptr_t)1) return NULL;
+    else return a;
+#else
+    return NULL;
+#endif //TLS available?
+}
+
+#ifndef PCB_ARENA_TRACE_LOC
+void* PCB_temp_alloc(size_t size) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_alloc(a, size);
+}
+void* PCB_temp_zalloc(size_t size) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_zalloc(a, size);
+}
+void* PCB_temp_aligned_alloc(size_t size, size_t alignment) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_aligned_alloc(a, size, alignment);
+}
+void* PCB_temp_aligned_zalloc(size_t size, size_t alignment) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_aligned_zalloc(a, size, alignment);
+}
+#else
+void* PCB_temp_alloc_loc(size_t size, const char* file, int line, const char* func) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_alloc_loc(a, size, file, line, func);
+}
+void* PCB_temp_zalloc_loc(size_t size, const char* file, int line, const char* func) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_zalloc_loc(a, size, file, line, func);
+}
+void* PCB_temp_aligned_alloc_loc(size_t size, size_t alignment, const char* file, int line, const char* func) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_aligned_alloc_loc(a, size, alignment, file, line, func);
+}
+void* PCB_temp_aligned_zalloc_loc(size_t size, size_t alignment, const char* file, int line, const char* func) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_aligned_zalloc_loc(a, size, alignment, file, line, func);
+}
+#endif //PCB_ARENA_TRACE_LOC
+size_t PCB_temp_allocated(void) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return (size_t)-1;
+    return PCB_Arena_allocated_all(a);
+}
+size_t PCB_temp_allocatable(void) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return 0;
+    return PCB_Arena_allocatable_all(a);
+}
+size_t PCB_temp_capacity(void) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return 0;
+    return PCB_Arena_capacity_all(a);
+}
+PCB_Arena_Mark* PCB_temp_mark(void) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_mark(a);
+}
+bool PCB_temp_restore(PCB_Arena_Mark* mark) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return false;
+    return PCB_Arena_restore(a, mark);
+}
+bool PCB_temp_restore_to(PCB_Arena_Mark* mark) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return false;
+    return PCB_Arena_restore_to(a, mark);
+}
+void PCB_temp_free(void* ptr) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return;
+    PCB_Arena_free(a, ptr);
+}
+void* PCB_temp_realloc(void* ptr, size_t size) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_realloc(a, ptr, size);
+}
+void PCB_temp_reset(void) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return;
+    PCB_Arena_reset(a);
+}
+char* PCB_temp_asprintf(const char* fmt, ...) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    va_list args;
+    va_start(args, fmt);
+    char* str = PCB_Arena_vasprintf(a, fmt, args);
+    va_end(args);
+    return str;
+}
+char* PCB_temp_vasprintf(const char* fmt, va_list args) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_vasprintf(a, fmt, args);
+}
+char* PCB_temp_strdup(const char* str) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_strdup(a, str);
+}
+char* PCB_temp_strndup(const char* str, size_t n) {
+    PCB_Arena* a = PCB_temp_get(); if(a == NULL) return NULL;
+    return PCB_Arena_strndup(a, str, n);
+}
 #undef PCB__Arena_forEach_node
 #endif //PCB_IMPLEMENTATION_ARENA
 
