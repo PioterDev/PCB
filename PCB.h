@@ -5518,10 +5518,6 @@ void PCB__assert_fail(
 PCB_Aeqa PCB_check_aeqa(PCB_File f) {
     if(!PCB_File_isValid(f)) return PCB_AEQA_BAD_HANDLE;
 #if PCB_PLATFORM_WINDOWS
-    //As of 2025-02-15, Wine doesn't support virtual terminal processing.
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (ntdll != NULL && GetProcAddress(ntdll, "wine_get_version") != NULL)
-        return PCB_AEQA_NO;
     DWORD dw = GetFileType(f.handle);
     if(dw != FILE_TYPE_CHAR) { //TODO: similar checks as in POSIX version
         return PCB_AEQA_NO;
