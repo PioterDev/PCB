@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 12
+#define PCB_VERSION_PATCH 13
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5856,10 +5856,14 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
     struct stat fileinfo = PCB_ZEROED;
     if(stat(path, &fileinfo) == -1) return (uint64_t)(errno == ENOENT);
     uint64_t modTime;
-#ifdef __STRICT_ANSI__
-    modTime = (uint64_t)fileinfo.st_ctime       * 1000000000; //forward compat
-#else
+#if defined(__GLIBC__) && __GLIBC__+0 >= 2 && __GLIBC_MINOR__+0 >= 12 && ( \
+    (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200809L) || \
+    (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE+0 >= 700) || \
+    (__GLIBC_MINOR__+0 <= 19 && (defined(_BSD_SOURCE) || defined(_SVID_SOURCE))) \
+)
     modTime = (uint64_t)fileinfo.st_ctim.tv_sec * 1000000000 + (uint64_t)fileinfo.st_ctim.tv_nsec;
+#else
+    modTime = (uint64_t)fileinfo.st_ctime       * 1000000000;
 #endif //pesky, but useful GNU extensions
     return modTime;
 #endif //platform
