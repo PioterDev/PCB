@@ -1032,6 +1032,10 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 //These should be universally available on every single platform in
 //a conforming C99+ implementation.
 #include <stdarg.h>
+#if (defined(__cplusplus) && __cplusplus+0 >= 201103L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 199901L)
+#define PCB_HAS_VA_COPY
+#endif //PCB_HAS_VA_COPY
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -9150,6 +9154,7 @@ char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
     return str;
 }
 
+#ifdef PCB_HAS_VA_COPY
 char* PCB_Arena_vasprintf(PCB_Arena* arena, const char* fmt, va_list ap) {
     PCB_CHECK_SELF(arena, NULL);
     PCB_CHECK_NULL(fmt, NULL);
@@ -9167,6 +9172,12 @@ char* PCB_Arena_vasprintf(PCB_Arena* arena, const char* fmt, va_list ap) {
     va_end(args);
     return text;
 }
+#else
+char* PCB_Arena_vasprintf(PCB_Arena* arena, const char* fmt, va_list ap) {
+    (void)arena; (void)fmt; (void)ap;
+    return NULL;
+}
+#endif //PCB_HAS_VA_COPY?
 #else
 char* PCB_Arena_asprintf(PCB_Arena* arena, const char* fmt, ...) {
     (void)arena; (void)fmt;
