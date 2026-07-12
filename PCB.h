@@ -1022,7 +1022,7 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 #endif //PCB_USE_LIBC
 
 //TODO: only #include things that are actually required
-#if defined(PCB_USE_LIBC) && PCB_USE_LIBC+0
+#if defined(PCB_USE_LIBC) && PCB_USE_LIBC+0 && __STDC_HOSTED__ == 1
 //for "_s" functions
 #ifndef __STDC_WANT_LIB_EXT1__
 #define __STDC_WANT_LIB_EXT1__ 1
