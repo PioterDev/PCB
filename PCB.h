@@ -30,7 +30,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 11
+#define PCB_VERSION_PATCH 12
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -2962,51 +2962,50 @@ typedef struct {
 typedef struct PCB_Arena PCB_Arena;
 typedef struct PCB_Arena_Mark PCB_Arena_Mark;
 
-PCB_Enum(PCB_Arena_Flags, uint32_t) {
-    /**
-     * @brief Store additional metadata before each allocation.
-     *
-     * Normally, when freeing, only the last allocation within a node can be
-     * actually deallocated.
-     *
-     * Suppose A() allocates on the arena and calls B().
-     * B() then allocates on the arena and calls C().
-     * C() also allocates on the arena, frees what it allocated and returns.
-     * B() then frees its allocation and returns.
-     * A() then frees its allocation.
-     *
-     * When this flag is not set, memory allocated in A and B will not be deallocated.
-     * This is because the arena only tracks the last allocation.
-     *
-     * With this flag enabled, memory allocated in A and B will become deallocatable
-     * with such allocation pattern, thanks to additional metadata for
-     * each allocation.
-     *
-     * This only works with individual allocations in strict LIFO order.
-     * If you can't ensure this, it is recommended to use `mark`/`restore`
-     * functionality of `PCB_Arena_Mark` instead.
-     *
-     * In conjuction with the above, the additional metadata enables
-     * realloc, which fail without it.
-     *
-     * This flag can only be changed when the arena is empty. Otherwise,
-     * if cleared, subsequent frees/mark restores will leak memory;
-     * if set, frees/mark restores will go OOB and trigger UB.
-     */
-    PCB_ARENA_FLAG_ALLOC_META = 1 << 0,
-    /**
-     * @brief Log a warning when arena is being destroyed while not being empty.
-     *
-     * When combined with `PCB_ARENA_FLAG_ALLOC_META`, additional logs are made
-     * for each allocation. If the library was compiled and is used with
-     * `PCB_ARENA_TRACE_LOC`, these logs include the location in source code
-     * for where each allocation was made.
-     *
-     * You can set a breakpoint on `PCB__Arena_diagnose_ned` to see the callstack
-     * for non-empty destruction of arenas configured with this flag.
-     */
-    PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY = 1 << 1
-};
+typedef uint32_t PCB_Arena_Flags;
+/**
+ * @brief Store additional metadata before each allocation.
+ *
+ * Normally, when freeing, only the last allocation within a node can be
+ * actually deallocated.
+ *
+ * Suppose A() allocates on the arena and calls B().
+ * B() then allocates on the arena and calls C().
+ * C() also allocates on the arena, frees what it allocated and returns.
+ * B() then frees its allocation and returns.
+ * A() then frees its allocation.
+ *
+ * When this flag is not set, memory allocated in A and B will not be deallocated.
+ * This is because the arena only tracks the last allocation.
+ *
+ * With this flag enabled, memory allocated in A and B will become deallocatable
+ * with such allocation pattern, thanks to additional metadata for
+ * each allocation.
+ *
+ * This only works with individual allocations in strict LIFO order.
+ * If you can't ensure this, it is recommended to use `mark`/`restore`
+ * functionality of `PCB_Arena_Mark` instead.
+ *
+ * In conjuction with the above, the additional metadata enables
+ * realloc, which fail without it.
+ *
+ * This flag can only be changed when the arena is empty. Otherwise,
+ * if cleared, subsequent frees/mark restores will leak memory;
+ * if set, frees/mark restores will go OOB and trigger UB.
+ */
+#define PCB_ARENA_FLAG_ALLOC_META (1 << 0)
+/**
+ * @brief Log a warning when arena is being destroyed while not being empty.
+ *
+ * When combined with `PCB_ARENA_FLAG_ALLOC_META`, additional logs are made
+ * for each allocation. If the library was compiled and is used with
+ * `PCB_ARENA_TRACE_LOC`, these logs include the location in source code
+ * for where each allocation was made.
+ *
+ * You can set a breakpoint on `PCB__Arena_diagnose_ned` to see the callstack
+ * for non-empty destruction of arenas configured with this flag.
+ */
+#define PCB_ARENA_FLAG_WARN_NONEMPTY_ON_DESTROY (1 << 1)
 
 typedef struct {
     size_t size; //of the allocation
