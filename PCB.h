@@ -4352,12 +4352,14 @@ PCBAPI bool    PCBCALL PCB_WString_append_cstr(PCB_WString* PCB_restrict str, co
 PCBAPI PCB_ssize_t PCBCALL PCB_WString_append_cstrs(PCB_WString* PCB_restrict str, PCB_WCStringsView cstrs) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_WString_append_cstr_v(PCB_WString* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_WString_append_chars(PCB_WString* PCB_restrict str, const wchar_t c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
+PCBAPI bool PCBCALL PCB_WString_append_codepoint(PCB_WString* PCB_restrict str, uint32_t codepoint) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_insert(PCB_WString* PCB_maybe_restrict str, const PCB_WString* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool PCBCALL PCB_WString_insert_sv(PCB_WString* PCB_restrict str, PCB_WStringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_insert_cstr(PCB_WString* PCB_restrict str, const wchar_t* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_ssize_t PCBCALL PCB_WString_insert_cstrs(PCB_WString* PCB_restrict str, PCB_WCStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_WString_insert_cstr_v(PCB_WString* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool PCBCALL PCB_WString_insert_chars(PCB_WString* PCB_restrict str, const wchar_t c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI bool PCBCALL PCB_WString_insert_codepoint(PCB_WString* PCB_restrict str, uint32_t codepoint, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_replace_range(PCB_WString* PCB_restrict str, size_t start, size_t length, PCB_WStringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_replace_range_chars(PCB_WString* PCB_restrict str, size_t start, size_t length, const wchar_t c) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_remove_range(PCB_WString* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
@@ -4368,6 +4370,10 @@ PCBAPI bool PCBCALL PCB_WString_eq(const PCB_WString* a, const PCB_WString* b) P
 PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+//See `PCB_U(16|32)String_GetCodepoint`.
+PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint(PCB_WStringView sv, size_t index);
+//See `PCB_U(16|32)String_GetCodepoint_unchecked`.
+PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint_unchecked(PCB_WStringView sv, size_t index);
 PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_cstr(const wchar_t* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_parts(const wchar_t* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
 //----------------------------------------------------------------------------
@@ -4381,12 +4387,14 @@ PCBAPI bool    PCBCALL PCB_U8String_append_cstr(PCB_U8String* PCB_restrict str, 
 PCBAPI PCB_ssize_t PCBCALL PCB_U8String_append_cstrs(PCB_U8String* PCB_restrict str, PCB_U8CStringsView cstrs) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_U8String_append_cstr_v(PCB_U8String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U8String_append_chars(PCB_U8String* PCB_restrict str, const PCB_char8 c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U8String_append_codepoint(PCB_U8String* PCB_restrict str, uint32_t codepoint) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_insert(PCB_U8String* PCB_maybe_restrict str, const PCB_U8String* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U8String_insert_sv(PCB_U8String* PCB_restrict str, PCB_U8StringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_insert_cstr(PCB_U8String* PCB_restrict str, const PCB_char8* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_ssize_t PCBCALL PCB_U8String_insert_cstrs(PCB_U8String* PCB_restrict str, PCB_U8CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_U8String_insert_cstr_v(PCB_U8String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U8String_insert_chars(PCB_U8String* PCB_restrict str, const PCB_char8 c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U8String_insert_codepoint(PCB_U8String* PCB_restrict str, uint32_t codepoint, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_replace_range(PCB_U8String* PCB_restrict str, size_t start, size_t length, PCB_U8StringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_replace_range_chars(PCB_U8String* PCB_restrict str, size_t start, size_t length, const PCB_char8 c) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_remove_range(PCB_U8String* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
@@ -4397,6 +4405,10 @@ PCBAPI bool    PCBCALL PCB_U8String_eq(const PCB_U8String* a, const PCB_U8String
 PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+//See `PCB_String_GetCodepoint`.
+PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint(PCB_U8StringView sv, size_t index);
+//See `PCB_String_GetCodepoint_unchecked`.
+PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint_unchecked(PCB_U8StringView sv, size_t index);
 PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_cstr(const PCB_char8* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_parts(const PCB_char8* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
 //----------------------------------------------------------------------------
@@ -4410,12 +4422,14 @@ PCBAPI bool    PCBCALL PCB_U16String_append_cstr(PCB_U16String* PCB_restrict str
 PCBAPI PCB_ssize_t PCBCALL PCB_U16String_append_cstrs(PCB_U16String* PCB_restrict str, PCB_U16CStringsView cstrs) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_U16String_append_cstr_v(PCB_U16String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U16String_append_chars(PCB_U16String* PCB_restrict str, const PCB_char16 c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U16String_append_codepoint(PCB_U16String* PCB_restrict str, uint32_t codepoint) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_insert(PCB_U16String* PCB_maybe_restrict str, const PCB_U16String* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U16String_insert_sv(PCB_U16String* PCB_restrict str, PCB_U16StringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_insert_cstr(PCB_U16String* PCB_restrict str, const PCB_char16* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_ssize_t PCBCALL PCB_U16String_insert_cstrs(PCB_U16String* PCB_restrict str, PCB_U16CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_U16String_insert_cstr_v(PCB_U16String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U16String_insert_chars(PCB_U16String* PCB_restrict str, const PCB_char16 c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U16String_insert_codepoint(PCB_U16String* PCB_restrict str, uint32_t codepoint, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_replace_range(PCB_U16String* PCB_restrict str, size_t start, size_t length, PCB_U16StringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_replace_range_chars(PCB_U16String* PCB_restrict str, size_t start, size_t length, const PCB_char16 c) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_remove_range(PCB_U16String* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
@@ -4426,6 +4440,37 @@ PCBAPI bool    PCBCALL PCB_U16String_eq(const PCB_U16String* a, const PCB_U16Str
 PCBAPI PCB_char16 PCBCALL PCB_U16String_pop(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, size_t howMany, PCB_char16* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+/**
+ * @brief Get the Unicode codepoint in `sv` from character at index `index`.
+ * @return `PCB_Codepoint` structure with:
+ * - `code` field in range [0, 0x10FFFF] on success,
+ *   -1  if `sv.data[index]` is a low surrogate,
+ *   -2  if the sequence is unfinished,
+ *   -3  if `sv.data[index]`   is     a high surrogate,
+ *      but `sv.data[index+1]` is not a low surrogate,
+ *   -16 if `sv` is empty,
+ *   -17 if `index` goes out of bounds,
+ *   -18 if `sv.data + sv.length` or `sv.data + index + <decoded UTF-16 length>`
+ *   would cause a pointer arithmetic overflow;
+ * - `length` field describing how many characters to skip until the next codepoint
+ *   or 0 if `code <= -16` (on an error unrelated to UTF-16 decoding).
+ */
+PCBAPI PCB_Codepoint PCBCALL PCB_U16StringView_GetCodepoint(
+    PCB_U16StringView sv,
+    size_t index
+);
+/**
+ * @brief Get the Unicode codepoint in `sv` from character at index `index`.
+ *
+ * This function is unsafe; only use it when absolutely certain that `sv` and `index`
+ * are correct. Otherwise the behavior is undefined. You've been warned.
+ * @return same as `PCB_U16StringView_GetCodepoint`, except the `length` field
+ * is never 0.
+ */
+PCBAPI PCB_Codepoint PCBCALL PCB_U16StringView_GetCodepoint_unchecked(
+    PCB_U16StringView sv,
+    size_t index
+);
 PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_cstr(const PCB_char16* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_parts(const PCB_char16* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
 //----------------------------------------------------------------------------
@@ -4439,12 +4484,14 @@ PCBAPI bool    PCBCALL PCB_U32String_append_cstr(PCB_U32String* PCB_restrict str
 PCBAPI PCB_ssize_t PCBCALL PCB_U32String_append_cstrs(PCB_U32String* PCB_restrict str, PCB_U32CStringsView cstrs) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_U32String_append_cstr_v(PCB_U32String* PCB_restrict str, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U32String_append_chars(PCB_U32String* PCB_restrict str, const PCB_char32 c, const size_t howManyTimes) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U32String_append_codepoint(PCB_U32String* PCB_restrict str, uint32_t codepoint) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_insert(PCB_U32String* PCB_maybe_restrict str, const PCB_U32String* PCB_maybe_restrict other, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI bool    PCBCALL PCB_U32String_insert_sv(PCB_U32String* PCB_restrict str, PCB_U32StringView sv, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_insert_cstr(PCB_U32String* PCB_restrict str, const PCB_char32* PCB_maybe_restrict cstr, size_t position) PCB_Nonnull_Arg(1, 2);
 PCBAPI PCB_ssize_t PCBCALL PCB_U32String_insert_cstrs(PCB_U32String* PCB_restrict str, PCB_U32CStringsView cstrs, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI PCB_ssize_t PCBCALL PCB_U32String_insert_cstr_v(PCB_U32String* PCB_restrict str, size_t position, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI bool    PCBCALL PCB_U32String_insert_chars(PCB_U32String* PCB_restrict str, const PCB_char32 c, size_t howManyTimes, size_t position) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U32String_insert_codepoint(PCB_U32String* PCB_restrict str, uint32_t codepoint, size_t position) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_replace_range(PCB_U32String* PCB_restrict str, size_t start, size_t length, PCB_U32StringView other) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_replace_range_chars(PCB_U32String* PCB_restrict str, size_t start, size_t length, const PCB_char32 c) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_remove_range(PCB_U32String* PCB_restrict str, size_t start, size_t length) PCB_Nonnull_Arg(1);
@@ -4455,6 +4502,9 @@ PCBAPI bool    PCBCALL PCB_U32String_eq(const PCB_U32String* a, const PCB_U32Str
 PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+//Provided for API consistency.
+PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint(PCB_U32StringView sv, size_t index);
+PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint_unchecked(PCB_U32StringView sv, size_t index);
 PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_cstr(const PCB_char32* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_parts(const PCB_char32* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
 //----------------------------------------------------------------------------
@@ -4484,17 +4534,54 @@ PCBAPI uint8_t PCBCALL PCB_GetUTF8Length_unchecked(uint32_t codepoint);
  */
 PCBAPI uint8_t PCBCALL PCB_GetUTF8Length(uint32_t codepoint);
 /**
+ * @brief Get the UTF-16 length of the Unicode `codepoint`.
+ *
+ * This function is unsafe; only use it when certain that `codepoint` is a
+ * valid Unicode character. Otherwise the behavior is undefined.
+ * You've been warned.
+ * @return value in range [1, 2].
+ */
+PCBAPI uint8_t PCBCALL PCB_GetUTF16Length_unchecked(uint32_t codepoint);
+/**
+ * @brief Get the UTF-16 length of the Unicode `codepoint`.
+ * @return value in range [1, 2] or 0 if `codepoint` is invalid.
+ */
+PCBAPI uint8_t PCBCALL PCB_GetUTF16Length(uint32_t codepoint);
+//For API consistency.
+PCBAPI uint8_t PCBCALL PCB_GetUTF32Length_unchecked(uint32_t codepoint);
+PCBAPI uint8_t PCBCALL PCB_GetUTF32Length(uint32_t codepoint);
+/**
  * @brief Store UTF-8-encoded `codepoint` in `buf`.
  *
  * This function is unsafe; only use it when certain that `buf` can hold
- * `codepoint` and that `codepoint` is valid. Otherwise the behavior is undefined.
- * You've been warned.
+ * `codepoint` and that `codepoint` is within representable range.
+ * Otherwise the behavior is undefined. You've been warned.
  * @return position after the encoded codepoint
  */
 PCBAPI PCB_char8* PCBCALL PCB_StoreUTF8Codepoint(
     PCB_char8* buf,
     uint32_t codepoint
 ) PCB_Nonnull_Arg(1) PCB_Nonnull_Return;
+/**
+ * @brief Store UTF-16-encoded `codepoint` in `buf`.
+ *
+ * This function uses native endianness. It is the user's responsibility to
+ * convert any outgoing UTF-16 to appropiate endianness and/or prepending
+ * the octet stream with a BOM.
+ *
+ * This function is unsafe; only use it when certain that `buf` can hold
+ * `codepoint` and that `codepoint` is within representable range.
+ * Otherwise the behavior is undefined. You've been warned.
+ * @return position after the encoded codepoint
+ */
+PCBAPI PCB_char16* PCBCALL PCB_StoreUTF16Codepoint(
+    PCB_char16* buf,
+    uint32_t codepoint
+) PCB_Nonnull_Arg(1) PCB_Nonnull_Return;
+//Again, for consistency.
+static PCB_ForceInline PCB_char32* PCB_StoreUTF32Codepoint(
+    PCB_char32* buf, uint32_t codepoint
+) { *buf++ = codepoint; return buf; }
 
 
 
@@ -6339,13 +6426,36 @@ bool PCB_String_appendfv(
 #endif //PCB_HAS_STDIO_H
 }
 
-bool PCB_String_append_codepoint(PCB_String* PCB_restrict str, uint32_t codepoint) {
+#define PCB__Str_append_codepoint(Type, bits) \
+bool Type##_append_codepoint(Type* PCB_restrict str, uint32_t codepoint) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK(!PCB_IsValidUnicode(codepoint), false); \
+    uint8_t l = PCB_GetUTF##bits##Length_unchecked(codepoint); \
+    if(!Type##_reserve(str, l)) return false; \
+    PCB_StoreUTF##bits##Codepoint((PCB_char##bits*)str->data + str->length, codepoint); \
+    str->data[str->length += l] = '\0'; \
+    return true; \
+}
+PCB__Str_append_codepoint(PCB_String,     8) //PCB_String_append_codepoint()
+PCB__Str_append_codepoint(PCB_U8String,   8) //PCB_U8String_append_codepoint()
+PCB__Str_append_codepoint(PCB_U16String, 16) //PCB_U16String_append_codepoint()
+PCB__Str_append_codepoint(PCB_U32String, 32) //PCB_U32String_append_codepoint()
+#undef PCB__Str_append_codepoint
+
+bool PCB_WString_append_codepoint(PCB_WString* PCB_restrict str, uint32_t codepoint) {
     PCB_CHECK_SELF(str, false);
     PCB_CHECK(!PCB_IsValidUnicode(codepoint), false);
-    uint8_t l = PCB_GetUTF8Length_unchecked(codepoint);
-    if(!PCB_String_reserve(str, l)) return false;
-    PCB_StoreUTF8Codepoint((PCB_char8*)str->data + str->length, codepoint);
+#if PCB_PLATFORM_WINDOWS
+    uint8_t l = PCB_GetUTF16Length_unchecked(codepoint);
+    if(!PCB_WString_reserve(str, l)) return false;
+    PCB_StoreUTF16Codepoint((PCB_char16*)str->data + str->length, codepoint);
     str->data[str->length += l] = '\0';
+#else
+    PCB_static_assert(sizeof(wchar_t) == sizeof(codepoint),);
+    if(!PCB_WString_reserve(str, 1)) return false;
+    str->data[  str->length] = (wchar_t)codepoint;
+    str->data[++str->length] = '\0';
+#endif //Windows being defective...
     return true;
 }
 
@@ -6626,22 +6736,56 @@ bool PCB_String_insertfv(
 #endif //PCB_HAS_STDIO_H
 }
 
-bool PCB_String_insert_codepoint(
-    PCB_String* PCB_restrict str, uint32_t codepoint, size_t position
+#define PCB__Str_insert_codepoint(Type, bits) \
+bool Type##_insert_codepoint( \
+    Type* PCB_restrict str, uint32_t codepoint, size_t position \
+) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK(position > str->length, false); \
+    PCB_CHECK(!PCB_IsValidUnicode(codepoint), false); \
+    uint8_t l = PCB_GetUTF##bits##Length_unchecked(codepoint); \
+\
+    if(!Type##_reserve(str, l)) return false; \
+    PCB_memmove( \
+        str->data + position + l, \
+        str->data + position, \
+        (str->length - position)*sizeof(*str->data) \
+    ); \
+\
+    PCB_StoreUTF##bits##Codepoint((PCB_char##bits*)str->data + position, codepoint); \
+    str->data[str->length += l] = '\0'; \
+    return true; \
+}
+PCB__Str_insert_codepoint(PCB_String,     8) //PCB_String_insert_codepoint()
+PCB__Str_insert_codepoint(PCB_U8String,   8) //PCB_U8String_insert_codepoint()
+PCB__Str_insert_codepoint(PCB_U16String, 16) //PCB_U16String_insert_codepoint()
+PCB__Str_insert_codepoint(PCB_U32String, 32) //PCB_U32String_insert_codepoint()
+#undef PCB__Str_insert_codepoint
+
+bool PCB_WString_insert_codepoint(
+    PCB_WString* PCB_restrict str, uint32_t codepoint, size_t position
 ) {
     PCB_CHECK_SELF(str, false);
     PCB_CHECK(position > str->length, false);
     PCB_CHECK(!PCB_IsValidUnicode(codepoint), false);
-    uint8_t l = PCB_GetUTF8Length_unchecked(codepoint);
+#if PCB_PLATFORM_WINDOWS
+    uint8_t l = PCB_GetUTF16Length_unchecked(codepoint);
+#else
+    uint8_t l = PCB_GetUTF32Length_unchecked(codepoint);
+#endif //Windows being defective...
 
-    if(!PCB_String_reserve(str, l)) return false;
+    if(!PCB_WString_reserve(str, l)) return false;
     PCB_memmove(
         str->data + position + l,
         str->data + position,
-        str->length - position
+        (str->length - position)*sizeof(*str->data)
     );
 
-    PCB_StoreUTF8Codepoint((PCB_char8*)str->data + position, codepoint);
+#if PCB_PLATFORM_WINDOWS
+    PCB_StoreUTF16Codepoint((PCB_char16*)str->data + position, codepoint);
+#else
+    PCB_StoreUTF32Codepoint((PCB_char32*)str->data + position, codepoint);
+#endif //Windows being defective...
     str->data[str->length += l] = '\0';
     return true;
 }
@@ -7586,12 +7730,22 @@ static const int32_t PCB__MINIMAL_CODEPOINT_UTF8[] = {
 };
 #endif //!PCB_UNICODE_CONFORMANT
 
-PCB_Codepoint PCB_StringView_GetCodepoint(PCB_StringView sv, size_t index) {
-    PCB_CHECK(PCB_String_isEmpty(&sv), (PCB_CLITERAL(PCB_Codepoint){ -16, 0 }));
-    PCB_CHECK(index >= sv.length, (PCB_CLITERAL(PCB_Codepoint){ -17, 0 }));
-    PCB_CHECK((uintptr_t)sv.data > (uintptr_t)-1 - sv.length, (PCB_CLITERAL(PCB_Codepoint){ -18, 0 }));
-    return PCB_StringView_GetCodepoint_unchecked(sv, index);
+#define PCB__SV_GetCodepoint(prefix) \
+PCB_Codepoint PCB_##prefix##StringView_GetCodepoint(PCB_##prefix##StringView sv, size_t index) { \
+    PCB_CHECK(PCB_String_isEmpty(&sv), (PCB_CLITERAL(PCB_Codepoint){ -16, 0 })); \
+    PCB_CHECK(index >= sv.length, (PCB_CLITERAL(PCB_Codepoint){ -17, 0 })); \
+    PCB_CHECK( \
+        (uintptr_t)sv.data > (uintptr_t)-1 - sv.length*sizeof(*sv.data), \
+        (PCB_CLITERAL(PCB_Codepoint){ -18, 0 }) \
+    ); \
+    return PCB_##prefix##StringView_GetCodepoint_unchecked(sv, index); \
 }
+PCB__SV_GetCodepoint()    //PCB_StringView_GetCodepoint()
+PCB__SV_GetCodepoint(W)   //PCB_WStringView_GetCodepoint()
+PCB__SV_GetCodepoint(U8)  //PCB_U8StringView_GetCodepoint()
+PCB__SV_GetCodepoint(U16) //PCB_U16StringView_GetCodepoint()
+PCB__SV_GetCodepoint(U32) //PCB_U32StringView_GetCodepoint()
+#undef PCB__SV_GetCodepoint
 
 PCB_Codepoint PCB_StringView_GetCodepoint_unchecked(PCB_StringView sv, size_t index) {
 #define PCB__ISCONT(byte) ((byte & 0xC0) == 0x80)
@@ -7674,6 +7828,42 @@ PCB_Codepoint PCB_StringView_GetCodepoint_unchecked(PCB_StringView sv, size_t in
 #undef PCB__CP_ERR
 }
 
+PCB_Codepoint PCB_WStringView_GetCodepoint_unchecked(PCB_WStringView sv, size_t index) {
+#if PCB_PLATFORM_WINDOWS
+    PCB_U16StringView usv = {(const PCB_char16*)sv.data, sv.length};
+    return PCB_U16StringView_GetCodepoint_unchecked(usv, index);
+#else
+    PCB_U32StringView usv = {(const PCB_char32*)sv.data, sv.length};
+    return PCB_U32StringView_GetCodepoint_unchecked(usv, index);
+#endif //Windows being defective...
+}
+
+PCB_Codepoint PCB_U8StringView_GetCodepoint_unchecked(PCB_U8StringView usv, size_t index) {
+    PCB_StringView sv = {(const char*)usv.data, usv.length};
+    return PCB_StringView_GetCodepoint_unchecked(sv, index);
+}
+
+PCB_Codepoint PCB_U16StringView_GetCodepoint_unchecked(PCB_U16StringView sv, size_t index) {
+#define PCB__CP_ERR(code, toskip) PCB_CLITERAL(PCB_Codepoint){code, toskip}
+    const PCB_char16* cursor    = sv.data + index;
+    const PCB_char16* const end = sv.data + sv.length;
+    if(*cursor <= 0xD7FF || *cursor >= 0xE000)
+        return PCB_CLITERAL(PCB_Codepoint){*cursor, 1};
+    if(*cursor >= 0xDC00 && *cursor <= 0xDFFF) return PCB__CP_ERR(-1, 1);
+    if(cursor+1 == end) return PCB__CP_ERR(-2, 1);
+
+    PCB_char16 high = *cursor++;
+    PCB_char16 low  = *cursor;
+    if(!(low >= 0xDC00 && low <= 0xDFFF)) return PCB__CP_ERR(-3, 1);
+    high -= 0xD800; low -= 0xDC00;
+    return PCB_CLITERAL(PCB_Codepoint){(high << 10) | (low), 2};
+#undef PCB__CP_ERR
+}
+
+PCB_Codepoint PCB_U32StringView_GetCodepoint_unchecked(PCB_U32StringView sv, size_t index) {
+    return PCB_CLITERAL(PCB_Codepoint){(int32_t)sv.data[index], 1};
+}
+
 bool PCB_IsValidUnicode(uint32_t codepoint) {
     if(0xD800 <= codepoint && codepoint <= 0xDFFF) return false; //surrogates
 
@@ -7682,30 +7872,47 @@ bool PCB_IsValidUnicode(uint32_t codepoint) {
     // const uint32_t ls2b = codepoint & 0xFFFF;
     // if(ls2b == 0xFFFE || ls2b == 0xFFFF) return false; //also reserved
 
+    //well, this is awkward now that we support UTF-16...
 #if !(defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT))
-    if(codepoint > 0x10FFFF) return false;
+    if(codepoint > (uint32_t)0x10FFFF) return false;
 #else
-    if(codepoint > 0x7FFFFFFF) return false;
+    if(codepoint > (uint32_t)0x7FFFFFFF) return false;
 #endif //!PCB_UTF8_FULL_RANGE
     return true;
 }
 
 uint8_t PCB_GetUTF8Length_unchecked(uint32_t codepoint) {
-    if(codepoint <= 0x000007F) return 1;
-    if(codepoint <= 0x00007FF) return 2;
-    if(codepoint <= 0x000FFFF) return 3;
+    if(codepoint <= (uint32_t)0x000007F) return 1;
+    if(codepoint <= (uint32_t)0x00007FF) return 2;
+    if(codepoint <= (uint32_t)0x000FFFF) return 3;
 #if defined(PCB_UTF8_FULL_RANGE) && !defined(PCB_UNICODE_CONFORMANT)
-    if(codepoint <= 0x01FFFFF) return 4;
-    if(codepoint <= 0x3FFFFFF) return 5;
+    if(codepoint <= (uint32_t)0x01FFFFF) return 4;
+    if(codepoint <= (uint32_t)0x3FFFFFF) return 5;
     return 6;
 #else
     return 4;
 #endif //PCB_UTF8_FULL_RANGE
 }
 
+uint8_t PCB_GetUTF16Length_unchecked(uint32_t codepoint) {
+    return codepoint <= (uint32_t)0xFFFF ? 1 : 2;
+}
+
 uint8_t PCB_GetUTF8Length(uint32_t codepoint) {
     if(!PCB_IsValidUnicode(codepoint)) return 0;
     return PCB_GetUTF8Length_unchecked(codepoint);
+}
+
+uint8_t PCB_GetUTF16Length(uint32_t codepoint) {
+    if(!PCB_IsValidUnicode(codepoint)) return 0;
+    return PCB_GetUTF16Length_unchecked(codepoint);
+}
+
+uint8_t PCB_GetUTF32Length_unchecked(uint32_t _) { (void)_; return 1; }
+
+uint8_t PCB_GetUTF32Length(uint32_t codepoint) {
+    if(!PCB_IsValidUnicode(codepoint)) return 0;
+    return PCB_GetUTF32Length_unchecked(codepoint);
 }
 
 //modified from https://gist.github.com/tylerneylon/9773800
@@ -7722,6 +7929,19 @@ PCB_char8* PCB_StoreUTF8Codepoint(PCB_char8* buf, uint32_t codepoint) {
     c[i++] = (PCB_char8)((uint8_t)(codepoint & first_max) | (~first_max << 2));
     while(i > 0) *buf++ = c[--i];
     return buf;
+}
+
+PCB_char16* PCB_StoreUTF16Codepoint(PCB_char16* buf, uint32_t codepoint) {
+    if(codepoint < 0x10000) {
+        *buf = (PCB_char16)codepoint;
+        return buf + 1;
+    }
+    codepoint -= 0x10000;
+    PCB_char16 high = 0xD800 + (PCB_char16)(codepoint / 0x400),
+               low  = 0xDC00 + (PCB_char16)(codepoint % 0x400);
+    buf[0] = high;
+    buf[1] = low;
+    return buf + 2;
 }
 #undef PCB__strlen_char
 #undef PCB__strlen_wchar_t
