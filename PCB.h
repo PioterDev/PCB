@@ -21,16 +21,24 @@
 #ifndef PCB_H
 #define PCB_H
 
+/*
+ * NOTE: The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+ * "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" used
+ * throughout this library are to be interpreted as described
+ * in BCP 14 [RFC2119] [RFC8174] when, and only when, they appear
+ * in all capitals, as shown here.
+ */
+
 #ifndef PCB_VERSION_MAJOR
 #define PCB_VERSION_MAJOR 0
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 7
+#define PCB_VERSION_MINOR 8
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 13
+#define PCB_VERSION_PATCH 0
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -362,9 +370,17 @@ extern "C" {
 #endif //PCB_COMPILER
 
 
+#ifndef PCB_HAS_STMT_EXPR
+#if PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 30100
+#define PCB_HAS_STMT_EXPR 1
+#else
+#define PCB_HAS_STMT_EXPR 0
+#endif //compilers
+#endif //PCB_HAS_STMT_EXPR
+
+
 
 //Section 1.3: Identify the target architecture
-
 #ifndef PCB_ARCH
 //https://stackoverflow.com/questions/152016/detecting-cpu-architecture-compile-time
 //https://sourceforge.net/p/predef/wiki/Architectures/
@@ -2645,6 +2661,297 @@ typedef long long PCB_ssize_t;
 typedef int PCB_ssize_t; //stub
 #endif //sizes
 #endif //PCB_ssize_t
+
+
+
+#ifdef PCB_Enum_Fixed
+/**
+ * @brief Mapping of different status sources.
+ * See `PCB_Status` for the reasoning behind this system.
+ *
+ * Ranges of what is permitted for use by whom are as follows:
+ *
+ * [0; PCB_STATUS_DOMAIN_FIRST_NONSYSTEM): reserved.
+ *
+ * [PCB_STATUS_DOMAIN_FIRST_NONSYSTEM; PCB_STATUS_DOMAIN_FIRST_USER):
+ * intended for use by libraries. User code should not use this range.
+ *
+ * This range is globally shared and therefore requires consensus for
+ * who is allocated what. For now, this library is the source of truth.
+ *
+ * To get a domain for your own library, contact maintainers of this library.
+ *
+ * [PCB_STATUS_DOMAIN_FIRST_USER; 0xFFFFFFFF]: free for use by user code.
+ */
+PCB_Enum_Fixed(PCB_Status_Domain, uint32_t) {
+    /**
+     * @brief Domain indicating that the operation was successful.
+     * The meaning of `code` is defined by the user.
+     */
+    PCB_STATUS_DOMAIN_SUCCESS = 0,
+    /**
+     * @brief Special domain that portably describes the most common
+     * error conditions.
+     * `code` corresponds to values defined in `PCB_Common_Error`.
+     */
+    PCB_STATUS_DOMAIN_COMMON = 1,
+    /**
+     * @brief Status comes from the C library.
+     * `code` corresponds to `errno`.
+     */
+    PCB_STATUS_DOMAIN_C = 2,
+    /**
+     * @brief Status comes from a POSIX API.
+     * `code` usually corresponds to `errno`, but some POSIX functions
+     * return it directly.
+     */
+    PCB_STATUS_DOMAIN_POSIX = 3,
+    /**
+     * @brief Status comes from the Windows API.
+     * `code` corresponds to the value returned by `GetLastError()`.
+     */
+    PCB_STATUS_DOMAIN_WINAPI = 4,
+};
+#else
+/*
+ * Fallback to using macros.
+ *
+ * Enumerations are strongly preferred here because you will get warned about
+ * something not being handled in a switch statement (if you use proper
+ * compiler diagnostics, that is), which you want for error handling code.
+ * Macros can't give such guarantees.
+ *
+ * One may say that such duplication is even worse, but that's a problem for
+ * maintainers of this library to deal with.
+ */
+typedef uint32_t PCB_Status_Domain;
+#define PCB_STATUS_DOMAIN_SUCCESS (PCB_Status_Domain)0
+#define PCB_STATUS_DOMAIN_COMMON (PCB_Status_Domain)1
+#define PCB_STATUS_DOMAIN_C (PCB_Status_Domain)2
+#define PCB_STATUS_DOMAIN_POSIX (PCB_Status_Domain)3
+#define PCB_STATUS_DOMAIN_WINAPI (PCB_Status_Domain)4
+#endif //provide an actual enumeration if possible, fallback to macros
+/**
+ * @brief The first 2^16 domains are permanently reserved for mapping to
+ * various standard or de-facto-standard sources, including various
+ * international standards, RFCs and long-lived, established APIs.
+ *
+ * Applications MUST NOT define their own meaning for any domain falling
+ * within the range [0; <this value>) unless they control the entire
+ * runtime environment (for example embedded systems) and are prepared
+ * for potential refactoring from upstream changes.
+ */
+#define PCB_STATUS_DOMAIN_FIRST_NONSYSTEM (PCB_Status_Domain)65536
+/**
+ * @brief The entire range [<this value>; 0xFFFFFFFF] is reserved for use
+ * by user code. Applications are free to use this entire range
+ * however they see fit.
+ *
+ * Importantly, libraries are not allowed to use any domain falling
+ * within this range, unless the library is local to a specific project or
+ * organization.
+ * This is to avoid collisions. Generally speaking, a single
+ * project/organization is coordinated and can resolve potential collisions
+ * internally. That may not be true for different projects.
+ */
+#define PCB_STATUS_DOMAIN_FIRST_USER (PCB_Status_Domain)0x80000000
+
+/**
+ * @brief Convert a user domain to a more human-friendly value, which can be read
+ * without inducing a headache from big integers.
+ */
+#define PCB_STATUS_DOMAIN_FROM_USER_RANGE(domain) \
+    (PCB_Status_Domain)((domain) - PCB_STATUS_DOMAIN_FIRST_USER)
+/**
+ * @brief Convert a human-friendly value to a range specified by `PCB_Status_Domain`.
+ */
+#define PCB_STATUS_DOMAIN_TO_USER_RANGE(domain) \
+    (PCB_Status_Domain)((domain) + PCB_STATUS_DOMAIN_FIRST_USER)
+
+/**
+ * @brief An attempt to standardize error handling.
+ *
+ * Systems often use integer values, often called "error codes", to convey
+ * what happened. Whether it's a good approach or something like exceptions
+ * are better is a different topic.
+ *
+ * An issue with this approach arises across project boundaries.
+ * One source may define code 1 as "not found", another as "timed out"
+ * and yet another as "permission denied".
+ * If these are used in a single API, blindly returning an error code is less
+ * than useless. What caused the problem? How can the code be informed of
+ * exactly what happened?
+ *
+ * It is therefore required to somehow distinguish different sources of errors.
+ * This can be done within a single project in different ways, for example
+ * by masking the upper bits of the code with another integer as identifier.
+ * However, this only works for executable programs that can make assumptions
+ * about how they're used, something which libraries cannot do.
+ * Moreover, libraries themselves may depend on other libraries, which may themselves
+ * depend on other libraries, which...you get the point. How can such library
+ * communicate the exact cause to application code in a machine-readable way?
+ *
+ * This is where the concept of "domains" comes into play.
+ * Having different sets of error codes stops being a problem if the source of
+ * an error can be easily identified - one can just query the error source.
+ * If everyone can agree on what value corresponds to what source, we're done.
+ * Problem solved?
+ *
+ * No, there needs to be some authority that defines rules around domain
+ * registration and usage that is trusted by everyone.
+ *
+ * At the point of writing this, that authority is PCB - this project.
+ * PCB does not, however, intend to become the critical pillar of the entire
+ * software world, despite the fitting name. It'd be best to have a commitee
+ * or a voting system for that purpose.
+ * That being said, it'd be really nice to have a standard way of handling errors.
+ *
+ * Back to domains. Certain domains are permanently reserved.
+ *
+ * Notably, domain 0 is the "success" domain, intended for use by all as a common
+ * way of signaling that nothing failed/everything is OK.
+ *
+ * Certain APIs are so common that it makes sense to standardize them.
+ * Currently, these include libc, POSIX and WinAPI.
+ *
+ * Commonly used protocols that everyone can agree to also fall into the reserved
+ * category, for example HTTP (domain currently unassigned).
+ *
+ * There is also a "common" domain intended for portably describing most
+ * commonly encountered errors.
+ *
+ * Lastly, projects that can make assumptions get a massive dedicated range of
+ * over 2 billion domains.
+ *
+ * Libraries are not included in these listing because, as already stated, they
+ * can't assume what the developer using them will do. Because of this, libraries
+ * wanting to use this system should contact maintainers of this project
+ * to acquire their own dedicated domain (or possibly multiple, but within reason).
+ * Maybe sometime in the future this approach will become so widespread that
+ * a commitee will form around it, who knows.
+ *
+ * This approach isn't perfect; sometimes additional information
+ * besides a code is required.
+ * Currently there doesn't seem to be a good ABI-stable approach for this besides
+ * returning opaque pointers.
+ * As a workaround, you can store extended information in thread-local storage.
+ * Assigning certain code ranges dynamically to associate specific events
+ * to entries in TLS (to avoid overriding one existing value
+ * and losing information) may also help, though this makes the error reporting
+ * itself stateful. No good way out...
+ *
+ * To use this scheme effectively, here are some general tips:
+ * - You should list all domains possibly returned by a particular function in
+ *   its documentation.
+ * - For success, you can use `PCB_OK(X)` or just `OK(X)`, where `X` is
+ *   some additional status, if any.
+ *   For no additional status on success, use `PCB_OK()` or `OK()`.
+ *   You can also use code 0 and a domain of your choice to signal success,
+ *   but the success domain is still preferred.
+ * - The "common" domain contains portable constants for the most
+ *   commonly encountered error conditions. If you're unsure what to return,
+ *   there's a good chance the your error condition maps to one of its
+ *   values. If you feel like a value should be added there, contact maintainers
+ *   of this library.
+ *   See `PCB_Common_Error` for details.
+ * - If a library you're using doesn't have a registered domain, you can make
+ *   a best guess for the enum name (for a foobar library, it might be
+ *   `PCB_STATUS_DOMAIN_FOOBAR`) and intentionally create a constant
+ *   with the `PCB_STATUS_DOMAIN_` prefix in your code using a domain
+ *   from the user range.
+ *   That way if/when the library gets a dedicated domain, you'll get
+ *   a "constant redefinition" diagnostic and will know to update.
+ * - If you maintain a library and decide to reserve a domain (or multiple),
+ *   you should provide a constant that is most likely to cause a collision
+ *   according to the point above.
+ */
+typedef struct {
+    PCB_Status_Domain domain;
+    /**
+     * @brief Implementation-defined value, meaning of which depends on `domain`.
+     * There is one special case of 0, which MAY mean success, but the choice
+     * is up to the implementation.
+     */
+    uint32_t code;
+} PCB_Status;
+
+#ifndef PCB_OK
+/**
+ * @brief Creates a `PCB_Status` in the success domain with provided code.
+ * If no code is provided, its value is set to 0.
+ */
+#define PCB_OK(...) PCB_STATUS(PCB_STATUS_DOMAIN_SUCCESS, __VA_ARGS__+0)
+#endif //PCB_OK
+#ifndef PCB_ISOK
+/**
+ * @brief Checks if `status` is OK, i.e. whether it lies in the success domain.
+ */
+#define PCB_ISOK(status) ((status).domain == PCB_STATUS_DOMAIN_SUCCESS)
+#endif //PCB_ISOK
+#ifndef PCB_Q
+/**
+ * @brief Not-the-greatest-but-at-least-its-something emulation of the "?" (try)
+ * operator from other languages like Rust.
+ * In essence, if `status` isn't OK, propagate it to the caller.
+ * `status` is evaluated once - you can pass in a function that returns a `PCB_Status`.
+ *
+ * It may be a bit too much macro voodoo for you, but, I mean, you can just
+ * choose to not use it?
+ */
+#define PCB_Q(status) do {                              \
+    PCB_Status PCB_MANGLE(s) = (status);                \
+    if(!PCB_ISOK(PCB_MANGLE(s)) return PCB_MANGLE(s);   \
+} while(0)
+#endif //PCB_Q
+#ifndef PCB_QD
+/**
+ * @brief Similar to `PCB_Q`, but sets `result` and jumps to `label`
+ * if not OK instead of returning.
+ */
+#define PCB_QD(result, status, label) do {  \
+    result = (status);                      \
+    if(!PCB_ISOK(PCB_MANGLE(s)) goto label; \
+} while(0)
+#endif //PCB_QD
+#ifndef PCB_STATUS
+/**
+ * @brief Helper macro for less typing.
+ */
+#define PCB_STATUS(domain, code) PCB_CLITERAL(PCB_Status){domain, code}
+#endif //PCB_STATUS
+/**
+ * @brief Most commonly encountered error conditions.
+ * A large part of this enum is a repetition of POSIX.
+ * Unfortunately, POSIX isn't portable, despite P meaning "Portable", because
+ * of a certain tech company whose name starts with "M".
+ */
+PCB_Enum(PCB_Common_Error, uint32_t) {
+    /**
+     * @brief Defined for compatibility with existing code.
+     * Use the success domain for signaling successful operations.
+     */
+    PCB_CEOK = 0,
+    /**
+     * @brief Insufficient memory, or memory allocation failed.
+     */
+    PCB_CENOMEM = 1,
+    /**
+     * @brief Bad memory address.
+     */
+    PCB_CEFAULT = 2,
+    /**
+     * @brief Invalid argument.
+     */
+    PCB_CEINVAL = 3,
+    /**
+     * @brief Interface is stubbed, i.e. there is no meaningful implementation.
+     */
+    PCB_CESTUB = 4,
+    PCB_CENOSYS = PCB_CESTUB,
+};
+
+//Helper macros.
+#define PCB_CERR_NOMEM (PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENOMEM))
 
 typedef enum {
     PCB_LOGLEVEL_NONE,  PCB_LOGLEVEL_NONE_NL,  //without the prefix
