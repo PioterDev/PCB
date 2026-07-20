@@ -6511,6 +6511,14 @@ bool PCB_isAbsolutePath(const PCB_FS_char* path) {
 #endif //both the file & process subsystem work with paths
 
 #ifdef PCB_IMPLEMENTATION_FS
+#if defined(__GLIBC__) && __GLIBC__+0 >= 2 && __GLIBC_MINOR__+0 >= 12 && ( \
+    (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200809L) || \
+    (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE+0 >= 700) || \
+    (__GLIBC_MINOR__+0 <= 19 && (defined(_BSD_SOURCE) || defined(_SVID_SOURCE))) \
+)
+#define PCB__POSIX_HAS_NS_STAT_TIMESTAMPS
+#endif //see stat(3type)
+
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
     if(mkdir(path, 0775) == -1) {
@@ -6636,11 +6644,7 @@ uint64_t PCB_FS_GetModificationTime(const char* path) {
     struct stat fileinfo = PCB_ZEROED;
     if(stat(path, &fileinfo) == -1) return (uint64_t)(errno == ENOENT);
     uint64_t modTime;
-#if defined(__GLIBC__) && __GLIBC__+0 >= 2 && __GLIBC_MINOR__+0 >= 12 && ( \
-    (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200809L) || \
-    (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE+0 >= 700) || \
-    (__GLIBC_MINOR__+0 <= 19 && (defined(_BSD_SOURCE) || defined(_SVID_SOURCE))) \
-)
+#ifdef PCB__POSIX_HAS_NS_STAT_TIMESTAMPS
     modTime = (uint64_t)fileinfo.st_ctim.tv_sec * 1000000000 + (uint64_t)fileinfo.st_ctim.tv_nsec;
 #else
     modTime = (uint64_t)fileinfo.st_ctime       * 1000000000;
