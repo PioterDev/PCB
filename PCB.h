@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 2
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -2567,12 +2567,11 @@ for(                                                                \
 
 //Section 1.8: Import platform-specific header files
 #if PCB_PLATFORM_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-//TODO: replace this include with modular includes
-//to limit the amount of stuff imported
-//for faster compilation
-#include <windows.h>
-#undef WIN32_LEAN_AND_MEAN
+#include <winternl.h>
+#include <windef.h>
+#include <winbase.h>
+#include <wingdi.h>
+#include <wincon.h>
 #elif PCB_PLATFORM_POSIX
 #include <unistd.h>
 #include <fcntl.h>
