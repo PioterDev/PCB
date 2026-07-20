@@ -3835,7 +3835,18 @@ PCBAPI bool PCBCALL PCB_isAbsolutePath(const PCB_FS_char* path) PCB_Nonnull_Arg(
  * On Linux, permission field of the created directory is `rwxrwxr-x`.
  * @param path path/to/directory/to/create, not transitive
  */
-PCBAPI bool PCBCALL PCB_mkdir(const char* path) PCB_Nonnull_Arg(1);
+PCB_Deprecated PCBAPI bool PCBCALL PCB_mkdir(const char* path) PCB_Nonnull_Arg(1);
+
+//These functions are too short to be worth documenting.
+//Just read the implementation.
+//The "_ne" suffix means "native encoding".
+
+PCBAPI PCB_Status PCBCALL PCB_FS_mkdir(const char* path) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_FS_mkdir_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_FS_mkdir_if_not_exists(const char* path) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_FS_mkdir_if_not_exists_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_FS_rm(const char* path) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_FS_rm_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
 /**
  * @brief Checks if a filesystem entry exists.
  *
@@ -6848,6 +6859,99 @@ bool PCB_mkdir(const char* path) {
     }
     return true;
 #endif //platform
+}
+
+PCB_Status PCB_FS_mkdir(const char* path) {
+#if PCB_PLATFORM_POSIX || PCB_PLATFORM_WINDOWS
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    const PCB_FS_char* npath = PCB_toNativePath(path);
+    if(npath == NULL) return PCB_CERR_NOMEM;
+    PCB_Status result = PCB_FS_mkdir_ne(npath);
+    PCB_freeNativePath(npath);
+    return result;
+#else
+    (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_FS_mkdir_ne(const PCB_FS_char* path) {
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+#if PCB_PLATFORM_POSIX
+    if(mkdir(path, 0775) < 0) return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (uint32_t)errno);
+    return PCB_OK(0);
+#elif PCB_PLATFORM_WINDOWS
+    if(!CreateDirectoryW(path, NULL))
+        return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+    return PCB_OK(0);
+#else
+    (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_FS_mkdir_if_not_exists(const char* path) {
+#if PCB_PLATFORM_POSIX || PCB_PLATFORM_WINDOWS
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    const PCB_FS_char* npath = PCB_toNativePath(path);
+    if(npath == NULL) return PCB_CERR_NOMEM;
+    PCB_Status result = PCB_FS_mkdir_if_not_exists_ne(npath);
+    PCB_freeNativePath(npath);
+    return result;
+#else
+    (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB)
+#endif //platforms
+}
+
+PCB_Status PCB_FS_mkdir_if_not_exists_ne(const PCB_FS_char* path) {
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_Status result = PCB_FS_mkdir_ne(path);
+    switch(result.domain) {
+#if PCB_PLATFORM_POSIX || PCB_PLATFORM_WINDOWS
+      case PCB_STATUS_DOMAIN_SUCCESS: return result;
+      case PCB_STATUS_DOMAIN_COMMON: return result;
+#if PCB_PLATFORM_POSIX
+      case PCB_STATUS_DOMAIN_POSIX:
+        if(result.code == EEXIST) return PCB_OK(0);
+        return result;
+      case PCB_STATUS_DOMAIN_WINAPI:
+#elif PCB_PLATFORM_WINDOWS
+      case PCB_STATUS_DOMAIN_WINAPI:
+        if(result.code == ERROR_ALREADY_EXISTS) return PCB_OK(0);
+        return result;
+      case PCB_STATUS_DOMAIN_POSIX:
+#endif //POSIX || Windows
+      case PCB_STATUS_DOMAIN_C:
+      default: PCB_Unreachable;
+#else
+      default: return result;
+#endif
+    }
+}
+
+PCB_Status PCB_FS_rm(const char* path) {
+#if PCB_PLATFORM_POSIX || PCB_PLATFORM_WINDOWS
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    const PCB_FS_char* npath = PCB_toNativePath(path);
+    if(npath == NULL) return PCB_CERR_NOMEM;
+    PCB_Status result = PCB_FS_rm_ne(npath);
+    PCB_freeNativePath(npath);
+    return result;
+#else
+    (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB)
+#endif //platforms
+}
+
+PCB_Status PCB_FS_rm_ne(const PCB_FS_char* path) {
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+#if PCB_PLATFORM_POSIX
+    if(unlink(path) < 0) return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (uint32_t)errno);
+    return PCB_OK(0);
+#elif PCB_PLATFORM_WINDOWS
+    if(!DeleteFileW(path))
+        return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+    return PCB_OK(0);
+#else
+    (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
 }
 
 int PCB_FS_Exists(const char* path) {
