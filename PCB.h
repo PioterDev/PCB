@@ -560,6 +560,36 @@ extern "C" {
 
 #endif //PCB_ARCH
 
+//Please always compare values against these symbolic constants instead of
+//things like "if(is_little_endian())".
+#define PCB_LITTLE_ENDIAN 0
+#define PCB_BIG_ENDIAN 1
+
+//Also see https://stackoverflow.com/questions/8978935/detecting-endianness.
+#ifndef PCB_ENDIANNESS
+#ifdef __BYTE_ORDER__
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define PCB_ENDIANNESS PCB_LITTLE_ENDIAN
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define PCB_ENDIANNESS PCB_BIG_ENDIAN
+#endif //__BYTE_ORDER__
+#elif PCB_ARCH_x86 || PCB_ARCH_x86_64
+//x86(_64) is effectively guaranteed to be little endian.
+#define PCB_ENDIANNESS PCB_LITTLE_ENDIAN
+#endif //checks for (1) compiler-defined endianness, (2) target architecture
+
+#ifdef PCB_ENDIANNESS
+#define PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME 1
+#else
+#define PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME 0
+#define PCB_ENDIANNESS PCB_getEndianness()
+#endif //whether endianness is known at compile time
+#endif //PCB_ENDIANNESS
+
+#ifndef PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME
+#define PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME 0
+#endif //PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME
+
 #ifndef PCB_Target_ISA
 #if PCB_COMPILER_GCC >= 40407 || PCB_COMPILER_CLANG >= 40000
 #define PCB_Target_ISA(isa) __attribute__((__target__(isa)))
@@ -2031,6 +2061,14 @@ for(                                                                    \
 #endif //C++
 #endif //PCB_CLITERAL
 
+#ifndef PCB_const_cast
+#ifdef __cplusplus
+#define PCB_const_cast(Type) const_cast<Type>
+#else
+#define PCB_const_cast(Type) (Type)
+#endif //C++
+#endif //PCB_const_cast
+
 
 //Section 1.7.4: Macros for views, slices
 #ifndef PCB_View_Vec_unchecked
@@ -2911,6 +2949,84 @@ typedef struct {
 } PCB_Codepoint;
 
 
+#if PCB_PLATFORM_WINDOWS
+typedef wchar_t PCB_FS_char;
+typedef PCB_WString PCB_FS_String;
+typedef PCB_WStringView PCB_FS_StringView;
+typedef PCB_WStringSlice PCB_FS_StringSlice;
+typedef PCB_WStrings PCB_FS_Strings;
+typedef PCB_WCStrings PCB_FS_CStrings;
+
+#define PCB_FS_LIT(lit) L"" L##lit L""
+#define PCB_FS_Fmt "%ls"
+#define PCB_FS_SV_Fmt "%.*ls"
+#define PCB_FS_strlen PCB_wcslen
+#define PCB_FS_strcmp PCB_wcscmp
+#define PCB_FS_String_destroy PCB_WString_destroy
+#define PCB_FS_String_reserve PCB_WString_reserve
+#define PCB_FS_String_reserve_to PCB_WString_reserve_to
+#define PCB_FS_String_resize PCB_WString_resize
+#define PCB_FS_String_append PCB_WString_append
+#define PCB_FS_String_append_sv PCB_WString_append_sv
+#define PCB_FS_String_append_cstr PCB_WString_append_cstr
+#define PCB_FS_String_append_chars PCB_WString_append_chars
+#define PCB_FS_String_append_codepoint PCB_WString_append_codepoint
+#define PCB_FS_String_insert PCB_WString_insert
+#define PCB_FS_String_insert_sv PCB_WString_insert_sv
+#define PCB_FS_String_insert_cstr PCB_WString_insert_cstr
+#define PCB_FS_String_insert_chars PCB_WString_insert_chars
+#define PCB_FS_String_insert_codepoint PCB_WString_insert_codepoint
+#define PCB_FS_String_replace_range PCB_WString_replace_range
+#define PCB_FS_String_replace_range_chars PCB_WString_replace_range_chars
+#define PCB_FS_String_remove_range PCB_WString_remove_range
+#define PCB_FS_String_setSuffix_char PCB_WString_setSuffix_char
+#define PCB_FS_String_truncate_until_char PCB_WString_truncate_until_char
+#define PCB_FS_String_clone PCB_WString_clone
+#define PCB_FS_String_pop PCB_WString_pop
+#define PCB_FS_String_pop_many PCB_WString_pop_many
+#define PCB_FS_StringView_from_cstr PCB_WStringView_from_cstr
+#define PCB_FS_StringView_from_parts PCB_WStringView_from_parts
+#else
+typedef char PCB_FS_char;
+typedef PCB_String PCB_FS_String;
+typedef PCB_StringView PCB_FS_StringView;
+typedef PCB_StringSlice PCB_FS_StringSlice;
+typedef PCB_Strings PCB_FS_Strings;
+typedef PCB_CStrings PCB_FS_CStrings;
+
+#define PCB_FS_LIT(lit) "" lit ""
+#define PCB_FS_Fmt "%s"
+#define PCB_FS_SV_Fmt "%.*s"
+#define PCB_FS_strlen PCB_strlen
+#define PCB_FS_strcmp PCB_strcmp
+#define PCB_FS_String_destroy PCB_String_destroy
+#define PCB_FS_String_reserve PCB_String_reserve
+#define PCB_FS_String_reserve_to PCB_String_reserve_to
+#define PCB_FS_String_resize PCB_String_resize
+#define PCB_FS_String_append PCB_String_append
+#define PCB_FS_String_append_sv PCB_String_append_sv
+#define PCB_FS_String_append_cstr PCB_String_append_cstr
+#define PCB_FS_String_append_chars PCB_String_append_chars
+#define PCB_FS_String_append_codepoint PCB_String_append_codepoint
+#define PCB_FS_String_insert PCB_String_insert
+#define PCB_FS_String_insert_sv PCB_String_insert_sv
+#define PCB_FS_String_insert_cstr PCB_String_insert_cstr
+#define PCB_FS_String_insert_chars PCB_String_insert_chars
+#define PCB_FS_String_insert_codepoint PCB_String_insert_codepoint
+#define PCB_FS_String_replace_range PCB_String_replace_range
+#define PCB_FS_String_replace_range_chars PCB_String_replace_range_chars
+#define PCB_FS_String_remove_range PCB_String_remove_range
+#define PCB_FS_String_setSuffix_char PCB_String_setSuffix_char
+#define PCB_FS_String_truncate_until_char PCB_String_truncate_until_char
+#define PCB_FS_String_clone PCB_String_clone
+#define PCB_FS_String_pop PCB_String_pop
+#define PCB_FS_String_pop_many PCB_String_pop_many
+#define PCB_FS_StringView_from_cstr PCB_StringView_from_cstr
+#define PCB_FS_StringView_from_parts PCB_StringView_from_parts
+#endif //Microsoft made a brilliant decision to bet everything on UCS-2.
+       //Then came codepoints outside of BMP...
+       //@sa https://www.moria.us/articles/wchar-is-a-historical-accident/
+
 //NOTE: Zero-initialization of this structure is non-portable.
 //ALWAYS use `PCB_Process_init`.
 typedef struct {
@@ -3346,6 +3462,63 @@ PCBAPI void PCBCALL PCB_logLatestError(
     ...
 ) PCB_Printf_Format(1, 2) PCB_Nonnull_Arg(1);
 
+
+
+#ifndef PCB_FS_PATH_SEP
+#if PCB_PLATFORM_WINDOWS
+#define PCB_FS_PATH_SEP '\\'
+#else
+#define PCB_FS_PATH_SEP '/'
+#endif //Windows being "special"
+#endif //PCB_FS_PATH_SEP
+
+/**
+ * @brief Convert `path`, which is a sequence of bytes, to its native encoding.
+ *
+ * On Windows, `path` is transcoded into UTF-16 and stored in the temporary allocator.
+ * As an extension, '/' is treated identically to '\'.
+ *
+ * Other systems don't care about encoding; this function is a no-op there.
+ * @return
+ * - on Windows: pointer to a buffer in the temporary allocator storing
+ *   the converted `path` or NULL if (re)allocation failed;
+ * - everywhere else: `path` is passed back and no memory is allocated.
+ */
+PCBAPI const PCB_FS_char* PCBCALL PCB_toNativePath(const char* path);
+/**
+ * @brief Convert `path`, which is a string compatible with the native
+ * filesystem API, to a sequence of bytes.
+ *
+ * On Windows, `path` is transcoded into UTF-8 and stored in the temporary allocator.
+ *
+ * Other systems don't care about encoding; this function is a no-op there.
+ * @return
+ * - on Windows: pointer to a buffer in the temporary allocator storing
+ *   the converted `path` or NULL if (re)allocation failed;
+ * - everywhere else: `path` is passed back and no memory is allocated.
+ */
+PCBAPI const char* PCBCALL PCB_fromNativePath(const PCB_FS_char* path);
+/**
+ * @brief Free `path`, which must have been previously obtained by calling
+ * `PCB_toNativePath`. If it wasn't, the behavior may be undefined.
+ *
+ * Paths obtained from `PCB_toNativePath` and `PCB_fromNativePath` MUST be
+ * freed in reverse (LIFO) order; otherwise you will get a memory leak.
+ *
+ * This function is a no-op outside of Windows.
+ */
+PCBAPI void PCBCALL PCB_freeNativePath(const PCB_FS_char* path);
+/**
+ * @brief Free `path`, which must have been previously obtained by calling
+ * `PCB_fromNativePath`. If it wasn't, the behavior may be undefined.
+ *
+ * Paths obtained from `PCB_toNativePath` and `PCB_fromNativePath` MUST be
+ * freed in reverse (LIFO) order; otherwise you will get a memory leak.
+ *
+ * This function is a no-op outside of Windows.
+ */
+PCBAPI void PCBCALL PCB_freePath(const char* path);
+PCBAPI bool PCBCALL PCB_isAbsolutePath(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
 /**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
@@ -5153,6 +5326,13 @@ PCBAPI char* PCBCALL PCB_temp_strndup(const char* str, size_t n) PCB_Nonnull_Arg
  */
 PCBAPI size_t PCBCALL PCB_getNumberOfCores(void);
 
+/* -------------------------------------------------------------- */
+/*-------------- platform-specific functions ---------------------*/
+/* -------------------------------------------------------------- */
+#if PCB_PLATFORM_WINDOWS
+PCBAPI bool PCBCALL PCB_Windows_can_opt_out_of_MAX_PATH(void);
+#endif //platform-specific functions
+
 
 /**
  * @brief Get the string version of the C standard from an integer value
@@ -5292,6 +5472,24 @@ PCBAPI PCB_Noreturn void PCBCALL PCB__assert_fail(
 
 #endif //PCB_NO_DECLARATIONS
 
+#if !PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME
+static PCB_ForceInline int PCB_getEndianness(void) {
+#if USHRT_MAX > UCHAR_MAX
+    unsigned short
+#elif UINT_MAX > UCHAR_MAX
+    unsigned int
+#elif ULONG_MAX > UCHAR_MAX
+    unsigned long
+#elif ULLONG_MAX > UCHAR_MAX
+    unsigned long long
+#else
+#error "WTF is this architecture? No type is larger than char. Won't be able to determine endianness."
+    void
+#endif //pick an integer type that is strictly larger than 1 byte (whatever 1 byte is)
+    dummy = 1;
+    return *(unsigned char*)&dummy == 1 ? PCB_LITTLE_ENDIAN : PCB_BIG_ENDIAN;
+}
+#endif //PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME
 
 
 //Section 3: Implementation
@@ -5418,8 +5616,38 @@ static bool PCB__Linux_has_pidfd(void) {
         PCB__SYSTEM_INFO.version.minor >= 3
     ));
 }
-#endif //Currently private as providing similar info on Windows is,
-       //as always, a major PITA.
+#elif PCB_PLATFORM_WINDOWS
+static struct {
+    OSVERSIONINFOEXW version;
+    bool initialized;
+} PCB__SYSTEM_INFO = PCB_ZEROED;
+
+static void PCB__SYSTEM_INFO_GET(void) {
+    PCB__SYSTEM_INFO.version.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEXW);
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    //Should always be mapped, be we're paranoid.
+    if(ntdll == NULL) return;
+    //https://stackoverflow.com/questions/36543301/detecting-windows-10-version
+    typedef NTSTATUS (WINAPI *RtlGetVersion_pfn)(OSVERSIONINFOW*);
+    RtlGetVersion_pfn rtlGetVersion;
+    FARPROC proc = GetProcAddress(ntdll, "RtlGetVersion");
+    if(proc == NULL) return;
+
+    PCB_static_assert(sizeof(proc) == sizeof(rtlGetVersion),);
+    PCB_memcpy(&rtlGetVersion, &proc, sizeof(proc)); //direct `=` breaks strict aliasing
+    rtlGetVersion((OSVERSIONINFOW*)&PCB__SYSTEM_INFO.version);
+
+    PCB__SYSTEM_INFO.initialized = true;
+}
+
+bool PCB_Windows_can_opt_out_of_MAX_PATH(void) {
+    if(!PCB__SYSTEM_INFO.initialized) PCB__SYSTEM_INFO_GET();
+    const OSVERSIONINFOEXW* v = &PCB__SYSTEM_INFO.version;
+    if(v->dwMajorVersion > 10) return true;
+    if(v->dwMajorVersion == 10 && v->dwBuildNumber >= 14393) return true;
+    return false;
+}
+#endif //platform-specific version checks
 #endif //PCB_IMPLEMENTATION_ANY
 
 #ifdef PCB_IMPLEMENTATION_LIBC_FALLBACKS
@@ -5817,6 +6045,471 @@ void PCB_logLatestError(const char* fmt, ...) {
 
 
 //Section 3.2: Platform-independent (sort of) filesystem functions
+#if defined(PCB_IMPLEMENTATION_FS) || defined(PCB_IMPLEMENTATION_PROCESS)
+//Implementation of a lexical path normalizer for Windows.
+#if PCB_PLATFORM_WINDOWS
+static bool PCB__Windows_append_cp_w(PCB_WString* buf, uint32_t cp) {
+    uint8_t cpl = PCB_GetUTF16Length_unchecked(cp);
+    if(PCB_unlikely(buf->length + cpl > buf->capacity)) {
+        size_t new_cap = buf->capacity*2;
+        if(new_cap == 0) new_cap = 4;
+        wchar_t* new_buf = (wchar_t*)PCB_temp_realloc(buf->data, new_cap*sizeof(*buf->data));
+        if(new_buf == NULL) {
+            PCB_temp_free(buf->data);
+            return false;
+        }
+        buf->data = new_buf;
+        buf->capacity = new_cap;
+    }
+    PCB_StoreUTF16Codepoint((PCB_char16*)(buf->data + buf->length), cp);
+    buf->length += cpl;
+    return true;
+}
+
+static bool PCB__Windows_append_cp(PCB_String* buf, uint32_t cp) {
+    uint8_t cpl = PCB_GetUTF8Length_unchecked(cp);
+    if(PCB_unlikely(buf->length + cpl > buf->capacity)) {
+        size_t new_cap = buf->capacity*2;
+        if(new_cap == 0) new_cap = 8;
+        char* new_buf = (char*)PCB_temp_realloc(buf->data, new_cap*sizeof(*buf->data));
+        if(new_buf == NULL) {
+            PCB_temp_free(buf->data);
+            return false;
+        }
+        buf->data = new_buf;
+        buf->capacity = new_cap;
+    }
+    PCB_StoreUTF8Codepoint((PCB_char8*)buf->data + buf->length, cp);
+    buf->length += cpl;
+    return true;
+}
+
+static void PCB__bswap_FS_char(PCB_FS_char* path, size_t n) {
+    while(n-- > 0) {
+        PCB_FS_char c = *path;
+        *path++ = (PCB_FS_char)((unsigned int)(c << 8) | (unsigned int)(c >> 8));
+    }
+}
+
+typedef enum { //NOTE: some stupid header defines RELATIVE and ABSOLUTE
+    PCB__WINDOWS_PATH_RELATIVE,
+    PCB__WINDOWS_PATH_RELATIVE_DRIVE,
+    PCB__WINDOWS_PATH_ABSOLUTE,
+    PCB__WINDOWS_PATH_NT,
+    PCB__WINDOWS_PATH_DRIVE,
+    PCB__WINDOWS_PATH_DEVICE,
+    PCB__WINDOWS_PATH_UNC,
+} PCB__Windows_Path_Type;
+
+static PCB__Windows_Path_Type PCB__Windows_path_getType(const char* path) {
+    if( //drive letter
+        ((path[0] >= 'A' && path[0] <= 'Z') ||
+         (path[0] >= 'a' && path[0] <= 'z')) &&
+        path[1] == ':'
+    ) {
+        //This one matters a LOT.
+        //C:[^\].* is relative, but C:\.* is absolute.
+        return (path[2] == '\\' || path[2] == '/')
+            ? PCB__WINDOWS_PATH_DRIVE
+            : PCB__WINDOWS_PATH_RELATIVE_DRIVE;
+    }
+    //absolute paths; treating '/' as root is a PCB extension
+    else if(path[0] == '\\' || path[0] == '/') {
+        if(path[1] == '\\' || path[1] == '/') { //device, NT, UNC
+            if(path[2] == '.' && (path[3] == '\\' || path[3] == '/'))
+                return PCB__WINDOWS_PATH_DEVICE;
+            else if(path[2] == '?' && (path[3] == '\\' || path[3] == '/'))
+                return PCB__WINDOWS_PATH_NT;
+            else
+                return PCB__WINDOWS_PATH_UNC;
+        } else return PCB__WINDOWS_PATH_ABSOLUTE;
+    } else return PCB__WINDOWS_PATH_RELATIVE;
+}
+
+static const char* PCB__Windows_append_UNC_server_share(
+    PCB_WString* buf, const char* path
+) {
+    PCB_Codepoint cp;
+    PCB_StringView sv = PCB_StringView_from_cstr(path);
+    enum { SEP1, SERVER, SEP2, SHARE, DONE } state = SEP1;
+    for(; sv.length > 0 && state != DONE; sv.data += cp.length, sv.length -= cp.length) {
+        cp = PCB_StringView_GetCodepoint_unchecked(sv, 0);
+        if(cp.code < 0) cp.code = 0xFFFD;
+        else if(cp.code == '/') cp.code = '\\';
+
+        if(cp.code == '\\') switch(state) {
+            case SEP1: continue; //skip
+            case SERVER: state = SEP2; break;
+            case SEP2: continue; //skip
+            case SHARE: state = DONE; break;
+            case DONE:
+          default: PCB_Unreachable;
+        } else switch(state) {
+            case SEP1: state = SERVER; break;
+            case SERVER: break;
+            case SEP2: state = SHARE; break;
+            case SHARE: break;
+            case DONE:
+            default: PCB_Unreachable;
+        }
+        if(!PCB__Windows_append_cp_w(buf, (uint32_t)cp.code)) return NULL;
+    }
+    //NOTE: We could reject invalid paths like "\\server\", but it's probably
+    //better for the system API/kernel to signal that.
+    return sv.data;
+}
+
+static const char* PCB__Windows_append_device(
+    PCB_WString* buf, const char* path
+) {
+    PCB_Codepoint cp;
+    PCB_StringView sv = PCB_StringView_from_cstr(path);
+    for(; sv.length > 0; sv.data += cp.length, sv.length -= cp.length) {
+        cp = PCB_StringView_GetCodepoint_unchecked(sv, 0);
+        if(cp.code < 0) cp.code = 0xFFFD;
+        else if(cp.code == '\\' || cp.code == '/') {
+            if(!PCB__Windows_append_cp_w(buf, '\\')) return NULL;
+            return sv.data+1;
+        }
+        if(!PCB__Windows_append_cp_w(buf, (uint32_t)cp.code)) return NULL;
+    }
+    //NOTE: If we reached here, `path` was probably invalid (like "\\.\PIPE").
+    return sv.data;
+}
+
+static bool PCB__Windows_append_NT_prefix(PCB_WString* buf) {
+    const unsigned char prefix[] = {'\\','\\','?','\\'};
+    PCB_Arr_forEach_it(prefix, c, const unsigned char)
+        if(!PCB__Windows_append_cp_w(buf, *c)) return false;
+    return true;
+}
+
+static const char* PCB__Windows_append_NT_namespace(
+    PCB_WString* buf, const char* path
+) {
+    if( //drive letter
+        ((path[0] >= 'A' && path[0] <= 'Z') ||
+         (path[0] >= 'a' && path[0] <= 'z')) &&
+        path[1] == ':' &&
+        (path[2] == '\\' || path[2] == '/')
+    ) {
+        for(int _ = 0; _ < 2; _++)
+            if(!PCB__Windows_append_cp_w(buf, (unsigned char)*path++)) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        return path;
+    } else if(
+        path[0] == 'U' && path[1] == 'N' && path[2] == 'C' &&
+        (path[3] == '\\' || path[3] == '/')
+    ) {
+        for(int _ = 0; _ < 3; _++)
+            if(!PCB__Windows_append_cp_w(buf, (unsigned char)*path++)) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        return PCB__Windows_append_UNC_server_share(buf, path);
+    } else {
+        return PCB__Windows_append_device(buf, path);
+    }
+}
+
+static const char* PCB__Windows_path_to_NT_namespace(
+    PCB_WString* buf, const char* path, PCB__Windows_Path_Type type
+) {
+    switch(type) {
+      case PCB__WINDOWS_PATH_RELATIVE: return path;
+      case PCB__WINDOWS_PATH_RELATIVE_DRIVE:
+        if(!PCB__Windows_append_cp_w(buf, *path)) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, ':')) return NULL;
+        return path + 2;
+      case PCB__WINDOWS_PATH_ABSOLUTE:
+        if(!PCB__Windows_append_cp_w(buf, '\\')) return NULL;
+        return path + 1;
+      case PCB__WINDOWS_PATH_NT:
+        if(!PCB__Windows_append_NT_prefix(buf)) return NULL;
+        return PCB__Windows_append_NT_namespace(buf, path+4);
+      case PCB__WINDOWS_PATH_DEVICE:
+        if(!PCB__Windows_append_NT_prefix(buf)) return NULL;
+        return PCB__Windows_append_device(buf, path+4/*skip "\\.\"*/);
+      case PCB__WINDOWS_PATH_DRIVE:
+        if(!PCB__Windows_append_NT_prefix(buf)) return NULL;
+        for(int _ = 0; _ < 2; _++)
+            if(!PCB__Windows_append_cp_w(buf, (unsigned char)*path++)) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        return path;
+      case PCB__WINDOWS_PATH_UNC: {
+        const unsigned char prefix_unc[] = {'U','N','C','\\'};
+        if(!PCB__Windows_append_NT_prefix(buf)) return NULL;
+        PCB_Arr_forEach_it(prefix_unc, c, const unsigned char)
+            if(!PCB__Windows_append_cp_w(buf, *c)) return NULL;
+        return PCB__Windows_append_UNC_server_share(buf, path+2/*skip "\\"*/);
+      }
+      default: PCB_Unreachable;
+    }
+}
+
+static const char* PCB__Windows_parse_and_append_prefix(
+    PCB_WString* buf, const char* path, PCB__Windows_Path_Type type
+) {
+    //Supposedly some APIs still can't opt out despite this being a thing, smh.
+    if(PCB_Windows_can_opt_out_of_MAX_PATH())
+        return PCB__Windows_path_to_NT_namespace(buf, path, type);
+    switch(type) {
+      case PCB__WINDOWS_PATH_RELATIVE:
+          return path;
+      case PCB__WINDOWS_PATH_RELATIVE_DRIVE:
+        if(!PCB__Windows_append_cp_w(buf, (unsigned char)*path++)) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, ':'))) return NULL;
+        return path;
+      case PCB__WINDOWS_PATH_ABSOLUTE:
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        return path;
+      case PCB__WINDOWS_PATH_NT:
+        if(!PCB__Windows_append_NT_prefix(buf)) return NULL;
+        return PCB__Windows_append_NT_namespace(buf, path +4/*skip "\\?\"*/);
+      case PCB__WINDOWS_PATH_DRIVE:
+        if(!PCB__Windows_append_cp_w(buf, (unsigned char)*path++)) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (unsigned char)*path++)) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        return path;
+      case PCB__WINDOWS_PATH_UNC:
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        return PCB__Windows_append_UNC_server_share(buf, path);
+      case PCB__WINDOWS_PATH_DEVICE:
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '.'))) return NULL;
+        if(!PCB__Windows_append_cp_w(buf, (++path, '\\'))) return NULL;
+        return PCB__Windows_append_device(buf, path);
+      default: PCB_Unreachable;
+    }
+}
+
+static bool PCB__Windows_path_go_up(PCB_WString* buf, int_least32_t *toplevel_idx) {
+    buf->length -= 2; //remove ".."
+    //start prior to '\', if there is one; otherwise will get negative
+    int_least32_t i = (int_least32_t)(uint_least32_t)buf->length - 2;
+    int_least32_t toplevel_abs_idx = *toplevel_idx < 0 ? -*toplevel_idx : *toplevel_idx;
+    while(i > toplevel_abs_idx && buf->data[i] != '\\') --i;
+    if(i <= toplevel_abs_idx) {
+        if(*toplevel_idx <= 0) {
+            //Something was skipped. For example:
+            //- "a\.."; "a\" needs to be removed;
+            //- "..\a\.."; "a\" needs to be removed, but not "..\";
+            if(buf->length > (uint_least32_t)toplevel_abs_idx) {
+                buf->length = (uint_least32_t)toplevel_abs_idx;
+                return true; //'\' cannot be added
+            }
+            buf->length += 2; //restore ".."
+            //"..\" is added to the toplevel.
+            //This is counted as negative because if it was
+            //positive, encountering another "..\" would remove
+            //it instead of stacking.
+            *toplevel_idx -= 3;
+            return false; //don't skip adding '\'
+        } else {
+            buf->length = (uint_least32_t)*toplevel_idx;
+            return true; //would duplicate '\'
+        }
+    } else {
+        buf->length = (uint_least32_t)i + 1;
+        return true; //would duplicate '\'
+    }
+}
+#endif //Windows only
+
+const PCB_FS_char* PCB_toNativePath(const char* path) {
+#if !PCB_PLATFORM_WINDOWS
+    return path; //Already in native encoding.
+#else
+    PCB_CHECK(path == NULL, NULL);
+    PCB_WString buf = PCB_ZEROED;
+    PCB_Codepoint cp;
+    PCB__Windows_Path_Type path_type = PCB__Windows_path_getType(path);
+
+    //TODO: In multiple places there is a need to work with Unicode, which
+    //requires conversion to a string view, which requires a call to strlen.
+    //We should work with string views internally to avoid remeasuring.
+    path = PCB__Windows_parse_and_append_prefix(&buf, path, path_type);
+    if(path == NULL) return NULL;
+    //"toplevel" is the position before which characters already in `buf`
+    //will not be removed by any number of "..".
+    //For "C:\..\", toplevel is "C:\"; ".." will not remove it.
+    //If `buf` is empty, then there's no current top level, i.e. path is relative.
+    //This value can go negative, meaning `path` is relative and there is some
+    //unstrippable component, for "C:..\foo", toplevel is "C:..\".
+    int_least32_t toplevel_idx = (int_least32_t)(uint_least32_t)buf.length;
+    if(path_type == PCB__WINDOWS_PATH_RELATIVE_DRIVE) {
+        PCB_assert(buf.length == 2);
+        toplevel_idx = -2;
+    }
+    enum {
+        PARSED_DIRSEP, //"[/\]+"
+        PARSED_PATH_COMPONENT, //"foo"
+        PARSED_PATH_COMPONENT_DOT, //"foo[.]"
+        PARSED_PATH_COMPONENT_DOT2, //"foo[.].*"
+        PARSED_DOT, //"[.]"
+        PARSED_DOT2, //"[.][.]"
+    } state = PARSED_DIRSEP;
+    PCB_StringView sv = PCB_StringView_from_cstr(path);
+    for(; sv.length > 0; sv.data += cp.length, sv.length -= cp.length) {
+        cp = PCB_StringView_GetCodepoint_unchecked(sv, 0);
+        uint32_t to_append = cp.code;
+        if(cp.code < 0)         to_append = 0xFFFD;
+        else if(cp.code == '/') to_append = '\\';
+        if(to_append == '\\') switch(state) {
+          case PARSED_DIRSEP: continue; //duplicate, skip
+          case PARSED_PATH_COMPONENT: state = PARSED_DIRSEP; break;
+          case PARSED_PATH_COMPONENT_DOT:
+            state = PARSED_DIRSEP;
+            --buf.length; //".\"
+            break;
+          case PARSED_PATH_COMPONENT_DOT2: state = PARSED_DIRSEP; break;
+          case PARSED_DOT:
+            --buf.length; continue;
+          case PARSED_DOT2:
+            state = PARSED_DIRSEP;
+            if(PCB__Windows_path_go_up(&buf, &toplevel_idx)) continue;
+            break;
+          default: PCB_Unreachable;
+        } else switch(state) {
+          case PARSED_DIRSEP:
+            if(to_append == '.') state = PARSED_DOT;
+            else state = PARSED_PATH_COMPONENT;
+            break;
+          case PARSED_PATH_COMPONENT:
+            if(to_append == '.') state = PARSED_PATH_COMPONENT_DOT;
+            break;
+          case PARSED_PATH_COMPONENT_DOT:
+            state = PARSED_PATH_COMPONENT_DOT2;
+            break;
+          case PARSED_PATH_COMPONENT_DOT2:
+            break;
+          case PARSED_DOT:
+            if(to_append == '.') state = PARSED_DOT2;
+            else state = PARSED_PATH_COMPONENT;
+            break;
+          case PARSED_DOT2:
+            state = PARSED_PATH_COMPONENT;
+            break;
+          default: PCB_Unreachable;
+        }
+        if(!PCB__Windows_append_cp_w(&buf, to_append)) return NULL;
+    }
+    switch(state) {
+      case PARSED_DIRSEP: break;
+      case PARSED_PATH_COMPONENT: //fallthrough
+      case PARSED_PATH_COMPONENT_DOT: //fallthrough
+      case PARSED_PATH_COMPONENT_DOT2: //fallthrough
+      case PARSED_DOT:
+        while(buf.length > 0) {
+            wchar_t c = buf.data[buf.length-1];
+            if(c == '.' || c == ' ') --buf.length;
+            else break;
+        }
+        break;
+      case PARSED_DOT2:
+        if(PCB__Windows_path_go_up(&buf, &toplevel_idx)) break;
+        if(!PCB__Windows_append_cp_w(&buf, '\\')) return NULL;
+        break;
+      default: PCB_Unreachable;
+    }
+    if(!PCB__Windows_append_cp_w(&buf, '\0')) return NULL;
+    //Shrink the allocated buffer if we overallocated.
+    //This cannot fail unless the temporary arena was destroyed by another thread.
+    //Why would anyone in their right mind want to do that? No clue.
+    //Will treat it as user bug.
+    buf.data = (wchar_t*)PCB_temp_realloc(buf.data, buf.length*sizeof(*buf.data));
+    PCB_assert(buf.data != NULL);
+    //Windows specifically uses UTF-16LE.
+    if(PCB_ENDIANNESS != PCB_LITTLE_ENDIAN) PCB__bswap_FS_char(buf.data, buf.length);
+    return buf.data;
+#endif //On Windows, `path` is transcoded to UTF-16.
+}
+
+const char* PCB_fromNativePath(const PCB_FS_char* path) {
+#if PCB_PLATFORM_WINDOWS
+    PCB_String buf = PCB_ZEROED;
+    PCB_WStringView sv = PCB_WStringView_from_cstr(path);
+    PCB_Codepoint cp;
+    if(PCB_ENDIANNESS == PCB_LITTLE_ENDIAN) {
+        for(; sv.length > 0; sv.data += cp.length, sv.length -= cp.length) {
+            cp = PCB_WStringView_GetCodepoint(sv, 0);
+            if(cp.code < 0) cp.code = 0xFFFD;
+            if(!PCB__Windows_append_cp(&buf, cp.code)) return NULL;
+        }
+    } else {
+        //On big-endian systems we have to perform this humiliation ritual
+        //involving conversion to UTF-16BE (because Windows uses UTF-16LE),
+        //but since we can't modify `path`, it has to be done in chunks
+        //of <max length of UTF-16-encoded codepoint = 2>...
+        for(; sv.length >= 2; sv.data += cp.length, sv.length -= cp.length) {
+            wchar_t buf_be[2] = { sv.data[0], sv.data[1] };
+            PCB__bswap_FS_char(buf_be, 2);
+            PCB_WStringView buf_be_sv = {buf_be, 2};
+            cp = PCB_WStringView_GetCodepoint_unchecked(buf_be_sv, 0);
+            if(cp.code < 0) cp.code = 0xFFFD;
+            if(!PCB__Windows_append_cp(&buf, cp.code)) return NULL;
+        }
+        //...and then one more time if there is a word left.
+        if(sv.length == 1) {
+            wchar_t buf_be = (*sv.data << 8) | (*sv.data >> 8);
+            PCB_WStringView buf_be_sv = {&buf_be, 1};
+            cp = PCB_WStringView_GetCodepoint_unchecked(buf_be_sv, 0);
+            if(cp.code < 0) cp.code = 0xFFFD;
+            if(!PCB__Windows_append_cp(&buf, cp.code)) return NULL;
+        }
+    }
+    if(!PCB__Windows_append_cp(&buf, '\0')) return NULL;
+    //Shrink if overallocated; see `PCB_toNativePath`.
+    buf.data = (char*)PCB_temp_realloc(buf.data, buf.length*sizeof(*buf.data));
+    PCB_assert(buf.data != NULL);
+    return buf.data;
+#else
+    return path;
+#endif //On Windows, `path` is transcoded back to UTF-8.
+}
+
+#if PCB_PLATFORM_WINDOWS
+void PCB_freeNativePath(const PCB_FS_char* path) {
+    PCB_temp_free(PCB_const_cast(PCB_FS_char*)(path));
+}
+
+void PCB_freePath(const char* path) {
+    PCB_temp_free(PCB_const_cast(char*)(path));
+}
+#else
+void PCB_freeNativePath(const PCB_FS_char* path) { (void)path; }
+void PCB_freePath(const char* path) { (void)path; }
+#endif //noop outside of Windows
+
+bool PCB_isAbsolutePath(const PCB_FS_char* path) {
+    PCB_CHECK_NULL(path, false);
+#if PCB_PLATFORM_WINDOWS
+    //Reference: https://chrisdenton.github.io/omnipath/Details.html.
+    if(path[0] == '\0') return false; //""
+    //All paths starting with '\' are absolute from the view of the NT kernel.
+    //Dunno about Win32, but `PathIsRelativeW` seems to agree.
+    if(path[0] == '\\') return true;
+    if(!(path[0] >= 'A' && path[0] <= 'Z') && !(path[0] >= 'a' && path[0] <= 'z')) return false;
+    switch(path[1]) {
+      case '\0': return false; //"[a-zA-Z]"
+      case ':':
+        switch(path[2]) {
+          case '\0': return false; //"[a-zA-Z]:"
+          case '\\': return true;
+          case '/':  return true; //for compatibility with WinAPI
+          default:   return false;
+        }
+      default: return false;
+    }
+#elif PCB_PLATFORM_POSIX
+    return *path == '/';
+#else
+    (void)path;
+    return false; //stub
+#endif //platforms
+}
+#endif //both the file & process subsystem work with paths
+
 #ifdef PCB_IMPLEMENTATION_FS
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
