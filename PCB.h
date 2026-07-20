@@ -2711,6 +2711,11 @@ PCB_Enum_Fixed(PCB_Status_Domain, uint32_t) {
      * `code` corresponds to the value returned by `GetLastError()`.
      */
     PCB_STATUS_DOMAIN_WINAPI = 4,
+    /**
+     * @brief Status comes from PCB.
+     * `code` corresponds to values defined in `PCB_Result`.
+     */
+    PCB_STATUS_DOMAIN_PCB = 65536,
 };
 #else
 /*
@@ -2730,6 +2735,7 @@ typedef uint32_t PCB_Status_Domain;
 #define PCB_STATUS_DOMAIN_C (PCB_Status_Domain)2
 #define PCB_STATUS_DOMAIN_POSIX (PCB_Status_Domain)3
 #define PCB_STATUS_DOMAIN_WINAPI (PCB_Status_Domain)4
+#define PCB_STATUS_DOMAIN_PCB (PCB_Status_Domain)65536
 #endif //provide an actual enumeration if possible, fallback to macros
 /**
  * @brief The first 2^16 domains are permanently reserved for mapping to
@@ -2952,6 +2958,19 @@ PCB_Enum(PCB_Common_Error, uint32_t) {
 
 //Helper macros.
 #define PCB_CERR_NOMEM (PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENOMEM))
+
+/**
+ * @brief Different error values returned in conjunction with the
+ * `PCB_STATUS_DOMAIN_PCB` domain.
+ */
+PCB_Enum(PCB_Result, uint32_t) {
+    PCB_RESULT_SUCCESS = 0,
+    PCB_RESULT_BUFFER_TOO_SMALL = 1,
+    /**
+     * @brief Number of constants in this enum. SHALL never be returned.
+     */
+    PCB_RESULT_COUNT,
+};
 
 typedef enum {
     PCB_LOGLEVEL_NONE,  PCB_LOGLEVEL_NONE_NL,  //without the prefix
@@ -3847,6 +3866,29 @@ PCBAPI PCB_Status PCBCALL PCB_FS_mkdir_if_not_exists(const char* path) PCB_Nonnu
 PCBAPI PCB_Status PCBCALL PCB_FS_mkdir_if_not_exists_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
 PCBAPI PCB_Status PCBCALL PCB_FS_rm(const char* path) PCB_Nonnull_Arg(1);
 PCBAPI PCB_Status PCBCALL PCB_FS_rm_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
+/**
+ * @brief Get the current process' working directory.
+ * Currently stubbed on Windows; use the `_ne` variant.
+ * @return See `PCB_FS_getcwd_ne`.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_getcwd(PCB_StringSlice buf);
+/**
+ * @brief Get the current process' working directory in native encoding.
+ * `buf` must include space for the null terminator.
+ * IMPORTANT: This function is not thread-safe on Windows because
+ * `GetCurrentDirectoryW` isn't.
+ * @return On success, `PCB_OK(len)` where `len` is the length of the stored
+ * string; check with `PCB_ISOK`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - PCB domain:
+ *   - PCB_RESULT_BUFFER_TOO_SMALL: retry with more space in `buf`;
+ * - Common domain:
+ *   - PCB_CEFAULT: `buf.data == NULL`;
+ * - POSIX domain (POSIX only): see getcwd(2).
+ * - WinAPI domain (Windows only): see GetCurrentDirectoryW.
+ * Contents of `buf.data` are undefined on error.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_getcwd_ne(PCB_FS_StringSlice buf);
 /**
  * @brief Checks if a filesystem entry exists.
  *
@@ -6920,6 +6962,7 @@ PCB_Status PCB_FS_mkdir_if_not_exists_ne(const PCB_FS_char* path) {
       case PCB_STATUS_DOMAIN_POSIX:
 #endif //POSIX || Windows
       case PCB_STATUS_DOMAIN_C:
+      case PCB_STATUS_DOMAIN_PCB:
       default: PCB_Unreachable;
 #else
       default: return result;
@@ -6951,6 +6994,38 @@ PCB_Status PCB_FS_rm_ne(const PCB_FS_char* path) {
     return PCB_OK(0);
 #else
     (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_FS_getcwd(PCB_StringSlice buf) {
+#if PCB_PLATFORM_WINDOWS
+    (void)buf;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#else
+    return PCB_FS_getcwd_ne(buf);
+#endif //Windows?
+}
+
+PCB_Status PCB_FS_getcwd_ne(PCB_FS_StringSlice buf) {
+    PCB_CHECK(buf.data == NULL, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+#if PCB_PLATFORM_WINDOWS
+    DWORD reqlen = GetCurrentDirectoryW((DWORD)buf.length, buf.data);
+    if(reqlen == 0)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+    if(reqlen <= buf.length) return PCB_OK((uint32_t)reqlen);
+    return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_BUFFER_TOO_SMALL);
+#elif PCB_PLATFORM_POSIX
+    if(getcwd(buf.data, buf.length) == NULL) {
+        int e = errno;
+        switch(e) {
+          case ERANGE:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_BUFFER_TOO_SMALL);
+          default: return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+        }
+    }
+    return PCB_OK((uint32_t)PCB_strlen(buf.data));
+#else
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
 
