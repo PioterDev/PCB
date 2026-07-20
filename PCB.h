@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 0
+#define PCB_VERSION_PATCH 1
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5401,7 +5401,12 @@ PCBAPI PCB_Arena_Flags PCBCALL PCB_Arena_flags(PCB_Arena* arena) PCB_Nonnull_Arg
 /**
  * @brief Increment `arena`'s reference count. Does not affect successor nodes.
  */
-PCBAPI void PCBCALL PCB_Arena_reference(PCB_Arena* arena) PCB_Nonnull_Arg(1);
+PCBAPI void PCBCALL PCB_Arena_ref(PCB_Arena* arena) PCB_Nonnull_Arg(1);
+/**
+ * @brief Decrement `arena`'s reference count. Destroys `arena` when count reaches
+ * zero. Identical to `PCB_Arena_destroy`
+ */
+PCBAPI void PCBCALL PCB_Arena_unref(PCB_Arena* arena);
 /**
  * @brief Enables storing additional metadata before each allocation.
  * This can only be done if `arena` is empty, including all of its successors.
@@ -10339,9 +10344,13 @@ PCB_Arena_Flags PCB_Arena_flags(PCB_Arena* arena) {
     return ((PCB_Arena_Prefix*)arena)->flags;
 }
 
-void PCB_Arena_reference(PCB_Arena* arena) {
+void PCB_Arena_ref(PCB_Arena* arena) {
     PCB_CHECK_SELF(arena,);
     ++((PCB_Arena_Prefix*)arena)->refcount;
+}
+
+void PCB_Arena_unref(PCB_Arena* arena) {
+    PCB_Arena_destroy(arena);
 }
 
 bool PCB_Arena_enable_allocMeta(PCB_Arena* arena, bool enable) {
