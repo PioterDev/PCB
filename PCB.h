@@ -3883,8 +3883,14 @@ PCBAPI int PCBCALL PCB_FS_Exists(const char* path) PCB_Nonnull_Arg(1);
  * To ignore the symlink bit, apply bitwise AND with `PCB_FILETYPE_SYMLINK_IGN`
  * to remove it.
  * @param path path/to/thing/in/filesystem
+ *
+ * This API loses detailed error information. You `PCB_File_get` if you need that.
  */
 PCBAPI PCB_FileType PCBCALL PCB_FS_GetType(const char* path) PCB_Nonnull_Arg(1);
+/**
+ * @brief Same as `PCB_FS_GetType`, but using native path encoding.
+ */
+PCBAPI PCB_FileType PCBCALL PCB_FS_GetType_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
 /**
  * @brief Get the modification time of a filesystem entry.
  *
@@ -7192,75 +7198,15 @@ int PCB_FS_Exists(const char* path) {
 }
 
 PCB_FileType PCB_FS_GetType(const char* path) {
-    if(path == NULL) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        errno = EFAULT; return PCB_FILETYPE_ERROR;
-    }
-#if PCB_PLATFORM_WINDOWS
-    PCB_FileType type;
-    HANDLE f = CreateFileA(
-        path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
-    );
-    if(f == INVALID_HANDLE_VALUE) {
-        errno = 0;
-        type = GetLastError() == ERROR_FILE_NOT_FOUND ? PCB_FILETYPE_NONE : PCB_FILETYPE_ERROR;
-        goto end;
-    }
-    switch(GetFileType(f)) {
-        case FILE_TYPE_CHAR: type = PCB_FILETYPE_CHAR; break;
-        case FILE_TYPE_PIPE: type = PCB_FILETYPE_STREAM; break;
-        case FILE_TYPE_UNKNOWN:
-            type = GetLastError() == NO_ERROR ? PCB_FILETYPE_UNKNOWN : PCB_FILETYPE_ERROR;
-            break;
-        case FILE_TYPE_DISK: {
-            FILE_ATTRIBUTE_TAG_INFO tags;
-            if(!GetFileInformationByHandleEx(
-                f, FileAttributeTagInfo, &tags, sizeof(tags)
-            )) {
-                errno = 0; type = PCB_FILETYPE_ERROR; break;
-            }
-            if(tags.FileAttributes == INVALID_FILE_ATTRIBUTES) {
-                errno = 0; type = PCB_FILETYPE_ERROR; break;
-            }
-            //TODO: Windows has something called "reparse points"
-            //that are used for symlinks and "junctions". Implement logic for them.
-            if(tags.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-                type = PCB_FILETYPE_DIR;
-            else type = PCB_FILETYPE_REG;
-        } break;
-        default: type = PCB_FILETYPE_UNKNOWN; break;
-    }
-    end:
-    CloseHandle(f);
-    return type;
-#elif PCB_PLATFORM_POSIX
-    struct stat s;
-    if(lstat(path, &s) == -1) {
-        if(errno == ENOENT) {errno = 0; return PCB_FILETYPE_NONE; }
-        else return PCB_FILETYPE_ERROR;
-    }
-    if(S_ISLNK(s.st_mode)) {
-        if(stat(path, &s) == -1) {
-            if(errno == ENOENT) {errno = 0; return PCB_FILETYPE_NONE_SYM; }
-            else return PCB_FILETYPE_ERROR;
-        }
-        if(S_ISREG(s.st_mode)) return PCB_FILETYPE_REG_SYM;
-        if(S_ISDIR(s.st_mode)) return PCB_FILETYPE_DIR_SYM;
-        if(S_ISCHR(s.st_mode)) return PCB_FILETYPE_CHAR_SYM;
-        if(S_ISBLK(s.st_mode)) return PCB_FILETYPE_BLK_SYM;
-        if(S_ISFIFO(s.st_mode) || S_ISSOCK(s.st_mode)) return PCB_FILETYPE_STREAM_SYM;
-        return PCB_FILETYPE_UNKNOWN_SYM;
-    }
-    if(S_ISREG(s.st_mode)) return PCB_FILETYPE_REG;
-    if(S_ISDIR(s.st_mode)) return PCB_FILETYPE_DIR;
-    if(S_ISCHR(s.st_mode)) return PCB_FILETYPE_CHAR;
-    if(S_ISBLK(s.st_mode)) return PCB_FILETYPE_BLK;
-    if(S_ISFIFO(s.st_mode) || S_ISSOCK(s.st_mode)) return PCB_FILETYPE_STREAM;
-    return PCB_FILETYPE_UNKNOWN;
-#endif //platform
+    PCB_File_Info info;
+    PCB_File_Info_get(&info, path, true);
+    return info.type;
+}
+
+PCB_FileType PCB_FS_GetType_ne(const PCB_FS_char* path) {
+    PCB_File_Info info;
+    PCB_File_Info_get_ne(&info, path, true);
+    return info.type;
 }
 
 uint64_t PCB_FS_GetModificationTime(const char* path) {
