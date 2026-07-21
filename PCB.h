@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 2
+#define PCB_VERSION_PATCH 3
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -9790,7 +9790,7 @@ int PCB_Processes_waitForAny(PCB_Processes* ps) {
             }
         }
         struct timespec t;
-        if(ps->poll_us > 1e6) {
+        if(ps->poll_us > 1000000) {
             t.tv_sec  = (PCB_ssize_t)(ps->poll_us/1000000);
             t.tv_nsec = (int)(ps->poll_us%1000000 * 1000);
         } else {
