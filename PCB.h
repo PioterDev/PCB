@@ -2862,6 +2862,15 @@ PCB_Enum(PCB_Common_Error, uint32_t) {
      */
     PCB_CESTUB = 4,
     PCB_CENOSYS = PCB_CESTUB,
+    /**
+     * @brief Permission denied.
+     */
+    PCB_CEACCES = 5,
+    /**
+     * @brief No such resource.
+     */
+    PCB_CENORES = 6,
+    PCB_CENOENT = PCB_CENORES,
 };
 
 //Helper macros.
@@ -2919,7 +2928,7 @@ typedef enum {
     PCB_FILETYPE_BLK = 0x6,
     //Non-existent filesystem entry.
     PCB_FILETYPE_NONE = 0x10,
-    //Symbolic link, always returned alongside another filetype.
+    //Symbolic link, may be returned alongside another filetype.
     PCB_FILETYPE_SYMLINK = 0x20,
 
     //Unknown/unsupported file type that is pointed to via a symlink.
@@ -2965,6 +2974,38 @@ typedef struct {
     int handle; //stub
 #endif //platform
 } PCB_File;
+
+typedef struct {
+    PCB_FileType type;
+    uint64_t size;
+    struct {
+        //When file contents were last accessed.
+        uint64_t access;
+        //When file contents were last modified.
+        uint64_t modification;
+#if PCB_PLATFORM_WINDOWS
+        //When file was created.
+        uint64_t creation;
+#elif PCB_PLATFORM_POSIX
+        //When file's inode was modified (see inode(7)).
+        uint64_t status_change;
+#endif //unavoidable; Windows has different semantics
+    } timestamps;
+#if PCB_PLATFORM_WINDOWS
+    DWORD attributes; //See "File Attribute Constants" in WinAPI docs.
+    DWORD links;
+#elif PCB_PLATFORM_POSIX
+    //These fields are copied from stat(3type).
+    dev_t dev;
+    ino_t ino;
+    nlink_t hardlinks;
+    uid_t uid;
+    gid_t gid;
+    dev_t rdev;
+    blksize_t blksize;
+    blkcnt_t blocks;
+#endif //platform-specific fields
+} PCB_File_Info;
 
 /**
  * @brief Initializer for `PCB_File`.
@@ -3763,6 +3804,35 @@ PCBAPI bool PCBCALL PCB_isAbsolutePath(const PCB_FS_char* path) PCB_Nonnull_Arg(
  * @param path path/to/directory/to/create, not transitive
  */
 PCB_Deprecated PCBAPI bool PCBCALL PCB_mkdir(const char* path) PCB_Nonnull_Arg(1);
+
+/**
+ * @brief Identical to `PCB_File_Info_get_ne`, except `path` is converted to
+ * native encoding.
+ * @return `PCB_CERR_NOMEM` if conversion fails, otherwise see the `_ne` variant.
+ */
+PCBAPI PCB_Status PCBCALL PCB_File_Info_get(
+    PCB_File_Info* info, const char* path, bool follow_symlinks
+) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Get info about file at `path`, optionally following symlinks.
+ * @return On success, `PCB_OK()` is returned; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CENORES:
+ *       There is no filesystem entry at `path`.
+ *       `info->type` is set to `PCB_FILETYPE_NONE_SYM` if `follow_symlinks`
+ *       and `path` is dangling symlink, `PCB_FILETYPE_NONE` otherwise.
+ *   - PCB_CEACCES: Permission to access the file was denied.
+ * - POSIX domain (POSIX): See stat(2) and lstat(2).
+ * - WinAPI domain (Windows): See CreateFileW and GetFileInformationByHandle.
+ * Unless stated otherwise:
+ * - `info->type` is set to `PCB_FILETYPE_SYMLINK` if `follow_symlinks`,
+ *   `path` is a symlink and getting info about the symlink target fails;
+ * - otherwise set to `PCB_FILETYPE_ERROR`.
+ */
+PCBAPI PCB_Status PCBCALL PCB_File_Info_get_ne(
+    PCB_File_Info* info, const PCB_FS_char* path, bool follow_symlinks
+) PCB_Nonnull_Arg(1, 2);
 
 //These functions are too short to be worth documenting.
 //Just read the implementation.
@@ -6814,6 +6884,179 @@ bool PCB_mkdir(const char* path) {
     }
     return true;
 #endif //platform
+}
+
+PCB_Status PCB_File_Info_get(
+    PCB_File_Info* info, const char* path, bool follow_symlinks
+) {
+#if PCB_PLATFORM_WINDOWS
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    const PCB_FS_char* npath = PCB_toNativePath(path);
+    if(npath == NULL) return PCB_CERR_NOMEM;
+    PCB_Status result = PCB_File_Info_get_ne(info, npath, follow_symlinks);
+    PCB_freeNativePath(npath);
+    return result;
+#else
+    return PCB_File_Info_get_ne(info, path, follow_symlinks);
+#endif
+}
+
+#if PCB_PLATFORM_POSIX
+static PCB_FileType PCB__FileType_from_stat(const struct stat *s) {
+    if(S_ISREG(s->st_mode)) return PCB_FILETYPE_REG;
+    if(S_ISDIR(s->st_mode)) return PCB_FILETYPE_DIR;
+    if(S_ISCHR(s->st_mode)) return PCB_FILETYPE_CHAR;
+    if(S_ISBLK(s->st_mode)) return PCB_FILETYPE_BLK;
+    if(S_ISLNK(s->st_mode)) return PCB_FILETYPE_SYMLINK;
+    if(S_ISFIFO(s->st_mode) || S_ISSOCK(s->st_mode)) return PCB_FILETYPE_STREAM;
+    return PCB_FILETYPE_UNKNOWN;
+}
+
+static void PCB__File_Info_from_stat_notype(PCB_File_Info *info, const struct stat *s) {
+    uint64_t atime, mtime, ctime;
+    info->ino = s->st_ino;
+    info->dev = s->st_dev;
+    info->hardlinks = s->st_nlink;
+    info->uid = s->st_uid;
+    info->gid = s->st_gid;
+    info->rdev = s->st_rdev;
+    info->size = (uint64_t)(int64_t)s->st_size;
+    info->blksize = s->st_blksize;
+    info->blocks = s->st_blocks;
+#ifdef PCB__POSIX_HAS_NS_STAT_TIMESTAMPS
+    atime = (uint64_t)s->st_atim.tv_sec * 1000000000UL + (uint64_t)s->st_atim.tv_nsec;
+    mtime = (uint64_t)s->st_mtim.tv_sec * 1000000000UL + (uint64_t)s->st_mtim.tv_nsec;
+    ctime = (uint64_t)s->st_ctim.tv_sec * 1000000000UL + (uint64_t)s->st_ctim.tv_nsec;
+#else
+    atime = (uint64_t)s->st_atime       * 1000000000UL;
+    mtime = (uint64_t)s->st_mtime       * 1000000000UL;
+    ctime = (uint64_t)s->st_ctime       * 1000000000UL;
+#endif //PCB__POSIX_HAS_NS_STAT_TIMESTAMPS
+    info->timestamps.access        = atime;
+    info->timestamps.modification  = mtime;
+    info->timestamps.status_change = ctime;
+}
+#elif PCB_PLATFORM_WINDOWS
+static PCB_FileType PCB__FileType_from_handle(HANDLE f) {
+    switch(GetFileType(f)) {
+      case FILE_TYPE_DISK: return PCB_FILETYPE_REG;
+      case FILE_TYPE_CHAR: return PCB_FILETYPE_CHAR;
+      case FILE_TYPE_PIPE: return PCB_FILETYPE_STREAM;
+      case FILE_TYPE_UNKNOWN:
+        if(GetLastError() == NO_ERROR) return PCB_FILETYPE_UNKNOWN;
+        else return PCB_FILETYPE_ERROR;
+      default: return PCB_FILETYPE_UNKNOWN;
+    }
+}
+
+static void PCB__File_Info_timestamps_from_FILETIMEs(
+    PCB_File_Info *info,
+    const FILETIME *at, const FILETIME *mt,
+    const FILETIME *ct
+) {
+    uint64_t atime = (uint64_t)(at->dwHighDateTime) << 32 | at->dwLowDateTime;
+    uint64_t mtime = (uint64_t)(mt->dwHighDateTime) << 32 | mt->dwLowDateTime;
+    uint64_t ctime = (uint64_t)(ct->dwHighDateTime) << 32 | ct->dwLowDateTime;
+    info->timestamps.access       = atime;
+    info->timestamps.modification = mtime;
+    info->timestamps.creation     = ctime;
+}
+
+static void PCB__File_Info_from_hinfo(
+    PCB_File_Info *info, const BY_HANDLE_FILE_INFORMATION *hinfo
+) {
+    const FILETIME *fatime = &hinfo->ftLastAccessTime,
+                   *fmtime = &hinfo->ftLastWriteTime,
+                   *fctime = &hinfo->ftCreationTime;
+    PCB__File_Info_timestamps_from_FILETIMEs(info, fatime, fmtime, fctime);
+    info->size = (uint64_t)hinfo->nFileSizeHigh << 32 | hinfo->nFileSizeLow;
+    info->links = hinfo->nNumberOfLinks;
+    info->attributes = hinfo->dwFileAttributes;
+    if(info->attributes & FILE_ATTRIBUTE_DIRECTORY)
+        info->type = PCB_FILETYPE_DIR;
+}
+#endif //platform-specific helpers
+
+PCB_Status PCB_File_Info_get_ne(
+    PCB_File_Info* info, const PCB_FS_char* path, bool follow_symlinks
+) {
+    PCB_CHECK_NULL(info, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+#if PCB_PLATFORM_WINDOWS || PCB_PLATFORM_POSIX
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_Status result = PCB_OK();
+#if PCB_PLATFORM_POSIX
+    struct stat s;
+    int e, combined_type;
+    if(lstat(path, &s) < 0) {
+        info->type = PCB_FILETYPE_ERROR;
+        switch(e = errno) {
+          case ENOENT:
+            info->type = PCB_FILETYPE_NONE;
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+          case EACCES:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+          default:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+        }
+    }
+    info->type = PCB__FileType_from_stat(&s);
+    PCB__File_Info_from_stat_notype(info, &s);
+    if(!(follow_symlinks && info->type == PCB_FILETYPE_SYMLINK)) return PCB_OK();
+    if(stat(path, &s) < 0) {
+        switch(e = errno) {
+          case ENOENT:
+            info->type = PCB_FILETYPE_NONE_SYM;
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+          case EACCES:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+          default:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+        }
+    }
+    combined_type = info->type | PCB__FileType_from_stat(&s);
+    info->type = (PCB_FileType)combined_type;
+    PCB__File_Info_from_stat_notype(info, &s);
+#else
+    HANDLE f = CreateFileW(
+        path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+    );
+    DWORD e;
+    BY_HANDLE_FILE_INFORMATION hinfo;
+    (void)follow_symlinks;
+    if(f == INVALID_HANDLE_VALUE) {
+        info->type = PCB_FILETYPE_ERROR;
+        switch(e = GetLastError()) {
+          case ERROR_ACCESS_DENIED:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+          case ERROR_FILE_NOT_FOUND:
+            info->type = PCB_FILETYPE_NONE;
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+          default:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+        }
+    }
+    if(!GetFileInformationByHandle(f, &hinfo)) {
+        info->type = PCB_FILETYPE_ERROR;
+        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError()));
+    }
+    PCB__File_Info_from_hinfo(info, &hinfo);
+    //TODO: Windows has something called "reparse points"
+    //that are used for symlinks and "junctions". Implement logic for them.
+    if(info->type != PCB_FILETYPE_DIR) do {
+        info->type = PCB__FileType_from_handle(f);
+        if(info->type != PCB_FILETYPE_ERROR) break;
+        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError()));
+    } while(0);
+defer:
+    CloseHandle(f);
+#endif
+    return result;
+#else
+    (void)path; (void)follow_symlinks;
+    info->type = PCB_FILETYPE_ERROR;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
 }
 
 PCB_Status PCB_FS_mkdir(const char* path) {
