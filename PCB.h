@@ -4392,6 +4392,10 @@ PCBAPI bool PCBCALL PCB_String_startsWith_cstr(
     const PCB_String* PCB_restrict str,
     const char* PCB_restrict other
 ) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool PCBCALL PCB_String_startsWith_sv(
+    const PCB_String* PCB_restrict str,
+    PCB_StringView other
+) PCB_Nonnull_Arg(1);
 /**
  * @brief Checks if `str` ends with `other`.
  * If any of them are empty, returns false.
@@ -4410,6 +4414,10 @@ PCBAPI bool PCBCALL PCB_String_endsWith_cstr(
     const PCB_String* PCB_restrict str,
     const char* PCB_restrict other
 ) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool PCBCALL PCB_String_endsWith_sv(
+    const PCB_String* PCB_restrict str,
+    PCB_StringView other
+) PCB_Nonnull_Arg(1);
 #ifndef PCB_String_isEmpty
 #define PCB_String_isEmpty(str) ((str)->data == NULL || (str)->length == 0)
 #endif //PCB_String_isEmpty
@@ -8270,13 +8278,9 @@ PCB__Str_eq(PCB_U32String) //PCB_U32String_eq()
 #undef PCB__Str_eq
 
 bool PCB_String_startsWith(const PCB_String* str, const PCB_String* other) {
-    PCB_CHECK_SELF(str, false);
     PCB_CHECK_NULL(other, false);
-
     if(str == other) return true;
-    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(other)) return false;
-    if(other->length > str->length) return false;
-    return !PCB_memcmp(str->data, other->data, other->length);
+    return PCB_String_startsWith_sv(str, PCB_View_Vec_A_T(other, PCB_StringView));
 }
 
 bool PCB_String_startsWith_cstr(
@@ -8288,20 +8292,13 @@ bool PCB_String_startsWith_cstr(
     if(PCB_String_isEmpty(str)) return false;
     const size_t len = PCB_strlen(other);
     if(len > str->length) return false;
-    return !PCB_memcmp(str->data, other, len);
+    return !PCB_memcmp(str->data, other, len*sizeof(*other));
 }
 
 bool PCB_String_endsWith(const PCB_String* str, const PCB_String* other) {
-    PCB_CHECK_SELF(str, false);
     PCB_CHECK_NULL(other, false);
-
     if(str == other) return true;
-    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(other)) return false;
-    if(other->length > str->length) return false;
-    return !PCB_memcmp(
-        str->data + str->length - other->length,
-        other->data, other->length
-    );
+    return PCB_String_endsWith_sv(str, PCB_View_Vec_A_T(other, PCB_StringView));
 }
 
 bool PCB_String_endsWith_cstr(
@@ -8313,7 +8310,28 @@ bool PCB_String_endsWith_cstr(
     if(PCB_String_isEmpty(str)) return false;
     const size_t len = PCB_strlen(other);
     if(len > str->length) return false;
-    return !PCB_memcmp(str->data + str->length - len, other, len);
+    return !PCB_memcmp(str->data + str->length - len, other, len*sizeof(*other));
+}
+
+bool PCB_String_startsWith_sv(
+    const PCB_String* PCB_restrict str, PCB_StringView other
+) {
+    PCB_CHECK_SELF(str, false);
+    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false;
+    if(other.length > str->length) return false;
+    return !PCB_memcmp(str->data, other.data, other.length*sizeof(*other.data));
+}
+
+bool PCB_String_endsWith_sv(
+    const PCB_String* PCB_restrict str, PCB_StringView other
+) {
+    PCB_CHECK_SELF(str, false);
+    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false;
+    if(other.length > str->length) return false;
+    return !PCB_memcmp(
+        str->data + str->length - other.length,
+        other.data, other.length*sizeof(*other.data)
+    );
 }
 
 void PCB_String_toUpperCase(PCB_String* PCB_restrict str) {
