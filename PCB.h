@@ -3257,6 +3257,12 @@ typedef PCB_WCStrings PCB_FS_CStrings;
 #define PCB_FS_String_setSuffix_char PCB_WString_setSuffix_char
 #define PCB_FS_String_truncate_until_char PCB_WString_truncate_until_char
 #define PCB_FS_String_clone PCB_WString_clone
+#define PCB_FS_String_startsWith PCB_WString_startsWith
+#define PCB_FS_String_startsWith_cstr PCB_WString_startsWith_cstr
+#define PCB_FS_String_startsWith_sv PCB_WString_startsWith_sv
+#define PCB_FS_String_endsWith PCB_WString_endsWith
+#define PCB_FS_String_endsWith_cstr PCB_WString_endsWith_cstr
+#define PCB_FS_String_endsWith_sv PCB_WString_endsWith_sv
 #define PCB_FS_String_pop PCB_WString_pop
 #define PCB_FS_String_pop_many PCB_WString_pop_many
 #define PCB_FS_StringView_from_cstr PCB_WStringView_from_cstr
@@ -3294,6 +3300,12 @@ typedef PCB_CStrings PCB_FS_CStrings;
 #define PCB_FS_String_setSuffix_char PCB_String_setSuffix_char
 #define PCB_FS_String_truncate_until_char PCB_String_truncate_until_char
 #define PCB_FS_String_clone PCB_String_clone
+#define PCB_FS_String_startsWith PCB_String_startsWith
+#define PCB_FS_String_startsWith_cstr PCB_String_startsWith_cstr
+#define PCB_FS_String_startsWith_sv PCB_String_startsWith_sv
+#define PCB_FS_String_endsWith PCB_String_endsWith
+#define PCB_FS_String_endsWith_cstr PCB_String_endsWith_cstr
+#define PCB_FS_String_endsWith_sv PCB_String_endsWith_sv
 #define PCB_FS_String_pop PCB_String_pop
 #define PCB_FS_String_pop_many PCB_String_pop_many
 #define PCB_FS_StringView_from_cstr PCB_StringView_from_cstr
@@ -4898,6 +4910,12 @@ PCBAPI bool PCBCALL PCB_WString_setSuffix_char(PCB_WString* PCB_restrict str, co
 PCBAPI bool PCBCALL PCB_WString_truncate_until_char(PCB_WString* PCB_restrict str, const wchar_t c) PCB_Nonnull_Arg(1);
 PCBAPI PCB_WString PCBCALL PCB_WString_clone(const PCB_WString* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool PCBCALL PCB_WString_eq(const PCB_WString* a, const PCB_WString* b) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool PCBCALL PCB_WString_startsWith(const PCB_WString* str, const PCB_WString* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool PCBCALL PCB_WString_startsWith_cstr(const PCB_WString* PCB_restrict str, const wchar_t* PCB_restrict other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool PCBCALL PCB_WString_startsWith_sv(const PCB_WString* PCB_restrict str, const PCB_WStringView other) PCB_Nonnull_Arg(1);
+PCBAPI bool PCBCALL PCB_WString_endsWith(const PCB_WString* str, const PCB_WString* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool PCBCALL PCB_WString_endsWith_cstr(const PCB_WString* PCB_restrict str, const wchar_t* PCB_restrict other) PCB_Nonnull_Arg(1);
+PCBAPI bool PCBCALL PCB_WString_endsWith_sv(const PCB_WString* str, PCB_WStringView other) PCB_Nonnull_Arg(1);
 PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out) PCB_Nonnull_Arg(1);
 
@@ -4933,6 +4951,12 @@ PCBAPI bool    PCBCALL PCB_U8String_setSuffix_char(PCB_U8String* PCB_restrict st
 PCBAPI bool    PCBCALL PCB_U8String_truncate_until_char(PCB_U8String* PCB_restrict str, const PCB_char8 c) PCB_Nonnull_Arg(1);
 PCBAPI PCB_U8String PCBCALL PCB_U8String_clone(const PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_eq(const PCB_U8String* a, const PCB_U8String* b) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U8String_startsWith(const PCB_U8String* str, const PCB_U8String* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U8String_startsWith_cstr(const PCB_U8String* PCB_restrict str, const PCB_char8* PCB_restrict other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U8String_startsWith_sv(const PCB_U8String* PCB_restrict str, const PCB_U8StringView other) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U8String_endsWith(const PCB_U8String* str, const PCB_U8String* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U8String_endsWith_cstr(const PCB_U8String* PCB_restrict str, const PCB_char8* PCB_restrict other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U8String_endsWith_sv(const PCB_U8String* str, PCB_U8StringView other) PCB_Nonnull_Arg(1);
 PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out) PCB_Nonnull_Arg(1);
 
@@ -4968,6 +4992,12 @@ PCBAPI bool    PCBCALL PCB_U16String_setSuffix_char(PCB_U16String* PCB_restrict 
 PCBAPI bool    PCBCALL PCB_U16String_truncate_until_char(PCB_U16String* PCB_restrict str, const PCB_char16 c) PCB_Nonnull_Arg(1);
 PCBAPI PCB_U16String PCBCALL PCB_U16String_clone(const PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_eq(const PCB_U16String* a, const PCB_U16String* b) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U16String_startsWith(const PCB_U16String* str, const PCB_U16String* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U16String_startsWith_cstr(const PCB_U16String* PCB_restrict str, const PCB_char16* PCB_restrict other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U16String_startsWith_sv(const PCB_U16String* PCB_restrict str, const PCB_U16StringView other) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U16String_endsWith(const PCB_U16String* str, const PCB_U16String* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U16String_endsWith_cstr(const PCB_U16String* PCB_restrict str, const PCB_char16* PCB_restrict other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U16String_endsWith_sv(const PCB_U16String* str, PCB_U16StringView other) PCB_Nonnull_Arg(1);
 PCBAPI PCB_char16 PCBCALL PCB_U16String_pop(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, size_t howMany, PCB_char16* PCB_restrict out) PCB_Nonnull_Arg(1);
 
@@ -5030,6 +5060,12 @@ PCBAPI bool    PCBCALL PCB_U32String_setSuffix_char(PCB_U32String* PCB_restrict 
 PCBAPI bool    PCBCALL PCB_U32String_truncate_until_char(PCB_U32String* PCB_restrict str, const PCB_char32 c) PCB_Nonnull_Arg(1);
 PCBAPI PCB_U32String PCBCALL PCB_U32String_clone(const PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_eq(const PCB_U32String* a, const PCB_U32String* b) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U32String_startsWith(const PCB_U32String* str, const PCB_U32String* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U32String_startsWith_cstr(const PCB_U32String* PCB_restrict str, const PCB_char32* PCB_restrict other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U32String_startsWith_sv(const PCB_U32String* PCB_restrict str, const PCB_U32StringView other) PCB_Nonnull_Arg(1);
+PCBAPI bool    PCBCALL PCB_U32String_endsWith(const PCB_U32String* str, const PCB_U32String* other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U32String_endsWith_cstr(const PCB_U32String* PCB_restrict str, const PCB_char32* PCB_restrict other) PCB_Nonnull_Arg(1, 2);
+PCBAPI bool    PCBCALL PCB_U32String_endsWith_sv(const PCB_U32String* str, PCB_U32StringView other) PCB_Nonnull_Arg(1);
 PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out) PCB_Nonnull_Arg(1);
 
@@ -8277,62 +8313,104 @@ PCB__Str_eq(PCB_U16String) //PCB_U16String_eq()
 PCB__Str_eq(PCB_U32String) //PCB_U32String_eq()
 #undef PCB__Str_eq
 
-bool PCB_String_startsWith(const PCB_String* str, const PCB_String* other) {
-    PCB_CHECK_NULL(other, false);
-    if(str == other) return true;
-    return PCB_String_startsWith_sv(str, PCB_View_Vec_A_T(other, PCB_StringView));
+#define PCB__Str_startsWith(Type, svType) \
+bool Type##_startsWith(const Type* str, const Type* other) { \
+    PCB_CHECK_NULL(other, false); \
+    if(str == other) return true; \
+    return Type##_startsWith_sv(str, PCB_View_Vec_A_T(other, svType)); \
 }
+PCB__Str_startsWith(PCB_String,    PCB_StringView)    //PCB_String_startsWith()
+PCB__Str_startsWith(PCB_WString,   PCB_WStringView)   //PCB_WString_startsWith()
+PCB__Str_startsWith(PCB_U8String,  PCB_U8StringView)  //PCB_U8String_startsWith()
+PCB__Str_startsWith(PCB_U16String, PCB_U16StringView) //PCB_U16String_startsWith()
+PCB__Str_startsWith(PCB_U32String, PCB_U32StringView) //PCB_U32String_startsWith()
+#undef PCB__Str_startsWith
 
-bool PCB_String_startsWith_cstr(
-    const PCB_String* PCB_restrict str, const char* PCB_restrict other
-) {
-    PCB_CHECK_SELF(str, false);
-    PCB_CHECK_NULL(other, false);
-
-    if(PCB_String_isEmpty(str)) return false;
-    const size_t len = PCB_strlen(other);
-    if(len > str->length) return false;
-    return !PCB_memcmp(str->data, other, len*sizeof(*other));
+#define PCB__Str_startsWith_cstr(Type, charType) \
+bool Type##_startsWith_cstr( \
+    const Type* PCB_restrict str, const charType* PCB_restrict other \
+) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK_NULL(other, false); \
+\
+    if(PCB_String_isEmpty(str)) return false; \
+    const size_t len = PCB__strlen_##charType(other); \
+    if(len > str->length) return false; \
+    return !PCB_memcmp(str->data, other, len*sizeof(*other)); \
 }
+PCB__Str_startsWith_cstr(PCB_String,    char)       //PCB_String_startsWith_cstr()
+PCB__Str_startsWith_cstr(PCB_WString,   wchar_t)    //PCB_WString_startsWith_cstr()
+PCB__Str_startsWith_cstr(PCB_U8String,  PCB_char8)  //PCB_U8String_startsWith_cstr()
+PCB__Str_startsWith_cstr(PCB_U16String, PCB_char16) //PCB_U16String_startsWith_cstr()
+PCB__Str_startsWith_cstr(PCB_U32String, PCB_char32) //PCB_U32String_startsWith_cstr()
+#undef PCB__Str_startsWith_cstr
 
-bool PCB_String_endsWith(const PCB_String* str, const PCB_String* other) {
-    PCB_CHECK_NULL(other, false);
-    if(str == other) return true;
-    return PCB_String_endsWith_sv(str, PCB_View_Vec_A_T(other, PCB_StringView));
+#define PCB__Str_endsWith(Type, svType) \
+bool Type##_endsWith(const Type* str, const Type* other) { \
+    PCB_CHECK_NULL(other, false); \
+    if(str == other) return true; \
+    return Type##_endsWith_sv(str, PCB_View_Vec_A_T(other, svType)); \
 }
+PCB__Str_endsWith(PCB_String,    PCB_StringView)    //PCB_String_endsWith()
+PCB__Str_endsWith(PCB_WString,   PCB_WStringView)   //PCB_WString_endsWith()
+PCB__Str_endsWith(PCB_U8String,  PCB_U8StringView)  //PCB_U8String_endsWith()
+PCB__Str_endsWith(PCB_U16String, PCB_U16StringView) //PCB_U16String_endsWith()
+PCB__Str_endsWith(PCB_U32String, PCB_U32StringView) //PCB_U32String_endsWith()
+#undef PCB__Str_endsWith
 
-bool PCB_String_endsWith_cstr(
-    const PCB_String* PCB_restrict str, const char* PCB_restrict other
-) {
-    PCB_CHECK_SELF(str, false);
-    PCB_CHECK_NULL(other, false);
-
-    if(PCB_String_isEmpty(str)) return false;
-    const size_t len = PCB_strlen(other);
-    if(len > str->length) return false;
-    return !PCB_memcmp(str->data + str->length - len, other, len*sizeof(*other));
+#define PCB__Str_endsWith_cstr(Type, charType) \
+bool Type##_endsWith_cstr( \
+    const Type* PCB_restrict str, const charType* PCB_restrict other \
+) { \
+    PCB_CHECK_SELF(str, false); \
+    PCB_CHECK_NULL(other, false); \
+\
+    if(PCB_String_isEmpty(str)) return false; \
+    const size_t len = PCB__strlen_##charType(other); \
+    if(len > str->length) return false; \
+    return !PCB_memcmp(str->data + str->length - len, other, len*sizeof(*other)); \
 }
+PCB__Str_endsWith_cstr(PCB_String,    char)       //PCB_String_endsWith_cstr()
+PCB__Str_endsWith_cstr(PCB_WString,   wchar_t)    //PCB_WString_endsWith_cstr()
+PCB__Str_endsWith_cstr(PCB_U8String,  PCB_char8)  //PCB_U8String_endsWith_cstr()
+PCB__Str_endsWith_cstr(PCB_U16String, PCB_char16) //PCB_U16String_endsWith_cstr()
+PCB__Str_endsWith_cstr(PCB_U32String, PCB_char32) //PCB_U32String_endsWith_cstr()
+#undef PCB__Str_endsWith_cstr
 
-bool PCB_String_startsWith_sv(
-    const PCB_String* PCB_restrict str, PCB_StringView other
-) {
-    PCB_CHECK_SELF(str, false);
-    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false;
-    if(other.length > str->length) return false;
-    return !PCB_memcmp(str->data, other.data, other.length*sizeof(*other.data));
+#define PCB__Str_startsWith_sv(Type, svType) \
+bool Type##_startsWith_sv( \
+    const Type* PCB_restrict str, svType other \
+) { \
+    PCB_CHECK_SELF(str, false); \
+    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false; \
+    if(other.length > str->length) return false; \
+    return !PCB_memcmp(str->data, other.data, other.length*sizeof(*other.data)); \
 }
+PCB__Str_startsWith_sv(PCB_String,    PCB_StringView)    //PCB_String_startsWith_sv()
+PCB__Str_startsWith_sv(PCB_WString,   PCB_WStringView)   //PCB_WString_startsWith_sv()
+PCB__Str_startsWith_sv(PCB_U8String,  PCB_U8StringView)  //PCB_U8String_startsWith_sv()
+PCB__Str_startsWith_sv(PCB_U16String, PCB_U16StringView) //PCB_U16String_startsWith_sv()
+PCB__Str_startsWith_sv(PCB_U32String, PCB_U32StringView) //PCB_U32String_startsWith_sv()
+#undef PCB__Str_startsWith_sv
 
-bool PCB_String_endsWith_sv(
-    const PCB_String* PCB_restrict str, PCB_StringView other
-) {
-    PCB_CHECK_SELF(str, false);
-    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false;
-    if(other.length > str->length) return false;
-    return !PCB_memcmp(
-        str->data + str->length - other.length,
-        other.data, other.length*sizeof(*other.data)
-    );
+#define PCB__Str_endsWith_sv(Type, svType) \
+bool Type##_endsWith_sv( \
+    const Type* PCB_restrict str, svType other \
+) { \
+    PCB_CHECK_SELF(str, false); \
+    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false; \
+    if(other.length > str->length) return false; \
+    return !PCB_memcmp( \
+        str->data + str->length - other.length, \
+        other.data, other.length*sizeof(*other.data) \
+    ); \
 }
+PCB__Str_endsWith_sv(PCB_String,    PCB_StringView)    //PCB_String_endsWith_sv()
+PCB__Str_endsWith_sv(PCB_WString,   PCB_WStringView)   //PCB_WString_endsWith_sv()
+PCB__Str_endsWith_sv(PCB_U8String,  PCB_U8StringView)  //PCB_U8String_endsWith_sv()
+PCB__Str_endsWith_sv(PCB_U16String, PCB_U16StringView) //PCB_U16String_endsWith_sv()
+PCB__Str_endsWith_sv(PCB_U32String, PCB_U32StringView) //PCB_U32String_endsWith_sv()
+#undef PCB__Str_endsWith_sv
 
 void PCB_String_toUpperCase(PCB_String* PCB_restrict str) {
     PCB_CHECK_SELF(str,);
