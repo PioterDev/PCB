@@ -3895,8 +3895,14 @@ PCBAPI PCB_FileType PCBCALL PCB_FS_GetType_ne(const PCB_FS_char* path) PCB_Nonnu
  * @brief Get the modification time of a filesystem entry.
  *
  * @return 0 on error, 1 if the entry doesn't exist, some other integer otherwise.
+ *
+ * This API loses detailed error information. Use `PCB_File_Info_get` if you need that.
  */
 PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path) PCB_Nonnull_Arg(1);
+/**
+ * @brief Same as `PCB_FS_GetModificationTime`, but using native path encoding.
+ */
+PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
 /**
 * @brief Loads entire file from `path` into a dynamically allocated buffer.
 * @return `true` on success, `false` on error; to get the error
@@ -7210,35 +7216,19 @@ PCB_FileType PCB_FS_GetType_ne(const PCB_FS_char* path) {
 }
 
 uint64_t PCB_FS_GetModificationTime(const char* path) {
-    errno = 0;
-#if PCB_PLATFORM_WINDOWS
-    HANDLE hFile = CreateFileA(
-        path, GENERIC_READ, FILE_SHARE_READ, NULL,
-        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
-    );
-    if(hFile == INVALID_HANDLE_VALUE)
-        return (uint64_t)(GetLastError() == ERROR_FILE_NOT_FOUND);
+    PCB_File_Info info;
+    PCB_File_Info_get(&info, path, true);
+    if(info.type == PCB_FILETYPE_ERROR) return 0;
+    else if((info.type & PCB_FILETYPE_SYMLINK_IGN) == PCB_FILETYPE_NONE) return 1;
+    return info.timestamps.modification;
+}
 
-    BY_HANDLE_FILE_INFORMATION fileinfo = PCB_ZEROED;
-    BOOL b = GetFileInformationByHandle(hFile, &fileinfo);
-    CloseHandle(hFile);
-    if(!b) return 0;
-
-    SetLastError(0);
-    uint64_t modTime = fileinfo.ftLastWriteTime.dwLowDateTime;
-    modTime += (uint64_t)(fileinfo.ftLastWriteTime.dwHighDateTime) << 32;
-    return modTime;
-#elif PCB_PLATFORM_POSIX
-    struct stat fileinfo = PCB_ZEROED;
-    if(stat(path, &fileinfo) == -1) return (uint64_t)(errno == ENOENT);
-    uint64_t modTime;
-#ifdef PCB__POSIX_HAS_NS_STAT_TIMESTAMPS
-    modTime = (uint64_t)fileinfo.st_ctim.tv_sec * 1000000000 + (uint64_t)fileinfo.st_ctim.tv_nsec;
-#else
-    modTime = (uint64_t)fileinfo.st_ctime       * 1000000000;
-#endif //pesky, but useful GNU extensions
-    return modTime;
-#endif //platform
+uint64_t PCB_FS_GetModificationTime_ne(const PCB_FS_char* path) {
+    PCB_File_Info info;
+    PCB_File_Info_get_ne(&info, path, true);
+    if(info.type == PCB_FILETYPE_ERROR) return 0;
+    else if((info.type & PCB_FILETYPE_SYMLINK_IGN) == PCB_FILETYPE_NONE) return 1;
+    return info.timestamps.modification;
 }
 
 bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
