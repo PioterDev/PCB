@@ -9762,8 +9762,7 @@ int PCB_Processes_waitForAny(PCB_Processes* ps) {
 #elif PCB_PLATFORM_POSIX
 #if PCB_PLATFORM_LINUX
     if(PCB__Linux_has_pidfd()) do {
-        //TODO: temporary allocator
-        struct pollfd* polls = (struct pollfd*)PCB_realloc(NULL, ps->length*sizeof(*polls));
+        struct pollfd *polls = (struct pollfd*)PCB_temp_alloc(ps->length*sizeof(*polls));
         if(polls == NULL) break; //try checkExit-based polling
         for(size_t i = 0; i < ps->length; i++) {
             polls[i].fd = ps->data[i].pidfd;
@@ -9777,7 +9776,7 @@ int PCB_Processes_waitForAny(PCB_Processes* ps) {
           case EINTR: goto retry;
           default: break;
         }
-        PCB_free(polls);
+        PCB_temp_free(polls);
         return exited;
     } while(0);
 #endif //pidfd
