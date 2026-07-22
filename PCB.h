@@ -10323,14 +10323,14 @@ void* PCB_Arena_alloc_loc(PCB_Arena* arena, size_t size, const char* file, int l
 #endif //PCB_ARENA_TRACE_LOC
     PCB_CHECK_SELF(arena, NULL);
     size = PCB__Arena_ceil(size);
-    if(size == 0) return NULL;
+    if(PCB_unlikely(size == 0)) return NULL;
 
     PCB_Arena_Prefix* a = (PCB_Arena_Prefix*)arena;
     size /= sizeof(void*);
     const size_t meta = PCB__Arena_meta_size(a);
 try_alloc:
-    if(a->length + size + meta > a->capacity) {
-        if(a->next != NULL)  {
+    if(PCB_unlikely(a->length + size + meta > a->capacity)) {
+        if(PCB_likely(a->next != NULL))  {
             a = (PCB_Arena_Prefix*)a->next;
             goto try_alloc;
         }
@@ -10375,10 +10375,10 @@ void* PCB_Arena_aligned_alloc_loc(PCB_Arena* arena, size_t size, size_t alignmen
     PCB_CHECK_SELF(arena, NULL);
     if(alignment == 0) return NULL;
     const bool pow2 = (alignment & (alignment - 1)) == 0;
-    if(!pow2) return NULL;
-    if(alignment % sizeof(void*) != 0) return NULL;
+    if(PCB_unlikely(!pow2)) return NULL;
+    if(PCB_unlikely(alignment % sizeof(void*) != 0)) return NULL;
     size = PCB__Arena_ceil(size);
-    if(size == 0) return NULL;
+    if(PCB_unlikely(size == 0)) return NULL;
 
     alignment /= sizeof(void*); //normalize to
     size      /= sizeof(void*); //internal units
@@ -10388,8 +10388,8 @@ void* PCB_Arena_aligned_alloc_loc(PCB_Arena* arena, size_t size, size_t alignmen
 try_alloc:
     data = PCB__Arena_cur(a);
     pad = PCB__Arena_pad((uintptr_t)data / sizeof(void*), alignment, meta);
-    if(a->length + size + pad > a->capacity) {
-        if(a->next != NULL)  {
+    if(PCB_unlikely(a->length + size + pad > a->capacity)) {
+        if(PCB_likely(a->next != NULL)) {
             a = (PCB_Arena_Prefix*)a->next;
             goto try_alloc;
         }
@@ -10592,7 +10592,7 @@ bool PCB_Arena_restore(PCB_Arena* arena, PCB_Arena_Mark* mark) {
 
     const size_t marklen = sizeof(mark->length) + mark->length * sizeof(mark->lengths[0]);
     PCB_Arena_Prefix* marknode = PCB__Arena_marknode(arena, mark);
-    if(marknode == NULL) return false; //likely user bug, maybe issue a diagnostic?
+    if(PCB_unlikely(marknode == NULL)) return false; //likely user bug, maybe issue a diagnostic?
     PCB__Arena_restore(arena, mark);
     //dealloc `mark` since we know it's the last thing that was allocated
     marknode->length -= marklen / sizeof(void*);
@@ -10612,10 +10612,10 @@ void PCB_Arena_free(PCB_Arena* arena, void* ptr) {
     PCB_CHECK_SELF(arena,);
     if(ptr == NULL) return;
     PCB_Arena_Prefix* a = PCB__Arena_ptrnode(arena, ptr);
-    if(a == NULL) return; //likely user bug, maybe issue a diagnostic?
+    if(PCB_unlikely(a == NULL)) return; //likely user bug, maybe issue a diagnostic?
 
     size_t length = PCB__Arena_offsetof(a, ptr);
-    if(length >= a->length) { PCB__Arena_diagnose_df(__func__, ptr); return; }
+    if(PCB_unlikely(length >= a->length)) { PCB__Arena_diagnose_df(__func__, ptr); return; }
     PCB_Arena_Alloc_Meta* meta = &a->last;
     if(a->flags & PCB_ARENA_FLAG_ALLOC_META) {
         meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
@@ -10625,7 +10625,7 @@ void PCB_Arena_free(PCB_Arena* arena, void* ptr) {
     }
     //`ptr` was the last thing allocated, we can actually deallocate it.
     //Otherwise ignored.
-    if(length + meta->size == a->length) PCB__Arena_do_free(a, length, meta);
+    if(PCB_likely(length + meta->size == a->length)) PCB__Arena_do_free(a, length, meta);
 #ifdef __SANITIZE_ADDRESS__
     if(a->flags & PCB_ARENA_FLAG_ALLOC_META)
         ASAN_POISON_MEMORY_REGION(meta, sizeof(*meta));
@@ -10637,7 +10637,7 @@ void* PCB_Arena_realloc(PCB_Arena* arena, void* ptr, size_t size) {
     PCB_CHECK_SELF(arena, NULL);
 
     size = PCB__Arena_ceil(size);
-    if(size == 0) {
+    if(PCB_unlikely(size == 0)) {
         PCB_log( //https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3621.txt
             PCB_LOGLEVEL_WARN, //recommends issuing a diagnostic.
             "%s called with size 0 and non-null pointer. "
@@ -10648,7 +10648,7 @@ void* PCB_Arena_realloc(PCB_Arena* arena, void* ptr, size_t size) {
         ); return NULL;
     }
     PCB_Arena_Prefix* a = PCB__Arena_ptrnode(arena, ptr);
-    if(a == NULL) return NULL; //likely a user bug, maybe issue a diagnostic?
+    if(PCB_unlikely(a == NULL)) return NULL; //likely a user bug, maybe issue a diagnostic?
 
     //We have no way of knowing how much data to copy to a new allocation
     //if it has to be moved. Bail.
@@ -10656,15 +10656,15 @@ void* PCB_Arena_realloc(PCB_Arena* arena, void* ptr, size_t size) {
 
     size /= sizeof(void*);
     size_t length = PCB__Arena_offsetof(a, ptr);
-    if(length >= a->length) { PCB__Arena_diagnose_uaf(__func__, ptr); return NULL; }
+    if(PCB_unlikely(length >= a->length)) { PCB__Arena_diagnose_uaf(__func__, ptr); return NULL; }
     PCB_Arena_Alloc_Meta* meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
 #ifdef __SANITIZE_ADDRESS__
     ASAN_UNPOISON_MEMORY_REGION(meta, sizeof(*meta));
 #endif //ASan
     void* result;
 
-    if(meta->size == size) PCB__return_defer(ptr);
-    if(length + meta->size != a->length) { //Not the last thing allocated.
+    if(PCB_unlikely(meta->size == size)) PCB__return_defer(ptr);
+    if(PCB_unlikely(length + meta->size != a->length)) { //Not the last thing allocated.
         //We can't shrink without introducing a hole, just leak the difference.
         if(meta->size > size) PCB__return_defer(ptr);
         //"Extend" by allocating new memory.
