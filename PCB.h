@@ -3648,6 +3648,22 @@ PCB_Enum(PCB_Compiler_RT, uint8_t) {
     PCB_COMPILER_RT_CLANG,
     PCB_COMPILER_RT_MSVC,
     PCB_COMPILER_RT_COUNT,
+    /*
+     * Compiler identified when #including the library.
+     * Somewhat confusingly, it is done at compile time, but labeled as runtime.
+     * This is because the value is *used* at runtime,
+     * rather than, unlike a macro, at compile time.
+     */
+    PCB_COMPILER_RT_CURRENT =
+#if   PCB_COMPILER_GCC
+        PCB_COMPILER_RT_GCC
+#elif PCB_COMPILER_CLANG
+        PCB_COMPILER_RT_CLANG
+#elif PCB_COMPILER_MSVC
+        PCB_COMPILER_RT_MSVC
+#else
+        PCB_COMPILER_RT_UNKNOWN
+#endif //compilers
 };
 
 PCB_Enum(PCB_BuildType, uint8_t) {
