@@ -2871,6 +2871,7 @@ PCB_Enum(PCB_Common_Error, uint32_t) {
      */
     PCB_CENORES = 6,
     PCB_CENOENT = PCB_CENORES,
+    PCB_CE2BIG = 7,
 };
 
 //Helper macros.
@@ -2883,6 +2884,10 @@ PCB_Enum(PCB_Common_Error, uint32_t) {
 PCB_Enum(PCB_Result, uint32_t) {
     PCB_RESULT_SUCCESS = 0,
     PCB_RESULT_BUFFER_TOO_SMALL = 1,
+    /**
+     * @brief A time-of-check-time-of-use condition was detected.
+     */
+    PCB_RESULT_TOCTOU = 2,
     /**
      * @brief Number of constants in this enum. SHALL never be returned.
      */
@@ -3434,6 +3439,192 @@ typedef struct {
 } PCB_Arena_Prefix;
 
 
+
+#if PCB_PLATFORM_WINDOWS
+typedef HANDLE PCB_FS_Iterator_NativeHandle;
+#elif PCB_PLATFORM_POSIX
+//Using file descriptors explicitly is preferred because new directory
+//streams can be opened using openat(2)+fdopendir(3) instead of opendir(3).
+//The former eliminates unnecessary path parsing and avoid races.
+//You can use `fd` with other `*at(2)` syscalls if you want to.
+typedef struct {
+    int fd;
+    DIR* stream;
+} PCB_FS_Iterator_NativeHandle;
+#else
+typedef int PCB_FS_Iterator_NativeHandle; //stub
+#endif //platforms
+
+//NOTE: This structure is variable length.
+//Use `offsetof(T, name)` instead of `sizeof(T)` for size calculations.
+typedef struct {
+    PCB_File_Info info;
+    uint32_t namelength;
+    PCB_FS_char name[1];
+} PCB_FS_Iterator_Entry;
+
+typedef struct PCB_FS_Iterator_Entry_List PCB_FS_Iterator_Entry_List;
+struct PCB_FS_Iterator_Entry_List {
+    PCB_FS_Iterator_Entry_List* next;
+    PCB_FS_Iterator_Entry ent;
+};
+
+typedef struct {
+    //NOTE: `**` because `PCB_FS_Iterator_Entry` is variable length and is
+    //already organized as a linked list.
+    PCB_FS_Iterator_Entry** data;
+    size_t length, capacity;
+} PCB_FS_Iterator_Entry_Array;
+
+typedef struct {
+    PCB_FS_Iterator_NativeHandle handle;
+    //State prior to pushing this frame.
+    //Not for use by user code.
+    struct {
+        size_t filepath_length;
+        PCB_Arena_Mark* arena_state;
+    } previous;
+    //The following fields are unused if the iterator is in "stream" mode.
+    //This does waste ~40 bytes, but is that significant enough to worry about?
+    //Probably not. It could be optimized, but it'd make the structure even more
+    //complex than it already is.
+
+    //If the iterator is configured for preloading directory data, each loaded
+    //entry is allocated in the iterator's arena. Because we also need to
+    //store the filename, it makes the underlying structure variable length.
+    //We could use the size of each entry + arena's padding as a linked list,
+    //but it relies on arenas' implementation detail, so instead it's organized
+    //into an explicit linked list.
+    //Not for use by user code.
+    //NOTE: When buffer is not allocated, the `length` field is used as list's
+    //length cache to avoid traversing it unnecessarily.
+    //Treat as implementation detail.
+    PCB_FS_Iterator_Entry_List* entry_list;
+    //Used only with sorting of preloaded directory data.
+    //Not for use by user code.
+    PCB_FS_Iterator_Entry_Array entry_array;
+    //Currently visited entry.
+    //If `entry_array.length > 0`, `array_idx` is used.
+    //Otherwise `list_head` is used.
+    //Not for use by user code.
+    union {
+        PCB_FS_Iterator_Entry_List* list_head;
+        size_t array_idx;
+    } current;
+} PCB_FS_Iterator_Frame;
+
+typedef struct {
+    PCB_FS_Iterator_Frame* data;
+    size_t length, capacity;
+} PCB_FS_Iterator_Frame_Stack;
+
+typedef uint32_t PCB_FS_Iterator_Flags;
+/**
+ * @brief Load the entire directory data on entering.
+ * This then allows traversal in user-desired order instead of
+ * the unspecified system one.
+ *
+ * If this flag is not set, the iterator is in "stream" mode, i.e.
+ * there is only 1 entry available at a time.
+ */
+#define PCB_FS_ITERATOR_FLAG_PRELOAD (1 << 0)
+/**
+ * @brief Use post-order traversal.
+ *
+ * Consider the following directory structure:
+ * a/
+ * │ b/
+ * ├─┤ c.txt
+ * │ d.md
+ * e.f90
+ * Assuming entries in each directory are processed in the above order,
+ * a pre-order traversal would return [a, a/b, a/b/c.txt, a/d.md, e.f90].
+ * A post-order traversal would return [a/b/c.txt, a/b, a/d.md, a, e.f90]
+ * instead.
+ *
+ * Currently not implemented.
+ */
+#define PCB_FS_ITERATOR_FLAG_POSTORDER (1 << 1)
+/**
+ * @brief Don't ignore "." and ".." entries.
+ * Even with this flag set, these directories are never entered.
+ */
+#define PCB_FS_ITERATOR_FLAG_DONT_IGNORE_CUR_PAR (1 << 2)
+/**
+ * @brief By default, the `PCB_File_Info` structure is only partially filled
+ * since filling it whole may require additional syscalls.
+ * Usually, only the file type and name are needed, so pulling additional
+ * file information when not needed is just wasted CPU time.
+ * This flag enables those additional syscalls.
+ *
+ * On POSIX systems, file timestamps and fields copied from stat(2) are only
+ * available with this flag.
+ */
+#define PCB_FS_ITERATOR_FLAG_FULL_FILE_INFO (1 << 3)
+/**
+ * @brief Don't keep track of the current filepath.
+ * The `current_filepath` field's buffer is not allocated.
+ *
+ * This flag is only available on systems where directory streams can be
+ * opened relative to an existing file handle.
+ * If the system doesn't support it (or the implementation doesn't use
+ * such mechanism), initializing the iterator with this flag fails.
+ */
+#define PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH (1 << 4)
+/**
+ * @brief Follow symbolic links.
+ *
+ * NOTE: The iterator itself doesn't check for loops.
+ * Make sure to make the traversal depth bounded or keep track of symlinks
+ * manually to avoid infinite recursion.
+ */
+#define PCB_FS_ITERATOR_FLAG_FOLLOW_SYMLINKS (1 << 5)
+
+/**
+ * @brief Comparator function used when sorting preloaded entries.
+ * Internally passed to qsort.
+ *
+ * Accepts `const PCB_FS_Iterator_Entry *const *` as `a` and `b` argument.
+ * Note the double pointer!
+ * `a` and `b` are never NULL.
+ */
+typedef int (*PCB_FS_Iterator_Entry_Comparator_pfn)(const void* a, const void* b);
+typedef struct PCB_FS_Iterator_Internal PCB_FS_Iterator_Internal;
+
+typedef struct {
+    //This field should be treated as read-only by user code.
+    PCB_FS_String current_filepath;
+    //Stores the relevant directory entry data after each call to
+    //`PCB_FS_Iterator_next()`.
+    PCB_FS_Iterator_Entry *ent;
+    //The recursive traversal state metadata is stored here.
+    //This field should be treated as read-only by user code.
+    PCB_FS_Iterator_Frame_Stack stack;
+    //Flags set during initialization.
+    //This field should be treated as read-only by user code.
+    PCB_FS_Iterator_Flags flags;
+    //Configured maximum traversal depth.
+    //This field should be treated as read-only by user code.
+    size_t maxdepth;
+    //Arena, which holds `stack` frames (if `maxdepth != 0`) and any
+    //preallocated internal structures.
+    //You can set it to your own arena prior to calling `PCB_FS_Iterator_init`,
+    //otherwise a new one will be allocated.
+    PCB_Arena* arena;
+    //Holds the initial state of `arena`.
+    //Do not set it yourself - it will get overridden.
+    PCB_Arena_Mark* mark;
+    //Comparator function used when sorting entries of a particular directory.
+    //Only applicable when not in stream mode.
+    //In stream mode, entries are returned in whatever the OS decides to.
+    //You *technically can* change it during traversal, but it's not recommended.
+    //May be NULL if no sorting is needed.
+    PCB_FS_Iterator_Entry_Comparator_pfn comp;
+    PCB_FS_Iterator_Internal* _priv;
+} PCB_FS_Iterator;
+
+
+
 typedef enum {
     /* Unknown argv syntax, causes `PCB_BuildContext`'s options
      * to be passed without processing.
@@ -3960,6 +4151,139 @@ PCBAPI PCB_StringView PCBCALL PCB_FS_Extension(PCB_StringView path);
  * for performance. If in doubt, use `PCB_FS_Extension`.
  */
 PCBAPI PCB_StringView PCBCALL PCB_FS_Extension_base(PCB_StringView path);
+/**
+ * @brief Initialize the filesystem `it`erator.
+ *
+ * @param it the iterator to initialize
+ * @param topdir traversal starts from this directory
+ * @param flags see `PCB_FS_Iterator_Flags`
+ * @param maxdepth maximum recursion depth; 0 disables the limit
+ * @return On success, `PCB_OK()` is returned; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEINVAL:
+ *      (1) `flags` contained PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH, but the
+ *       implementation doesn't support it;
+ *      (2) `topdir` was an empty string;
+ *      (3) `topdir` is not a directory.
+ *   - PCB_CESTUB: `flags` specified an option which is not implemented.
+ *   - PCB_CENOMEM: Insufficient memory.
+ *   - PCB_CENORES: `topdir` is not a thing on this filesystem.
+ *   - PCB_CEACCES:
+ *       Opening `topdir` failed with "permission denied", or (Windows) getting
+ *       the file type of the very first entry, which under current implementation
+ *       should be the "." directory, somehow failed.
+ *   - PCB_CE2BIG (Windows):
+ *       The very first loaded entry's filename was somehow larger than the internal
+ *       component limit. This should be impossible because Windows limits
+ *       component sizes to MAX_PATH and the internal limit is above this value.
+ * - WinAPI domain (Windows): See FindFirstFileW.
+ * - POSIX domain (POSIX): See openat(2) and fdopendir(3).
+ *
+ * If `maxdepth != 0`, `it->stack` is preallocated in `it->arena`.
+ * Otherwise it grows dynamically on the heap.
+ * If `flags` dont't specify preloading, `it->ent` is preallocated in `it->arena`
+ * with a fixed filename limit, which should be sufficient for almost all
+ * practical cases.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_Iterator_init(
+    PCB_FS_Iterator *it,
+    const PCB_FS_char *topdir,
+    PCB_FS_Iterator_Flags flags,
+    size_t maxdepth
+) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Advance the `it`erator.
+ * The file name and info are kept in `it->ent`.
+ * If `it` is in stream mode, `it->ent` is modified after each call.
+ * Make sure to copy anything you need prior to calling this function again.
+ * Otherwise (preloaded), `it->ent` lives until traversal leaves its parent
+ * directory.
+ * @param it iterator
+ * @param skip if the previous entry was a directory, don't go inside of it
+ * @return On success, `PCB_OK(X)` is returned; check with `PCB_ISOK()`.
+ * If there are no more entries, `X == 0`. Otherwise `X != 0`.
+ *
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CENOMEM:
+ *      Insufficient memory.
+ *      This error is in certain cases recoverable. However, there are so many
+ *      possible places where it can occur that it's not worth documenting.
+ *      Read the implementation.
+ *   - PCB_CEACCES:
+ *       Previous entry was a directory and opening it failed with "permission denied",
+ *       or (Windows) getting the file type of the newly loaded entry failed.
+ *       In the former case, you can call this function again with `skip`
+ *       set to true to skip the inaccessible directory.
+ *       In the latter case, calling this function again will yield the next entry.
+ *   - PCB_CE2BIG:
+ *       The loaded entry's filename was larger than the internal component limit.
+ *       This error is returned only if `it` is in stream mode.
+ *       If `it->current_filepath` is maintained, it contains that entry's name.
+ * - PCB domain:
+ *   - PCB_RESULT_TOCTOU:
+ *       (1) Previous entry was a directory and opening it failed because it's
+ *       either no longer a directory or was deleted;
+ *       (2, POSIX) `it->flags` specify getting full file info, and either there was a
+ *       mismatch with the type reported by `readdir(3)` and `stat(2)`, or
+ *       the file stat(2)ed was deleted.
+ *
+ *       If (1), the entry's file type is updated to either
+ *       symlink, unknown or none and no new entry is loaded.
+ *       If (2, POSIX), and the file was deleted, the reported file type is "none"
+ *       and full file info is not available;
+ *       otherwise the reported file type is the most recent one
+ *       and full file info is available if `it->flags` specify it.
+ *
+ * - WinAPI domain (Windows): see FindFirstFileW, FindNextFileW.
+ * - POSIX domain (POSIX): see openat(2), fstatat(2), fdopendir(3).
+ *
+ * Unless mentioned otherwise, a particular error is recoverable: you can call
+ * this function again for new entries.
+ *
+ * If an error occurs when entering a new directory and `it->current_filepath`
+ * is maintained, the errored path is kept until the next call. This is so
+ * you can log it, save or whatever.
+ *
+ * All applications must be prepared for the file type to be reported as "unknown".
+ *
+ * @thread-safety Concurrent calls to this function with the same `it` are not safe;
+ * use external synchronization.
+ * (POSIX) On ancient libc implementations concurrent calls to `readdir(3)`
+ * with different streams are not safe.
+ * Unless you're targeting a very old system, this is not a problem.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_Iterator_next(
+    PCB_FS_Iterator *it,
+    bool skip
+) PCB_Nonnull_Arg(1);
+/**
+ * @brief Returns current traversal depth, i.e. `it->stack.length`.
+ * Use only if not in the mood to access internal structures.
+ */
+PCBAPI size_t PCBCALL PCB_FS_Iterator_depth(const PCB_FS_Iterator *it) PCB_Nonnull_Arg(1);
+/**
+ * @brief Reset `it` so it can be `reinit`ialized again.
+ * No memory is deallocated, except for transient traversal state.
+ */
+PCBAPI void PCBCALL PCB_FS_Iterator_reset(PCB_FS_Iterator *it) PCB_Nonnull_Arg(1);
+/**
+ * @brief Reinitialize the `it`erator for traversal of a new `topdir`.
+ * @return Same as `PCB_FS_Iterator_init`, but this function doesn't fail
+ * with `PCB_CEINVAL (1)` or `PCB_CESTUB`.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_Iterator_reinit(
+    PCB_FS_Iterator *it,
+    const PCB_FS_char *topdir
+) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Free any resources allocated in `it` during initialization and/or
+ * traversal.
+ *
+ * After this call, `it` can be initialized again using `PCB_FS_Iterator_init`.
+ */
+PCBAPI void PCBCALL PCB_FS_Iterator_destroy(PCB_FS_Iterator *it);
 
 
 
@@ -7031,6 +7355,15 @@ static void PCB__File_Info_from_hinfo(
     if(info->attributes & FILE_ATTRIBUTE_DIRECTORY)
         info->type = PCB_FILETYPE_DIR;
 }
+
+static bool PCB__File_Info_standard(PCB_File_Info *info, HANDLE f) {
+    FILE_STANDARD_INFO sinfo;
+    if(!GetFileInformationByHandleEx(f, FileStandardInfo, &sinfo, sizeof(sinfo)))
+        return false;
+    info->links = sinfo.NumberOfLinks;
+    info->size = sinfo.EndOfFile.QuadPart;
+    return true;
+}
 #endif //platform-specific helpers
 
 PCB_Status PCB_File_Info_get_ne(
@@ -7392,6 +7725,814 @@ PCB_StringView PCB_FS_Extension_base(PCB_StringView path) {
     //It's better to crash than have OOB reads, as seen in Mongobleed.
     if(ext.length == 0) ext.data = NULL;
     return ext;
+}
+
+struct PCB_FS_Iterator_Internal {
+#if PCB_PLATFORM_WINDOWS
+    //This structure is not stored on the stack to allow restarting of traversal
+    //in case of OOM.
+    WIN32_FIND_DATAW findData;
+#else
+    char dummy; //so the structure isn't empty
+#endif
+    //TODO: File ID set to avoid repetitions & infinite recursion
+};
+
+#if PCB_PLATFORM_WINDOWS || PCB_PLATFORM_POSIX
+#if PCB_PLATFORM_WINDOWS
+//FindFirstFile returns file data.
+//This differs significantly from the POSIX API in that there's no open->read->close lifecycle.
+//Instead there is (open+read)->read->close, which is honestly stupid design.
+//To work around it, after the FindFirstFile call, a flag is set that prevents
+//a call to FindNextFile if the loaded entry isn't skipped.
+#define PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY ((uint32_t)1 << 31)
+#endif
+//There was OOM.
+//If `next` is called again, retry a failed operation.
+//This depends on what exactly failed.
+#define PCB__FS_ITERATOR_FLAG_OOM ((uint32_t)1 << 30)
+
+//NOTE: There are filesystems with larger limits, or even no limits.
+//See https://en.wikipedia.org/wiki/Comparison_of_file_systems#Limits.
+//This limit doesn't apply outside of stream mode as entries are
+//allocated on the fly.
+static const size_t PCB__FS_IT_MAX_SUPPORTED_COMPONENT_BYTES = 1024;
+
+#if PCB_PLATFORM_WINDOWS
+static PCB_Status PCB__File_Type_from_handle(PCB_File_Info *info, const wchar_t* filepath) {
+    PCB_Status result = PCB_OK();
+    HANDLE f = CreateFileW(
+        filepath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+    );
+    if(f == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        switch(e) {
+          case ERROR_ACCESS_DENIED:
+            info->type = PCB_FILETYPE_ERROR;
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+          case ERROR_FILE_NOT_FOUND:
+            info->type = PCB_FILETYPE_NONE;
+            return PCB_OK();
+          default:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+        }
+    }
+    info->type = PCB__FileType_from_handle(f);
+    if(info->type == PCB_FILETYPE_ERROR)
+        result = PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+    PCB__File_Info_standard(info, f);
+    CloseHandle(f);
+    return result;
+}
+
+static PCB_Status PCB__File_Info_from_dirent(
+    PCB_File_Info *info, const WIN32_FIND_DATAW *data, const wchar_t* filepath
+) {
+    const FILETIME *fatime = &data->ftLastAccessTime,
+                   *fmtime = &data->ftLastWriteTime,
+                   *fctime = &data->ftCreationTime;
+    PCB__File_Info_timestamps_from_FILETIMEs(info, fatime, fmtime, fctime);
+
+    info->size = (uint64_t)(data->nFileSizeHigh) << 32 | data->nFileSizeLow;
+    info->attributes = data->dwFileAttributes;
+    if(data->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        info->type = PCB_FILETYPE_DIR;
+        return PCB_OK();
+    }
+    //This is probably incorrect, but Windows has weird semantics, so I dunno.
+    else if(data->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+        info->type = PCB_FILETYPE_SYMLINK;
+        return PCB_OK();
+    }
+    return PCB__File_Type_from_handle(info, filepath);
+}
+#elif PCB_PLATFORM_POSIX
+static PCB_Status PCB__File_Info_from_dirent(
+    PCB_File_Info *info, int dirfd, struct dirent *dirent,
+    PCB_FS_Iterator_Flags flags
+) {
+    int e;
+    info->ino = dirent->d_ino;
+    switch(dirent->d_type) {
+      case DT_BLK:     info->type = PCB_FILETYPE_BLK;     break;
+      case DT_CHR:     info->type = PCB_FILETYPE_CHAR;    break;
+      case DT_DIR:     info->type = PCB_FILETYPE_DIR;     break;
+      case DT_LNK:     info->type = PCB_FILETYPE_SYMLINK; break;
+      case DT_REG:     info->type = PCB_FILETYPE_REG;     break;
+      case DT_FIFO:    info->type = PCB_FILETYPE_STREAM;  break;
+      case DT_SOCK:    info->type = PCB_FILETYPE_STREAM;  break;
+      case DT_UNKNOWN: info->type = PCB_FILETYPE_UNKNOWN; break;
+      default:         info->type = PCB_FILETYPE_UNKNOWN; break;
+    }
+    if(!(flags & PCB_FS_ITERATOR_FLAG_FULL_FILE_INFO)) return PCB_OK();
+    struct stat s;
+    bool follow = (flags & PCB_FS_ITERATOR_FLAG_FOLLOW_SYMLINKS) != 0;
+    int stat_flags = (follow ? 0 : AT_SYMLINK_NOFOLLOW);
+    if(fstatat(dirfd, dirent->d_name, &s, stat_flags) < 0) {
+        e = errno;
+        if(e == ENOENT) {
+            info->ino = 0; //https://stackoverflow.com/questions/2099121/why-do-inode-numbers-start-from-1-and-not-0
+            if(info->type == PCB_FILETYPE_SYMLINK && follow) {
+                info->type = PCB_FILETYPE_NONE_SYM;
+                //We can't tell if the symlink is dangling or was itself deleted.
+                return PCB_OK();
+            } else {
+                info->type = PCB_FILETYPE_NONE;
+                return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_TOCTOU);
+            }
+        } else {
+            info->type = PCB_FILETYPE_ERROR;
+            return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+        }
+    }
+    PCB_FileType stat_type = PCB__FileType_from_stat(&s);
+    PCB__File_Info_from_stat_notype(info, &s);
+    //If symlinks are followed, we can't tell if it was actually followed or
+    //was concurrently changed without doing another fstatat(2).
+    if(info->type == PCB_FILETYPE_SYMLINK && follow) {
+        int combined = info->type | stat_type;
+        info->type = (PCB_FileType)combined;
+    } else {
+        bool file_type_mismatch = stat_type != info->type;
+        info->type = stat_type;
+        if(file_type_mismatch)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_TOCTOU);
+    }
+    return PCB_OK();
+}
+#endif //platforms
+
+static PCB_Status PCB__FS_Iterator_store_name(
+    PCB_FS_Iterator *it, PCB_FS_Iterator_Entry *ent, const PCB_FS_char *name
+) {
+    const size_t L = PCB_FS_strlen(name);
+    PCB_FS_StringView sv = PCB_FS_StringView_from_parts(name, L);
+    if(!(it->flags & PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH)) {
+        if(!PCB_FS_String_append_sv(&it->current_filepath, sv)) return PCB_CERR_NOMEM;
+    }
+    if(L >= PCB__FS_IT_MAX_SUPPORTED_COMPONENT_BYTES)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CE2BIG);
+    ent->namelength = (uint32_t)L;
+    PCB_memcpy(ent->name, name, (L+1)*sizeof(*ent->name));
+    return PCB_OK();
+}
+
+#if PCB_PLATFORM_POSIX
+static PCB_Status PCB__FS_Iterator_POSIX_opendir_1st(
+    PCB_FS_Iterator_Frame *frame, const char* filepath, const int open_flags
+) {
+    int e;
+retry:
+    frame->handle.fd = openat(AT_FDCWD, filepath, open_flags);
+    if(frame->handle.fd >= 0) return PCB_OK();
+    e = errno;
+    switch(e) {
+      case EINTR:   goto retry;
+      case EACCES:  return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+      case ENOENT:  return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+      case ENOTDIR: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+      default:      return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+    }
+}
+
+static PCB_Status PCB__FS_Iterator_POSIX_opendir(
+    PCB_FS_Iterator_Frame *frame, PCB_FS_Iterator_Entry *pent, /*previous entry*/
+    const int open_flags
+) {
+    int e;
+retry:
+    frame->handle.fd = openat((frame-1)->handle.fd, pent->name, open_flags);
+    if(frame->handle.fd >= 0) return PCB_OK();
+    e = errno;
+    switch(e) {
+      case EINTR: goto retry;
+      case ELOOP:
+        if(open_flags & O_NOFOLLOW) {
+            pent->info.type = PCB_FILETYPE_SYMLINK;
+            //Previously read entry was a directory, but it was changed to
+            //a symlink in the meantime.
+            return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_TOCTOU);
+        }
+        else return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+      case ENOTDIR:
+        pent->info.type = PCB_FILETYPE_UNKNOWN;
+        //Previously read entry was a directory, but it was changed to
+        //a different type in the meantime.
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_TOCTOU);
+      case ENOENT:
+        pent->info.type = PCB_FILETYPE_NONE;
+        //Previously read entry was a directory, but it was deleted.
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_TOCTOU);
+      case EACCES:
+        pent->info.type = PCB_FILETYPE_ERROR;
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+      default:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+    }
+}
+#elif PCB_PLATFORM_WINDOWS
+static PCB_Status PCB__FS_Iterator_Win32_opendir(
+    PCB_FS_Iterator *it, PCB_FS_Iterator_Frame *frame, WIN32_FIND_DATAW *data
+) {
+    PCB_FS_String *str = &it->current_filepath;
+    if(!PCB_FS_String_setSuffix_char(str, '*')) return PCB_CERR_NOMEM;
+
+    frame->handle = FindFirstFileW(str->data, data);
+    PCB_FS_String_pop(str);
+    if(frame->handle != INVALID_HANDLE_VALUE) return PCB_OK();
+
+    DWORD e = GetLastError();
+    switch(e) {
+      case ERROR_ACCESS_DENIED:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+      case ERROR_FILE_NOT_FOUND: //fallthrough
+      case ERROR_PATH_NOT_FOUND:
+        if(it->stack.length != 1) {
+            it->ent->info.type = PCB_FILETYPE_NONE;
+            return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_TOCTOU);
+        }
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+      default:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+    }
+}
+#endif //platform-specific helper functions
+
+static PCB_FS_Iterator_Entry_List* PCB_FS_Iterator_Entry_List_new(
+    PCB_Arena* arena, const PCB_FS_char *filename
+) {
+    PCB_FS_Iterator_Entry_List *lent;
+    size_t L = PCB_FS_strlen(filename);
+    size_t lent_size = sizeof(PCB_FS_Iterator_Entry_List*) +
+                       offsetof(PCB_FS_Iterator_Entry, name) +
+                       (L+1)*sizeof(*filename);
+    lent = (PCB_FS_Iterator_Entry_List*)PCB_Arena_zalloc(arena, lent_size);
+    if(lent == NULL) return NULL;
+    lent->next = NULL;
+    PCB_memcpy(lent->ent.name, filename, (L+1)*sizeof(*filename));
+    lent->ent.namelength = (uint32_t)L;
+    return lent;
+}
+
+static bool PCB__FS_Iterator_entry_skip(
+    const PCB_FS_Iterator *it, const PCB_FS_char *path
+) {
+    if(it->flags & PCB_FS_ITERATOR_FLAG_DONT_IGNORE_CUR_PAR) return false;
+    if(PCB_FS_strcmp(path, PCB_FS_LIT(".")) == 0) return true;
+    if(PCB_FS_strcmp(path, PCB_FS_LIT("..")) == 0) return true;
+    return false;
+}
+
+static PCB_Status PCB__FS_Iterator_init_frame_handle(
+    PCB_FS_Iterator *it, PCB_FS_Iterator_Frame *frame, const PCB_FS_char *filepath
+) {
+    PCB_Status result = PCB_OK();
+#if PCB_PLATFORM_WINDOWS
+    (void)filepath;
+    result = PCB__FS_Iterator_Win32_opendir(it, frame, &it->_priv->findData);
+    if(!PCB_ISOK(result)) return result;
+
+    if(!PCB__FS_Iterator_entry_skip(it, it->_priv->findData.cFileName)) {
+        PCB_FS_Iterator_Entry *ent = it->ent;
+        if(it->flags & PCB_FS_ITERATOR_FLAG_PRELOAD) {
+            PCB_FS_Iterator_Entry_List *lent = PCB_FS_Iterator_Entry_List_new(
+                it->arena, it->_priv->findData.cFileName
+            );
+            if(lent == NULL) PCB__defer_l(PCB_CERR_NOMEM, error_handle);
+            ent = &lent->ent;
+            frame->current.list_head = lent;
+            frame->entry_array.length += 1; //cache for list length
+        } else {
+            result = PCB__FS_Iterator_store_name(it, ent, it->_priv->findData.cFileName);
+            if(!PCB_ISOK(result)) goto error_handle;
+        }
+        result = PCB__File_Info_from_dirent(&ent->info, &it->_priv->findData, it->current_filepath.data);
+        if(!PCB_ISOK(result)) goto error_arena;
+        it->flags |= PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY;
+    }
+#elif PCB_PLATFORM_POSIX
+    const int OPEN_FLAGS =
+        O_DIRECTORY |
+        O_RDONLY |
+        (it->flags & PCB_FS_ITERATOR_FLAG_FOLLOW_SYMLINKS ? O_NOFOLLOW : 0);
+    if(it->stack.length == 1) //first frame
+        result = PCB__FS_Iterator_POSIX_opendir_1st(frame, filepath, OPEN_FLAGS);
+    else
+        result = PCB__FS_Iterator_POSIX_opendir(frame, it->ent, OPEN_FLAGS);
+    if(!PCB_ISOK(result)) return result;
+    frame->handle.stream = fdopendir(frame->handle.fd);
+    if(frame->handle.stream == NULL) {
+        int e = errno;
+        if(e == ENOMEM)
+            result = PCB_CERR_NOMEM;
+        else //these should not happen if fdopendir(3) tells the truth
+            result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+        goto error_handle;
+    }
+#endif //platforms
+    return result;
+#if PCB_PLATFORM_WINDOWS
+error_arena:
+    if(it->flags & PCB_FS_ITERATOR_FLAG_PRELOAD)
+        PCB_Arena_restore(it->arena, frame->previous.arena_state);
+#endif
+error_handle:
+#if PCB_PLATFORM_WINDOWS
+    FindClose(frame->handle);
+#elif PCB_PLATFORM_POSIX
+    close(frame->handle.fd);
+#endif //platforms
+    return result;
+}
+
+static PCB_Status PCB__FS_Iterator_new_frame(
+    PCB_FS_Iterator *it, const PCB_FS_char* filepath
+) {
+    PCB_Status result = PCB_OK();
+    PCB_FS_String *str = &it->current_filepath;
+    // const size_t prev_L = str->length;
+    PCB_FS_Iterator_Frame *frame;
+    PCB_Arena_Mark* mark = PCB_Arena_mark(it->arena);
+    if(mark == NULL) return PCB_CERR_NOMEM;
+
+    if(!(it->flags & PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH)) {
+        if(!PCB_FS_String_append_cstr(str, filepath))
+            PCB__defer_l(PCB_CERR_NOMEM, error_mark);
+#if PCB_PLATFORM_WINDOWS
+        if(str->data[str->length-1] == '/') str->data[str->length-1] = '\\';
+        else
+#endif
+        if(!PCB_FS_String_setSuffix_char(str, PCB_FS_DIR_DELIM))
+            PCB__defer_l(PCB_CERR_NOMEM, error_str);
+    }
+    //NOTE: UB if `it->stack` is allocated on `it->arena`.
+    if(it->stack.length == it->stack.capacity)
+        PCB_Vec_reserve(&it->stack, 1);
+    PCB_Vec_do_append_unchecked(&it->stack, PCB_ZEROED_T(PCB_FS_Iterator_Frame));
+
+    frame = PCB_Vec_last_unchecked(&it->stack);
+    frame->previous.arena_state = mark;
+    frame->previous.filepath_length = str->length;
+    result = PCB__FS_Iterator_init_frame_handle(it, frame, filepath);
+    if(!PCB_ISOK(result)) {
+        --it->stack.length;
+        goto error_str;
+    }
+    return result;
+error_str:
+    // Don't reset. This gives the user a chance to log the error.
+    // if(!(it->flags & PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH))
+    //     str->data[str->length = prev_L] = '\0';
+error_mark:
+    PCB_Arena_restore(it->arena, mark);
+    return result;
+}
+
+static void PCB__FS_Iterator_pop_frame(PCB_FS_Iterator *it) {
+    PCB_FS_Iterator_Frame *top = PCB_Vec_last_unchecked(&it->stack);
+    PCB_Arena_Mark* m = top->previous.arena_state;
+    PCB_FS_String *str = &it->current_filepath;
+    PCB_Arena_restore(it->arena, m);
+#if PCB_PLATFORM_WINDOWS
+    FindClose(top->handle);
+#elif PCB_PLATFORM_POSIX
+    closedir(top->handle.stream);
+#endif
+    if(--it->stack.length == 0) {
+        PCB_String_reset(str);
+        return;
+    }
+    top = PCB_Vec_last_unchecked(&it->stack);
+    if(!(it->flags & PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH))
+        str->data[str->length = top->previous.filepath_length] = '\0';
+}
+
+static PCB_Status PCB__FS_Iterator_maybe_new_frame(PCB_FS_Iterator *it, bool skip) {
+    if(it->ent->info.type != PCB_FILETYPE_DIR) return PCB_OK(false);
+    if(it->stack.length == it->maxdepth) return PCB_OK(false);
+    if(skip) return PCB_OK(false);
+    const PCB_FS_char* name = it->ent->name;
+    if(!PCB_FS_strcmp(name, PCB_FS_LIT("."))) return PCB_OK(false);
+    if(!PCB_FS_strcmp(name, PCB_FS_LIT(".."))) return PCB_OK(false);
+    PCB_FS_Iterator_Frame *top_frame = PCB_Vec_last_unchecked(&it->stack);
+    if(!(it->flags & PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH)) {
+        PCB_FS_String *path = &it->current_filepath;
+        path->data[path->length = top_frame->previous.filepath_length] = '\0';
+    }
+    //If the newly entered directory is empty (i.e. only "." and ".." exist there)
+    //and we are in stream mode, `it->ent` will not be modified.
+    //After the new frame is popped, another iteration will see that the file type
+    //is a directory and will try to go there, looping forever.
+    //We won't return to the current entry anyway, so the user won't see this
+    //(unless an error occurs).
+    //As you can probably tell, this is a hack.
+    it->ent->info.type = PCB_FILETYPE_ERROR;
+    PCB_Status result = PCB__FS_Iterator_new_frame(it, name);
+    if(!PCB_ISOK(result)) return result;
+    return PCB_OK(true);
+}
+
+static void PCB__FS_Iterator_pop_frame_streaming(PCB_FS_Iterator *it) {
+    PCB__FS_Iterator_pop_frame(it);
+    //Invalidate the previous entry. If it was a directory, another `next` would
+    //try to go there and, in a good case, fail with TOCTOU.
+    it->ent->info.type = PCB_FILETYPE_ERROR;
+}
+
+static PCB_Status PCB__FS_Iterator_streaming(PCB_FS_Iterator *it, bool skip) {
+    PCB_FS_String *path = &it->current_filepath;
+    while(true) {
+        if(it->stack.length == 0) return PCB_OK(0);
+        PCB_FS_Iterator_Frame *top_frame = PCB_Vec_last_unchecked(&it->stack);
+#if PCB_PLATFORM_WINDOWS
+        bool load_next = true;
+        if(PCB_unlikely(it->flags & PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY)) {
+            it->flags ^= PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY;
+            load_next = false;
+        }
+#endif //Windows has this stupid FindFIRST and FindNEXT notion
+        //There are no files visible in the filesystem with an empty name.
+        //We treat an empty filename as there being no entry.
+        if(PCB_likely(it->ent->namelength > 0)) do {
+            PCB_Status result = PCB__FS_Iterator_maybe_new_frame(it, skip);
+            if(!PCB_ISOK(result)) return result;
+            if(!result.code) break;
+            top_frame = PCB_Vec_last_unchecked(&it->stack);
+#if PCB_PLATFORM_WINDOWS
+            if(it->flags & PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY) {
+                it->flags ^= PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY;
+                load_next = false;
+            }
+#endif //new_frame may load the 1st entry, if so skip loading it here
+        } while(0);
+        while(true) {
+#if PCB_PLATFORM_POSIX
+            struct dirent *dirent = readdir(top_frame->handle.stream);
+            if(dirent == NULL) break;
+            const char* name = dirent->d_name;
+            if(PCB__FS_Iterator_entry_skip(it, name)) continue;
+            path->data[path->length = top_frame->previous.filepath_length] = '\0';
+            PCB_Status result = PCB__FS_Iterator_store_name(it, it->ent, name);
+            if(!PCB_ISOK(result)) return result;
+            result = PCB__File_Info_from_dirent(
+                &it->ent->info, top_frame->handle.fd, dirent, it->flags
+            );
+            if(!PCB_ISOK(result)) return result;
+#elif PCB_PLATFORM_WINDOWS
+            if(load_next) {
+                bool ok = FindNextFileW(top_frame->handle, &it->_priv->findData);
+                if(!ok) {
+                    DWORD e = GetLastError();
+                    if(e == ERROR_NO_MORE_FILES) break;
+                    return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+                }
+                const wchar_t* name = it->_priv->findData.cFileName;
+                if(PCB__FS_Iterator_entry_skip(it, name)) continue;
+                path->data[path->length = top_frame->previous.filepath_length] = '\0';
+                PCB_Status result = PCB__FS_Iterator_store_name(it, it->ent, name);
+                if(!PCB_ISOK(result)) return result;
+                result = PCB__File_Info_from_dirent(&it->ent->info, &it->_priv->findData, path->data);
+                if(!PCB_ISOK(result)) return result;
+            }
+            load_next = true;
+#endif //platforms
+            return PCB_OK(1);
+        }
+        PCB__FS_Iterator_pop_frame_streaming(it);
+    }
+    PCB_Unreachable;
+}
+
+static void PCB__FS_Iterator_pop_frame_preloaded(PCB_FS_Iterator *it) {
+    PCB__FS_Iterator_pop_frame(it);
+    //Comes from a frame that was just popped, invalidate; otherwise
+    //it's an arena use-after-free.
+    it->ent = NULL;
+}
+
+static bool PCB__FS_Iterator_update_path(
+    PCB_FS_Iterator *it, const PCB_FS_char* comp
+) {
+    if(it->flags & PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH) return true;
+    PCB_FS_String *path = &it->current_filepath;
+    PCB_FS_Iterator_Frame *top_frame = PCB_Vec_last_unchecked(&it->stack);
+    path->data[path->length = top_frame->previous.filepath_length] = '\0';
+    return PCB_FS_String_append_cstr(path, comp);
+}
+
+static PCB_Status PCB__FS_Iterator_update_array(PCB_FS_Iterator *it) {
+    PCB_FS_Iterator_Frame *top_frame = PCB_Vec_last_unchecked(&it->stack);
+    if(top_frame->current.array_idx >= top_frame->entry_array.length) {
+        PCB__FS_Iterator_pop_frame_preloaded(it); return PCB_OK(0);
+    }
+    PCB_FS_Iterator_Entry *new_ent = top_frame->entry_array.data[top_frame->current.array_idx];
+    if(PCB__FS_Iterator_update_path(it, new_ent->name)) {
+        it->ent = new_ent;
+        ++top_frame->current.array_idx;
+        return PCB_OK(1);
+    }
+    return PCB_CERR_NOMEM;
+}
+
+static PCB_Status PCB__FS_Iterator_update_list(PCB_FS_Iterator *it) {
+    PCB_FS_Iterator_Frame *top_frame = PCB_Vec_last_unchecked(&it->stack);
+    if(top_frame->current.list_head == NULL) {
+        PCB__FS_Iterator_pop_frame_preloaded(it); return PCB_OK(0);
+    }
+    PCB_FS_Iterator_Entry_List *head = top_frame->current.list_head;
+    if(PCB__FS_Iterator_update_path(it, head->ent.name)) {
+        it->ent = &head->ent;
+        top_frame->current.list_head = head->next;
+        return PCB_OK(1);
+    }
+    return PCB_CERR_NOMEM;
+}
+
+static bool PCB__FS_Iterator_sort_top_frame(PCB_FS_Iterator *it) {
+    PCB_FS_Iterator_Frame *top_frame = PCB_Vec_last_unchecked(&it->stack);
+    PCB_FS_Iterator_Entry_Array *arr = &top_frame->entry_array;
+    arr->data = (PCB_FS_Iterator_Entry**)PCB_Arena_alloc(
+        it->arena, sizeof(*arr->data)*arr->length
+    );
+    if(arr->data == NULL) {
+        it->flags |= PCB__FS_ITERATOR_FLAG_OOM;
+        return false;
+    }
+    arr->capacity = arr->length;
+    PCB_FS_Iterator_Entry_List *head = top_frame->current.list_head;
+    size_t i = 0;
+    while(head != NULL) {
+        arr->data[i++] = &head->ent;
+        head = head->next;
+    }
+    qsort(arr->data, arr->length, sizeof(*arr->data), it->comp);
+    top_frame->current.array_idx = 0;
+    return true;
+}
+
+static PCB_Status PCB__FS_Iterator_preloaded(PCB_FS_Iterator *it, bool skip) {
+#if PCB_PLATFORM_WINDOWS
+    if(PCB_unlikely(it->flags & PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY)) {
+        it->flags ^= PCB__FS_ITERATOR_FLAG_WINDOWS_FIRST_ENTRY;
+    }
+#endif
+    if(PCB_unlikely(it->flags & PCB__FS_ITERATOR_FLAG_OOM)) {
+        if(it->comp != NULL && it->stack.length > 0) {
+            PCB_FS_Iterator_Frame *top_frame = PCB_Vec_last_unchecked(&it->stack);
+            if(top_frame->entry_list != NULL && top_frame->entry_array.data == NULL) {
+                if(!PCB__FS_Iterator_sort_top_frame(it)) return PCB_CERR_NOMEM;
+                it->flags ^= PCB__FS_ITERATOR_FLAG_OOM;
+            }
+        } //otherwise handled inside the loop
+    }
+    PCB_Status result;
+    while(true) {
+        if(it->stack.length == 0) return PCB_OK(0);
+        size_t top_frame_idx = it->stack.length-1;
+        PCB_FS_Iterator_Frame *top_frame = &it->stack.data[top_frame_idx];
+        if(top_frame->entry_array.data != NULL || top_frame->entry_list != NULL) do {
+            if(it->ent == NULL) break;
+            result = PCB__FS_Iterator_maybe_new_frame(it, skip);
+            if(!PCB_ISOK(result)) return result;
+            if(!result.code) break;
+            top_frame = &it->stack.data[top_frame_idx]; //stack may got realloc'd
+            if(top_frame->entry_array.data != NULL)
+                ++top_frame->current.array_idx;
+            else if(top_frame->current.list_head != NULL)
+                top_frame->current.list_head = top_frame->current.list_head->next;
+            top_frame = PCB_Vec_last_unchecked(&it->stack);
+        } while(0);
+        if(top_frame->entry_array.data != NULL) {
+            result = PCB__FS_Iterator_update_array(it);
+            if(result.domain == PCB_STATUS_DOMAIN_SUCCESS && result.code == 0) continue;
+            return result;
+        } else if(top_frame->entry_list != NULL) {
+            result = PCB__FS_Iterator_update_list(it);
+            if(result.domain == PCB_STATUS_DOMAIN_SUCCESS && result.code == 0) continue;
+            return result;
+        }
+        //On Windows, `new_frame` may create the first entry due
+        //to the FindFIRST/FindNEXT semantic.
+        //Some entries may also exist if we OOMed while loading.
+        //It can't set `top_frame->entry_list` because it'd be picked up by
+        //the code above, but `top_frame->current.list_head` is free to use.
+        PCB_FS_Iterator_Entry_List *head = top_frame->current.list_head;
+        PCB_FS_Iterator_Entry_List *cur = head;
+        if(cur != NULL) {
+            //On the happy path, this loop will not run.
+            //If OOM happened during loading and the user manages to free up memory,
+            //loading can be restarted from the tail.
+            while(cur->next != NULL) cur = cur->next;
+        }
+        while(true) {
+            PCB_FS_Iterator_Entry_List *lent;
+#if PCB_PLATFORM_WINDOWS
+            if(it->flags & PCB__FS_ITERATOR_FLAG_OOM)
+                it->flags ^= PCB__FS_ITERATOR_FLAG_OOM;
+            else
+                if(!FindNextFileW(top_frame->handle, &it->_priv->findData)) break;
+            const wchar_t *name = it->_priv->findData.cFileName;
+            //NOTE: Current implementation requires keeping track of filepath.
+            //This may change in the future.
+            PCB_WString *path = &it->current_filepath;
+#elif PCB_PLATFORM_POSIX
+            struct dirent *dirent = readdir(top_frame->handle.stream);
+            if(dirent == NULL) break;
+            const char *name = dirent->d_name;
+#endif //platforms
+            if(PCB__FS_Iterator_entry_skip(it, name)) continue;
+#if PCB_PLATFORM_WINDOWS
+            if(!PCB_WString_append_cstr(path, name)) goto oom;
+#endif
+            lent = PCB_FS_Iterator_Entry_List_new(it->arena, name);
+            if(lent == NULL) {
+#if PCB_PLATFORM_WINDOWS
+                path->data[path->length = top_frame->previous.filepath_length] = '\0';
+#endif
+                goto oom;
+            }
+            if(cur == NULL) {
+                head = lent;
+                top_frame->current.list_head = lent;
+            } else {
+                cur->next = lent;
+            }
+            cur = lent;
+            top_frame->entry_array.length += 1; //cache for list length
+            //Returning an error here is not really possible - how would we restart?
+#if PCB_PLATFORM_WINDOWS
+            (void)PCB__File_Info_from_dirent(&lent->ent.info, &it->_priv->findData, path->data);
+            path->data[path->length = top_frame->previous.filepath_length] = '\0';
+#elif PCB_PLATFORM_POSIX
+            (void)PCB__File_Info_from_dirent(&lent->ent.info, top_frame->handle.fd, dirent, it->flags);
+#endif //platforms
+            continue;
+        oom:
+            it->flags |= PCB__FS_ITERATOR_FLAG_OOM;
+            return PCB_CERR_NOMEM;
+        }
+#if PCB_PLATFORM_WINDOWS
+        DWORD e = GetLastError();
+        if(e != ERROR_NO_MORE_FILES) return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+#endif
+        if(head == NULL) { PCB__FS_Iterator_pop_frame(it); continue; } //no entries
+        top_frame->entry_list = head;
+        if(it->comp == NULL) continue;
+        if(!PCB__FS_Iterator_sort_top_frame(it)) return PCB_CERR_NOMEM;
+    }
+}
+#endif //only available there
+
+PCB_Status PCB_FS_Iterator_init(
+    PCB_FS_Iterator *it, const PCB_FS_char *topdir,
+    PCB_FS_Iterator_Flags flags, size_t maxdepth
+) {
+#if PCB_PLATFORM_WINDOWS || PCB_PLATFORM_POSIX
+    PCB_Status result = PCB_OK();
+    PCB_CHECK_SELF(it, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_NULL(topdir, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+#if PCB_PLATFORM_WINDOWS
+    if(flags & PCB_FS_ITERATOR_FLAG_NO_CURRENT_FILEPATH)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+#endif //TODO: Possible on Windows via NtCreateFile + NtQueryDirectoryFile.
+    if(flags & PCB_FS_ITERATOR_FLAG_POSTORDER)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+    PCB_FS_StringView topdir_sv = PCB_FS_StringView_from_cstr(topdir);
+    if(topdir_sv.length == 0)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+
+    bool user_provided_arena = it->arena != NULL;
+    if(user_provided_arena) { //User provided arena
+        PCB_Arena_ref(it->arena);
+    } else {
+        it->arena = PCB_Arena_init((size_t)1 << 21);
+        if(it->arena == NULL) PCB__defer_l(PCB_CERR_NOMEM, oom);
+    }
+    it->mark = PCB_Arena_mark(it->arena);
+    if(it->mark == NULL)
+        PCB__defer_l(PCB_CERR_NOMEM, error_arena);
+    it->_priv = (PCB_FS_Iterator_Internal*)PCB_Arena_zalloc(it->arena, sizeof(*it->_priv));
+    if(it->_priv == NULL) PCB__defer_l(PCB_CERR_NOMEM, error_mark);
+    //With non-zero max depth there is no reason to allocate `it->stack`
+    //on the heap - preallocate it on the arena.
+    if(maxdepth != 0) {
+        it->stack.data = (PCB_FS_Iterator_Frame*)PCB_Arena_alloc(
+            it->arena, maxdepth*sizeof(*it->stack.data)
+        );
+        if(it->stack.data == NULL) PCB__defer_l(PCB_CERR_NOMEM, error_mark);
+        it->stack.capacity = maxdepth;
+    }
+    //Stream mode doesn't require allocating entries per directory. Preallocate it.
+    if(!(flags & PCB_FS_ITERATOR_FLAG_PRELOAD)) {
+        it->ent = (PCB_FS_Iterator_Entry*)PCB_Arena_zalloc(
+            it->arena,
+            offsetof(PCB_FS_Iterator_Entry, name) + PCB__FS_IT_MAX_SUPPORTED_COMPONENT_BYTES
+        );
+        if(it->ent == NULL) PCB__defer_l(PCB_CERR_NOMEM, error_mark);
+    }
+    it->flags = flags;
+    it->maxdepth = maxdepth;
+    result = PCB__FS_Iterator_new_frame(it, topdir);
+    if(!PCB_ISOK(result)) goto error_str;
+    return result;
+error_str:
+    PCB_FS_String_destroy(&it->current_filepath);
+    it->flags = 0;
+    it->maxdepth = 0;
+error_mark:
+    PCB_Arena_restore(it->arena, it->mark);
+    it->mark = NULL;
+error_arena:
+    PCB_Arena_unref(it->arena);
+    if(!user_provided_arena) it->arena = NULL;
+oom:
+    return result;
+#else
+    (void)it; (void)topdir; (void)flags; (void)maxdepth;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_FS_Iterator_next(PCB_FS_Iterator *it, bool skip) {
+#if PCB_PLATFORM_WINDOWS || PCB_PLATFORM_POSIX
+    PCB_CHECK_SELF(it, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(it->flags & PCB_FS_ITERATOR_FLAG_PRELOAD)
+        return PCB__FS_Iterator_preloaded(it, skip);
+    return PCB__FS_Iterator_streaming(it, skip);
+#else
+    (void)it; (void)skip;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+size_t PCB_FS_Iterator_depth(const PCB_FS_Iterator *it) {
+    PCB_CHECK_SELF(it, 0);
+    return it->stack.length;
+}
+
+void PCB_FS_Iterator_reset(PCB_FS_Iterator *it) {
+    PCB_CHECK_SELF(it,);
+    for(size_t i = it->stack.length; i > 0; i--) {
+        PCB_FS_Iterator_Frame *frame = &it->stack.data[i-1];
+#if PCB_PLATFORM_WINDOWS
+        FindClose(frame->handle);
+#elif PCB_PLATFORM_POSIX
+        closedir(frame->handle.stream); //closes `frame->handle.fd` internally
+#else
+        (void)frame;
+#endif //platforms
+    }
+    if(it->stack.length > 0) {
+        PCB_Arena_restore(it->arena, it->stack.data[0].previous.arena_state);
+        it->stack.length = 0;
+    }
+    PCB_String_reset(&it->current_filepath);
+}
+
+PCB_Status PCB_FS_Iterator_reinit(
+    PCB_FS_Iterator *it,
+    const PCB_FS_char *topdir
+) {
+#if PCB_PLATFORM_WINDOWS || PCB_PLATFORM_POSIX
+    PCB_CHECK_SELF(it, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_NULL(topdir, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_FS_StringView topdir_sv = PCB_FS_StringView_from_cstr(topdir);
+    if(topdir_sv.length == 0)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    return PCB__FS_Iterator_new_frame(it, topdir);
+#else
+    (void)it; (void)topdir;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+void PCB_FS_Iterator_destroy(PCB_FS_Iterator *it) {
+    if(it == NULL) return;
+    for(size_t i = it->stack.length; i > 0; i--) {
+        PCB_FS_Iterator_Frame *frame = &it->stack.data[i-1];
+#if PCB_PLATFORM_WINDOWS
+        FindClose(frame->handle);
+#elif PCB_PLATFORM_POSIX
+        closedir(frame->handle.stream); //closes `frame->handle.fd` internally
+#else
+        (void)frame;
+#endif //platforms
+    }
+    PCB_FS_String_destroy(&it->current_filepath);
+    it->ent = NULL; //was allocated in `it->arena`
+    if(it->maxdepth == 0) {
+        PCB_Vec_destroy(&it->stack);
+    } else {
+        it->stack.data = NULL;
+        it->stack.length = it->stack.capacity = 0;
+    }
+    it->flags = 0;
+    it->maxdepth = 0;
+    PCB_Arena_restore(it->arena, it->mark);
+    it->mark = NULL;
+    PCB_Arena_unref(it->arena);
+    it->arena = NULL;
 }
 #endif //PCB_IMPLEMENTATION_FS
 
