@@ -3625,8 +3625,9 @@ typedef struct {
 
 
 
-typedef enum {
-    /* Unknown argv syntax, causes `PCB_BuildContext`'s options
+PCB_Enum(PCB_ArgvSyntax, uint8_t) {
+    /*
+     * Unknown argv syntax, causes `PCB_BuildContext`'s options
      * to be passed without processing.
      */
     PCB_ARGVSYNTAX_UNKNOWN,
@@ -3634,19 +3635,22 @@ typedef enum {
     PCB_ARGVSYNTAX_POSIX,
     //Microsoft argv syntax ("/...(:...)", for example "/DLEVEL:2").
     PCB_ARGVSYNTAX_MS,
-} PCB_ArgvSyntax;
+    PCB_ARGVSYNTAX_COUNT
+};
 
-/* Enum for compiler identification at *runtime* (hence the _RT suffix)
+/*
+ * Enum for compiler identification at *runtime* (hence the _RT suffix)
  * rather than compile time (without the _RT suffix).
  */
-typedef enum {
+PCB_Enum(PCB_Compiler_RT, uint8_t) {
     PCB_COMPILER_RT_UNKNOWN,
     PCB_COMPILER_RT_GCC,
     PCB_COMPILER_RT_CLANG,
     PCB_COMPILER_RT_MSVC,
-} PCB_Compiler_RT;
+    PCB_COMPILER_RT_COUNT,
+};
 
-typedef enum {
+PCB_Enum(PCB_BuildType, uint8_t) {
     PCB_BUILDTYPE_EXEC,
     PCB_BUILDTYPE_STATICLIB,
     PCB_BUILDTYPE_DYNAMICLIB,
@@ -3658,7 +3662,7 @@ typedef enum {
      * PCB distinguishes "plugin" and "dynamic library" via the `PCB_RTLOAD` macro.
      */
     PCB_BUILDTYPE_PLUGIN = PCB_BUILDTYPE_DYNAMICLIB
-} PCB_BuildType;
+};
 
 typedef struct {
     /* Path to the compiler executable to use for C and C++ respectively.
