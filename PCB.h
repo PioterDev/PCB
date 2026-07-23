@@ -1975,6 +1975,28 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_Vec_erase_unchecked(vec, index) PCB_Vec_do_erase_unchecked(vec, index)
 #endif //PCB_Vec_erase_unchecked
 
+#ifndef PCB_Vec_erase_unordered
+/**
+ * @brief Erases the element at index `index` from `vec`, replacing it with
+ * the last element for O(1) deletion, at the cost of not preserving order.
+ */
+#define PCB_Vec_erase_unordered(vec, index) do {                \
+    const size_t PCB_MANGLE(i) = (index);                       \
+    PCB__Vec_check_index(vec, PCB_MANGLE(i), >=);               \
+    (vec)->data[PCB_MANGLE(i)] = (vec)->data[--(vec)->length];  \
+} while(0)
+#endif //PCB_Vec_erase_unordered
+
+#ifndef PCB_Vec_erase_unordered_unchecked
+/**
+ * @brief Erases the element at index `index` from `vec`, replacing it with
+ * the last element for O(1) deletion, at the cost of not preserving order.
+ * If `index` >= current length of `vec`, the behavior is undefined.
+ */
+#define PCB_Vec_erase_unordered_unchecked(vec, index) \
+    (vec)->data[index] = (vec)->data[--(vec)->length]
+#endif //PCB_Vec_erase_unordered_unchecked
+
 #ifndef PCB_Vec_isEmpty
 #define PCB_Vec_isEmpty(vec) ((vec)->data == NULL || (vec)->length == 0)
 #endif //PCB_Vec_isEmpty
