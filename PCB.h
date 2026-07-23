@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 4
+#define PCB_VERSION_PATCH 5
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1611,24 +1611,6 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_VEC_OOM 1 //Out Of Memory
 #define PCB_VEC_IOV 2 //Integer OVerflow
 
-#ifndef PCB_Vec_realloc_fail_action
-#ifdef PCB_VEC_REALLOC_SAFE
-#define PCB_Vec_realloc_fail_action() break
-#else
-#define PCB_Vec_realloc_fail_action() \
-    PCB_assert(0 && "Realloc failed (download more RAM lmao)")
-#endif //PCB_VEC_REALLOC_SAFE
-#endif //PCB_Vec_realloc_fail_action
-
-#ifndef PCB_Vec_integer_overflow_action
-#ifdef PCB_VEC_OVERFLOW_SAFE
-#define PCB_Vec_integer_overflow_action() break
-#else
-#define PCB_Vec_integer_overflow_action() \
-    PCB_assert(0 && "Integer overflow (download more address space lmao)")
-#endif //PCB_VEC_REALLOC_SAFE
-#endif //PCB_Vec_integer_overflow_action
-
 #ifndef PCB_Vec_iov
 //Check if `newcap` would cause a signed integer overflow.
 //This guarantees that calculating a capacity in bytes will never cause an
@@ -1677,59 +1659,37 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 
 #ifndef PCB_Vec_reserve
 #ifdef __cplusplus
-#define PCB_Vec_reserve(vec, howMany) do {                          \
-    const size_t PCB_MANGLE(N) = (howMany);                         \
-    if(PCB_MANGLE(N) == 0) { break; }                               \
-    size_t PCB_MANGLE(c) = (vec)->capacity;                         \
-    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;\
-    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {          \
-        PCB_MANGLE(c) *= 2;                                         \
-    }                                                               \
-    if(PCB_MANGLE(c) <= (vec)->capacity) { break; }                 \
-    if(PCB_MANGLE(c) > (SIZE_MAX/2) / sizeof(*(vec)->data)) {       \
-        PCB_Vec_integer_overflow_action();                          \
-    } void* PCB_MANGLE(d) = (void*)PCB_realloc(                     \
-        (vec)->data, PCB_MANGLE(c) * sizeof(*(vec)->data)           \
-    ); if(PCB_MANGLE(d) == NULL) { PCB_Vec_realloc_fail_action(); } \
-    PCB_memcpy(&(vec)->data, &PCB_MANGLE(d), sizeof(PCB_MANGLE(d)));\
-    (vec)->capacity = PCB_MANGLE(c);                                \
+#define PCB_Vec_reserve(vec, howMany) do {                              \
+    size_t PCB_MANGLE(N) = (howMany), PCB_MANGLE(c) = (vec)->capacity;  \
+    if(PCB_MANGLE(N) == 0) break;                                       \
+    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;    \
+    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {PCB_MANGLE(c) *= 2;}  \
+    if(PCB_MANGLE(c) <= (vec)->capacity) break;                         \
+    PCB_assert(!PCB_Vec_iov(vec, PCB_MANGLE(c)) && "Download more address space lmao"); \
+    void* PCB_MANGLE(d) = PCB_realloc((vec)->data, PCB_MANGLE(c)*sizeof(*(vec)->data)); \
+    PCB_assert(PCB_MANGLE(d) != nullptr && "Download more RAM lmao");   \
+    PCB_memcpy(&(vec)->data, &PCB_MANGLE(d), sizeof(PCB_MANGLE(d)));    \
+    (vec)->capacity = PCB_MANGLE(c);                                    \
 } while(0)
 #else
 /**
  * @brief Reserves `howMany` additional slots in `vec`.
- *
- * If reallocation fails, `vec`'s capacity remains unchanged.
+ * Asserts that capacity didn't overflow or reallocation failed.
  */
-#define PCB_Vec_reserve(vec, howMany) do {                          \
-    const size_t PCB_MANGLE(N) = (howMany);                         \
-    if(PCB_MANGLE(N) == 0) { break; }                               \
-    size_t PCB_MANGLE(c) = (vec)->capacity;                         \
-    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;\
-    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {          \
-        PCB_MANGLE(c) *= 2;                                         \
-    }                                                               \
-    if(PCB_MANGLE(c) <= (vec)->capacity) { break; }                 \
-    if(PCB_MANGLE(c) > (SIZE_MAX/2) / sizeof(*(vec)->data)) {       \
-        PCB_Vec_integer_overflow_action();                          \
-    } void* PCB_MANGLE(d) = (void*)PCB_realloc(                     \
-        (vec)->data, PCB_MANGLE(c) * sizeof(*(vec)->data)           \
-    ); if(PCB_MANGLE(d) == NULL) { PCB_Vec_realloc_fail_action(); } \
-    (vec)->data = PCB_MANGLE(d); (vec)->capacity = PCB_MANGLE(c);   \
+#define PCB_Vec_reserve(vec, howMany) do {                              \
+    size_t PCB_MANGLE(N) = (howMany), PCB_MANGLE(c) = (vec)->capacity;  \
+    void *PCB_MANGLE(d);                                                \
+    if(PCB_MANGLE(N) == 0) break;                                       \
+    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;    \
+    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {PCB_MANGLE(c) *= 2;}  \
+    if(PCB_MANGLE(c) <= (vec)->capacity) break;                         \
+    PCB_assert(!PCB_Vec_iov(vec, PCB_MANGLE(c)) && "Download more address space lmao"); \
+    PCB_MANGLE(d) = PCB_realloc((vec)->data, PCB_MANGLE(c) * sizeof(*(vec)->data));     \
+    PCB_assert(PCB_MANGLE(d) != NULL && "Download more RAM lmao");      \
+    (vec)->data = PCB_MANGLE(d); (vec)->capacity = PCB_MANGLE(c);       \
 } while(0)
 #endif //C++
 #endif //PCB_Vec_reserve
-
-#ifndef PCB_Vec_reserve_check
-#ifdef PCB_VEC_REALLOC_SAFE
-#define PCB_Vec_reserve_check(vec, howMany) { \
-    int PCB_MANGLE(r); \
-    PCB_Vec_try_reserve(vec, howMany, PCB_MANGLE(r)); \
-    if(PCB_MANGLE(r) != PCB_VEC_OK) break; \
-}
-#else
-#define PCB_Vec_reserve_check(vec, howMany) PCB_Vec_reserve(vec, howMany)
-#endif //PCB_VEC_REALLOC_SAFE
-#endif //PCB_Vec_reserve_check
 
 #ifndef PCB_Vec_free
 #define PCB_Vec_free(vec) PCB_free((vec)->data)
@@ -1776,14 +1736,25 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #ifndef PCB_Vec_append
 /**
  * @brief Appends `item` to `vec`.
- *
- * If reallocation fails, `vec`'s capacity remains unchanged.
  */
 #define PCB_Vec_append(vec, item) do {      \
-    PCB_Vec_reserve_check(vec, 1);          \
+    PCB_Vec_reserve(vec, 1);                \
     PCB_Vec_do_append_unchecked(vec, item); \
 } while(0)
 #endif //PCB_Vec_append
+
+#ifndef PCB_Vec_try_append
+/**
+ * @brief Appends `item` to `vec`, but only if reserving its slot succeeded.
+ * NOTE: `item` MAY be evaluated even if reallocation fails and therefore
+ * SHOULD NOT be an expression with side effects.
+ * @sa PCB_Vec_try_reserve
+ */
+#define PCB_Vec_try_append(vec, item, res) do {                     \
+    PCB_Vec_try_reserve(vec, 1, res);                               \
+    if((res) == PCB_VEC_OK) PCB_Vec_do_append_unchecked(vec, item); \
+} while(0)
+#endif //PCB_Vec_try_append
 
 #ifndef PCB_Vec_append_multiple
 /**
@@ -1795,10 +1766,22 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  */
 #define PCB_Vec_append_multiple(vec, items, howMany) do {   \
     const size_t PCB_MANGLE(M) = (howMany);                 \
-    PCB_Vec_reserve_check(vec, PCB_MANGLE(M));              \
+    PCB_Vec_reserve(vec, PCB_MANGLE(M));                    \
     PCB_Vec_do_append_multiple(vec, items, PCB_MANGLE(M));  \
 } while(0)
 #endif //PCB_Vec_append_multiple
+
+#ifndef PCB_Vec_try_append_multiple
+/**
+ * @brief Appends `howMany` `items` to `vec`, but only if reserving their slots succeeds.
+ * @sa PCB_Vec_try_reserve
+ */
+#define PCB_Vec_try_append_multiple(vec, items, howMany, res) do {  \
+    const size_t PCB_MANGLE(M) = (howMany);                         \
+    PCB_Vec_try_reserve(vec, PCB_MANGLE(M), res);                   \
+    if((res) == PCB_VEC_OK) PCB_Vec_do_append_multiple(vec, items, PCB_MANGLE(M)); \
+} while(0)
+#endif //PCB_Vec_try_append_multiple
 
 #ifndef PCB_Vec_append_variadic
 /**
@@ -1814,6 +1797,9 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
     PCB_Vec_append_multiple(vec, PCB_MANGLE(items), PCB_MANGLE(count)); \
 } while(0)
 #endif //PCB_Vec_append_variadic
+
+//There is no `try` variant for `append_variadic` because it can't be retried.
+//Use `PCB_Vec_try_append_multiple`.
 
 #ifndef PCB_Vec_pop_unchecked
 /**
@@ -1914,13 +1900,11 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #ifndef PCB_Vec_insert
 /**
  * @brief Inserts `item` into `vec` at position `index`.
- *
- * If `index` > current length of `vec`, nothing happens.
  */
 #define PCB_Vec_insert(vec, item, index) do {               \
     const size_t PCB_MANGLE(i) = (index);                   \
     PCB__Vec_check_index(vec, PCB_MANGLE(i), >);            \
-    PCB_Vec_reserve_check(vec, 1);                          \
+    PCB_Vec_reserve(vec, 1);                                \
     PCB_Vec_do_insert_unchecked(vec, item, PCB_MANGLE(i));  \
 } while(0)
 #endif //PCB_Vec_insert
@@ -1935,6 +1919,31 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
     PCB_Vec_do_insert_unchecked(vec, item, index);      \
 } while(0)
 #endif //PCB_Vec_insert_unchecked
+
+#ifndef PCB_Vec_try_insert
+/**
+ * @brief Inserts `item` into `vec` at position `index`,
+ * but only if reserving its slot succeeds.
+ */
+#define PCB_Vec_try_insert(vec, item, index, res) do {          \
+    const size_t PCB_MANGLE(i) = (index);                       \
+    PCB__Vec_check_index(vec, PCB_MANGLE(i), >);                \
+    PCB_Vec_try_insert_unchecked(vec, item, PCB_MANGLE(i), res);\
+} while(0)
+#endif //PCB_Vec_insert
+
+#ifndef PCB_Vec_try_insert_unchecked
+/**
+ * @brief Inserts `item` into `vec` at position `index`,
+ * but only if reserving its slot succeeds.
+ * If `index` > current length of `vec`, the behavior is undefined.
+ */
+#define PCB_Vec_try_insert_unchecked(vec, item, index, res) do {\
+    PCB_Vec_try_reserve(vec, 1, res);                           \
+    if((res) != PCB_VEC_OK) break;                              \
+    PCB_Vec_do_insert_unchecked(vec, item, index);              \
+} while(0)
+#endif //PCB_Vec_try_insert_unchecked
 
 #ifndef PCB_Vec_erase
 /**
