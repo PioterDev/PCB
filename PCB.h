@@ -1721,8 +1721,11 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 
 #ifndef PCB_Vec_reserve_check
 #ifdef PCB_VEC_REALLOC_SAFE
-#define PCB_Vec_reserve_check(vec, howMany) \
-    { PCB_Vec_reserve(vec, howMany);  if(PCB_realloc_failed()) break; }
+#define PCB_Vec_reserve_check(vec, howMany) { \
+    int PCB_MANGLE(r); \
+    PCB_Vec_try_reserve(vec, howMany, PCB_MANGLE(r)); \
+    if(PCB_MANGLE(r) != PCB_VEC_OK) break; \
+}
 #else
 #define PCB_Vec_reserve_check(vec, howMany) PCB_Vec_reserve(vec, howMany)
 #endif //PCB_VEC_REALLOC_SAFE
@@ -1763,6 +1766,13 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_DISABLE_ASSERT
 #endif //PCB_Vec_do_append
 
+#ifndef PCB_Vec_do_append_multiple
+#define PCB_Vec_do_append_multiple(vec, items, howMany)                         \
+    for(size_t PCB_MANGLE(j) = 0; PCB_MANGLE(j) < (howMany); PCB_MANGLE(j)++) { \
+        (vec)->data[PCB_MANGLE(j) + (vec)->length] = (items)[PCB_MANGLE(j)];    \
+    } (vec)->length += (howMany);
+#endif //PCB_Vec_do_append_multiple
+
 #ifndef PCB_Vec_append
 /**
  * @brief Appends `item` to `vec`.
@@ -1783,11 +1793,10 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  * but requires specifying the type of arguments provided since C doesn't have
  * type inference before C23 and `typeof` is a GNU extension, so it's not portable.
  */
-#define PCB_Vec_append_multiple(vec, items, howMany) do {                       \
-    PCB_Vec_reserve_check(vec, howMany);                                        \
-    for(size_t PCB_MANGLE(j) = 0; PCB_MANGLE(j) < (howMany); PCB_MANGLE(j)++) { \
-        (vec)->data[PCB_MANGLE(j) + (vec)->length] = (items)[PCB_MANGLE(j)];    \
-    } (vec)->length += (howMany);                                               \
+#define PCB_Vec_append_multiple(vec, items, howMany) do {   \
+    const size_t PCB_MANGLE(M) = (howMany);                 \
+    PCB_Vec_reserve_check(vec, PCB_MANGLE(M));              \
+    PCB_Vec_do_append_multiple(vec, items, PCB_MANGLE(M));  \
 } while(0)
 #endif //PCB_Vec_append_multiple
 
