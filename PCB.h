@@ -1607,6 +1607,10 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_VEC_INITIAL_CAPACITY 64
 #endif //PCB_VEC_INITIAL_CAPACITY
 
+#define PCB_VEC_OK 0
+#define PCB_VEC_OOM 1 //Out Of Memory
+#define PCB_VEC_IOV 2 //Integer OVerflow
+
 #ifndef PCB_Vec_realloc_fail_action
 #ifdef PCB_VEC_REALLOC_SAFE
 #define PCB_Vec_realloc_fail_action() break
@@ -1624,6 +1628,52 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
     PCB_assert(0 && "Integer overflow (download more address space lmao)")
 #endif //PCB_VEC_REALLOC_SAFE
 #endif //PCB_Vec_integer_overflow_action
+
+#ifndef PCB_Vec_iov
+//Check if `newcap` would cause a signed integer overflow.
+//This guarantees that calculating a capacity in bytes will never cause an
+//unsigned integer overflow.
+//This also guarantees that a conversion of the number of elements & capacity
+//fields to a signed size type will never overflow.
+#define PCB_Vec_iov(vec, newcap) ((newcap) > (SIZE_MAX/2) / sizeof(*(vec)->data))
+#endif //PCB_Vec_iov
+
+#ifndef PCB_Vec_try_reserve
+#ifdef __cplusplus
+#define PCB_Vec_try_reserve(vec, howMany, res) do {                     \
+    size_t PCB_MANGLE(N) = (howMany), PCB_MANGLE(c) = (vec)->capacity;  \
+    (res) = PCB_VEC_OK;                                                 \
+    if(PCB_MANGLE(N) == 0) break;                                       \
+    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;    \
+    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {PCB_MANGLE(c) *= 2;}  \
+    if(PCB_MANGLE(c) <= (vec)->capacity) break;                         \
+    if(PCB_Vec_iov(vec, PCB_MANGLE(c))) {(res) = PCB_VEC_IOV; break;}   \
+    void* PCB_MANGLE(d) = PCB_realloc((vec)->data, PCB_MANGLE(c)*sizeof(*(vec)->data)); \
+    if(PCB_MANGLE(d) == nullptr) {(res) = PCB_VEC_OOM; break;}          \
+    PCB_memcpy(&(vec)->data, &PCB_MANGLE(d), sizeof(PCB_MANGLE(d)));    \
+    (vec)->capacity = PCB_MANGLE(c);                                    \
+} while(0)
+#else
+/**
+ * @brief Reserves `howMany` additional slots in `vec`.
+ * The result of the operation is saved in `res`, which SHOULD be a local
+ * integer variable. See `PCB_VEC_OK` and adjacent values.
+ */
+#define PCB_Vec_try_reserve(vec, howMany, res) do {                     \
+    size_t PCB_MANGLE(N) = (howMany), PCB_MANGLE(c) = (vec)->capacity;  \
+    void *PCB_MANGLE(d);                                                \
+    (res) = PCB_VEC_OK;                                                 \
+    if(PCB_MANGLE(N) == 0) break;                                       \
+    if(PCB_MANGLE(c) == 0) PCB_MANGLE(c) = PCB_VEC_INITIAL_CAPACITY;    \
+    while((vec)->length + PCB_MANGLE(N) > PCB_MANGLE(c)) {PCB_MANGLE(c) *= 2;}  \
+    if(PCB_MANGLE(c) <= (vec)->capacity) break;                         \
+    if(PCB_Vec_iov(vec, PCB_MANGLE(c))) {(res) = PCB_VEC_IOV; break;}   \
+    PCB_MANGLE(d) = PCB_realloc((vec)->data, PCB_MANGLE(c)*sizeof(*(vec)->data)); \
+    if(PCB_MANGLE(d) == NULL) {(res) = PCB_VEC_OOM; break;}             \
+    (vec)->data = PCB_MANGLE(d); (vec)->capacity = PCB_MANGLE(c);       \
+} while(0)
+#endif //C++
+#endif //PCB_Vec_try_reserve
 
 #ifndef PCB_Vec_reserve
 #ifdef __cplusplus
@@ -8203,8 +8253,15 @@ static PCB_Status PCB__FS_Iterator_new_frame(
             PCB__defer_l(PCB_CERR_NOMEM, error_str);
     }
     //NOTE: UB if `it->stack` is allocated on `it->arena`.
-    if(it->stack.length == it->stack.capacity)
-        PCB_Vec_reserve(&it->stack, 1);
+    if(it->stack.length == it->stack.capacity) {
+        PCB_Vec_try_reserve(&it->stack, 1, result.code);
+        switch(result.code) {
+          case PCB_VEC_OK: break;
+          case PCB_VEC_OOM: PCB__defer_l(PCB_CERR_NOMEM, error_str);
+          case PCB_VEC_IOV: PCB_Unreachable; //unrealistic
+          default: PCB_Unreachable;
+        }
+    }
     PCB_Vec_do_append_unchecked(&it->stack, PCB_ZEROED_T(PCB_FS_Iterator_Frame));
 
     frame = PCB_Vec_last_unchecked(&it->stack);
