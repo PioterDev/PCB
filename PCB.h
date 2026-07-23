@@ -1900,26 +1900,41 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_VEC_OOB_SAFE
 #endif //PCB__Vec_check_index
 
+#ifndef PCB_Vec_do_insert_unchecked
+#define PCB_Vec_do_insert_unchecked(vec, item, index) do {  \
+    PCB_memmove(                                            \
+        (vec)->data + (index) + 1,                          \
+        (vec)->data + (index),                              \
+        ((vec)->length - (index)) * sizeof(*(vec)->data)    \
+    );                                                      \
+    (vec)->data[(index)] = (item); ++(vec)->length;         \
+} while(0)
+#endif //PCB_Vec_do_insert_unchecked
+
 #ifndef PCB_Vec_insert
 /**
  * @brief Inserts `item` into `vec` at position `index`.
  *
  * If `index` > current length of `vec`, nothing happens.
  */
-#define PCB_Vec_insert(vec, item, index) do {   \
-    const size_t PCB_MANGLE(i) = (index);       \
-    PCB__Vec_check_index(vec, PCB_MANGLE(i), >);\
-    PCB_Vec_reserve_check(vec, 1);              \
-    PCB_memmove(                                \
-        (vec)->data + PCB_MANGLE(i) + 1,        \
-        (vec)->data + PCB_MANGLE(i),            \
-        ((vec)->length - PCB_MANGLE(i)) *       \
-            sizeof(*(vec)->data)                \
-    );                                          \
-    (vec)->data[PCB_MANGLE(i)] = (item);        \
-    ++(vec)->length;                            \
+#define PCB_Vec_insert(vec, item, index) do {               \
+    const size_t PCB_MANGLE(i) = (index);                   \
+    PCB__Vec_check_index(vec, PCB_MANGLE(i), >);            \
+    PCB_Vec_reserve_check(vec, 1);                          \
+    PCB_Vec_do_insert_unchecked(vec, item, PCB_MANGLE(i));  \
 } while(0)
 #endif //PCB_Vec_insert
+
+#ifndef PCB_Vec_insert_unchecked
+/**
+ * @brief Inserts `item` into `vec` at position `index`.
+ * If `index` > current length of `vec`, the behavior is undefined.
+ */
+#define PCB_Vec_insert_unchecked(vec, item, index) do { \
+    PCB_Vec_reserve(vec, 1);                            \
+    PCB_Vec_do_insert_unchecked(vec, item, index);      \
+} while(0)
+#endif //PCB_Vec_insert_unchecked
 
 #ifndef PCB_Vec_erase
 /**
