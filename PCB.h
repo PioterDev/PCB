@@ -1945,6 +1945,15 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 } while(0)
 #endif //PCB_Vec_try_insert_unchecked
 
+#ifndef PCB_Vec_do_erase_unchecked
+#define PCB_Vec_do_erase_unchecked(vec, index) do {         \
+    PCB_memmove(                                            \
+        (vec)->data + (index), (vec)->data + (index) + 1,   \
+        ((vec)->length - (index) - 1)*sizeof(*(vec)->data)  \
+    ); --(vec)->length;                                     \
+} while(0)
+#endif //PCB_Vec_do_erase_unchecked
+
 #ifndef PCB_Vec_erase
 /**
  * @brief Erases the element at index `index` from `vec`.
@@ -1954,14 +1963,17 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_Vec_erase(vec, index) do {              \
     const size_t PCB_MANGLE(i) = (index);           \
     PCB__Vec_check_index(vec, PCB_MANGLE(i), >=);   \
-    PCB_memmove(                                    \
-        (vec)->data + PCB_MANGLE(i),                \
-        (vec)->data + PCB_MANGLE(i) + 1,            \
-        ((vec)->length - PCB_MANGLE(i) - 1) *       \
-            sizeof(*(vec)->data)                    \
-    ); --(vec)->length;                             \
+    PCB_Vec_do_erase_unchecked(vec, PCB_MANGLE(i)); \
 }
 #endif //PCB_Vec_erase
+
+#ifndef PCB_Vec_erase_unchecked
+/**
+ * @brief Erases the element at index `index` from `vec`.
+ * If `index` >= current length of `vec`, the behavior is undefined.
+ */
+#define PCB_Vec_erase_unchecked(vec, index) PCB_Vec_do_erase_unchecked(vec, index)
+#endif //PCB_Vec_erase_unchecked
 
 #ifndef PCB_Vec_isEmpty
 #define PCB_Vec_isEmpty(vec) ((vec)->data == NULL || (vec)->length == 0)
