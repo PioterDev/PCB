@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 3
+#define PCB_VERSION_PATCH 4
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -217,7 +217,7 @@ extern "C" {
 #if PCB_PLATFORM_FREEBSD || PCB_PLATFORM_NETBSD || \
     PCB_PLATFORM_OPENBSD || PCB_PLATFORM_DRAGONFLY || \
     PCB_PLATFORM_MACOS || PCB_PLATFORM_IOS || \
-    PCB_PLATFORM_SOLARIS
+    PCB_PLATFORM_SUNOS
 #define PCB_PLATFORM_BSD 1
 #endif //PCB_PLATFORM_BSD
 
@@ -3639,6 +3639,76 @@ PCB_Enum(PCB_ArgvSyntax, uint8_t) {
 };
 
 /*
+ * Enum for platform identification at *runtime* (hence the _RT suffix)
+ * rather than compile time (without the _RT suffix).
+ */
+PCB_Enum(PCB_Platform_RT, uint16_t) {
+    PCB_PLATFORM_RT_UNKNOWN,
+    PCB_PLATFORM_RT_WINDOWS,
+    PCB_PLATFORM_RT_LINUX,
+    PCB_PLATFORM_RT_ANDROID,
+    PCB_PLATFORM_RT_FREEBSD,
+    PCB_PLATFORM_RT_NETBSD,
+    PCB_PLATFORM_RT_OPENBSD,
+    PCB_PLATFORM_RT_DRAGONFLY,
+    PCB_PLATFORM_RT_IOS,
+    PCB_PLATFORM_RT_MACOS,
+    PCB_PLATFORM_RT_SOLARIS,
+    PCB_PLATFORM_RT_SUNOS,
+    PCB_PLATFORM_RT_VMS,
+    PCB_PLATFORM_RT_HPUX,
+    PCB_PLATFORM_RT_AIX,
+    PCB_PLATFORM_RT_DOS,
+    PCB_PLATFORM_RT_WASM,
+    PCB_PLATFORM_RT_BARE,
+    PCB_PLATFORM_RT_COUNT,
+    /*
+     * Platform identified when #including the library.
+     * Somewhat confusingly, it is done at compile time, but labeled as runtime.
+     * This is because the value is *used* at runtime,
+     * rather than, unlike a macro, at compile time.
+     */
+    PCB_PLATFORM_RT_CURRENT =
+#if   PCB_PLATFORM_WINDOWS
+        PCB_PLATFORM_RT_WINDOWS
+#elif PCB_PLATFORM_LINUX
+        PCB_PLATFORM_RT_LINUX
+#elif PCB_PLATFORM_ANDROID
+        PCB_PLATFORM_RT_ANDROID
+#elif PCB_PLATFORM_FREEBSD
+        PCB_PLATFORM_RT_FREEBSD
+#elif PCB_PLATFORM_NETBSD
+        PCB_PLATFORM_RT_NETBSD
+#elif PCB_PLATFORM_OPENBSD
+        PCB_PLATFORM_RT_OPENBSD
+#elif PCB_PLATFORM_DRAGONFLY
+        PCB_PLATFORM_RT_DRAGONFLY
+#elif PCB_PLATFORM_IOS
+        PCB_PLATFORM_RT_IOS
+#elif PCB_PLATFORM_MACOS
+        PCB_PLATFORM_RT_MACOS
+#elif PCB_PLATFORM_SOLARIS
+        PCB_PLATFORM_RT_SOLARIS
+#elif PCB_PLATFORM_SUNOS
+        PCB_PLATFORM_RT_SUNOS
+#elif PCB_PLATFORM_VMS
+        PCB_PLATFORM_RT_VMS
+#elif PCB_PLATFORM_HPUX
+        PCB_PLATFORM_RT_HPUX
+#elif PCB_PLATFORM_AIX
+        PCB_PLATFORM_RT_AIX
+#elif PCB_PLATFORM_DOS
+        PCB_PLATFORM_RT_DOS
+#elif PCB_PLATFORM_WASM
+        PCB_PLATFORM_RT_WASM
+#elif PCB_PLATFORM_BARE
+        PCB_PLATFORM_RT_BARE
+#else
+        PCB_PLATFORM_RT_UNKNOWN
+#endif //platforms
+};
+
+/*
  * Enum for compiler identification at *runtime* (hence the _RT suffix)
  * rather than compile time (without the _RT suffix).
  */
@@ -6077,6 +6147,21 @@ PCBAPI bool PCBCALL PCB_Windows_can_opt_out_of_MAX_PATH(void);
 #endif //platform-specific functions
 
 
+
+/**
+ * @brief Check whether the `platform` implements a reasonable subset of POSIX.
+ * This is a looser definition than strict compliance because, in practice,
+ * the absolute entirety of POSIX is not needed for programs to be
+ * more-or-less portable between different platforms with a POSIX layer.
+ * @return 1 if `platform` is known to be POSIX`compatible, 0 if not.
+ * In case of platforms that may or may not have a POSIX layer (for example
+ * embedded), -1 is returned meaning "maybe".
+ */
+PCBAPI int PCBCALL PCB_Platform_RT_is_POSIX(PCB_Platform_RT platform);
+/**
+ * @brief Check whether the `platform` is known to implement a BSD-style system API.
+ */
+PCBAPI bool PCBCALL PCB_Platform_RT_is_BSD(PCB_Platform_RT platform);
 /**
  * @brief Get the string version of the C standard from an integer value
  * `standard` (for example, `199901` for "c99").
@@ -12108,6 +12193,61 @@ size_t PCB_getNumberOfCores(void) {
 
 //Section 3.7: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
+int PCB_Platform_RT_is_POSIX(PCB_Platform_RT platform) {
+    switch(platform) {
+      case PCB_PLATFORM_RT_UNKNOWN:   return -1;
+      //Windows had a POSIX layer, which was mandated by US law,
+      //and IT WAS REMOVED.
+      //https://en.wikipedia.org/wiki/Microsoft_POSIX_subsystem
+      case PCB_PLATFORM_RT_WINDOWS:   return false;
+      case PCB_PLATFORM_RT_LINUX:     return true;
+      case PCB_PLATFORM_RT_ANDROID:   return true;
+      case PCB_PLATFORM_RT_FREEBSD:   return true;
+      case PCB_PLATFORM_RT_NETBSD:    return true;
+      case PCB_PLATFORM_RT_OPENBSD:   return true;
+      case PCB_PLATFORM_RT_DRAGONFLY: return true;
+      case PCB_PLATFORM_RT_IOS:       return true;
+      case PCB_PLATFORM_RT_MACOS:     return true;
+      case PCB_PLATFORM_RT_SOLARIS:   return true;
+      case PCB_PLATFORM_RT_SUNOS:     return false;
+      case PCB_PLATFORM_RT_VMS:       return -1; //there are compatibility layers
+      case PCB_PLATFORM_RT_HPUX:      return true;
+      case PCB_PLATFORM_RT_AIX:       return true;
+      case PCB_PLATFORM_RT_DOS:       return false;
+      case PCB_PLATFORM_RT_WASM:      return false;
+      //There may be a POSIX-compatible RTOS on an embedded system, but that's
+      //not to say there WILL be.
+      case PCB_PLATFORM_RT_BARE:      return -1;
+      case PCB_PLATFORM_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+bool PCB_Platform_RT_is_BSD(PCB_Platform_RT platform) {
+    switch(platform) {
+      case PCB_PLATFORM_RT_UNKNOWN:   return false;
+      case PCB_PLATFORM_RT_WINDOWS:   return false;
+      case PCB_PLATFORM_RT_LINUX:     return false;
+      case PCB_PLATFORM_RT_ANDROID:   return false;
+      case PCB_PLATFORM_RT_FREEBSD:   return true;
+      case PCB_PLATFORM_RT_NETBSD:    return true;
+      case PCB_PLATFORM_RT_OPENBSD:   return true;
+      case PCB_PLATFORM_RT_DRAGONFLY: return true;
+      case PCB_PLATFORM_RT_IOS:       return true;
+      case PCB_PLATFORM_RT_MACOS:     return true;
+      case PCB_PLATFORM_RT_SOLARIS:   return false; //based on SVR4
+      case PCB_PLATFORM_RT_SUNOS:     return true; //based on BSD
+      case PCB_PLATFORM_RT_VMS:       return false;
+      case PCB_PLATFORM_RT_HPUX:      return false;
+      case PCB_PLATFORM_RT_AIX:       return false;
+      case PCB_PLATFORM_RT_DOS:       return false;
+      case PCB_PLATFORM_RT_WASM:      return false;
+      case PCB_PLATFORM_RT_BARE:      return false; //unlikely that an RTOS implements it
+      case PCB_PLATFORM_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
 const char* PCB_GetCStandardStr(long standard) {
     switch(standard) {
       case 1L:      return "c89"; //see below why 1
