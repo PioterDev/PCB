@@ -825,9 +825,40 @@ static void f(void)
 #endif //C++?
 #endif //PCB_BeforeMain
 
+#ifndef PCB_AfterMain
+#ifdef __cplusplus
+#define PCB_AfterMain(f)            \
+static void f(void);                \
+struct f##_o { ~f##_o() { f(); } }; \
+static f##_o f##_o_;                \
+static void f(void)
+#else
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB_AfterMain(f) static __attribute__((__destructor__)) void f(void)
+#elif PCB_COMPILER_MSVC
+//https://learn.microsoft.com/en-us/cpp/preprocessor/data-seg?view=msvc-140
+//https://www.gonwan.com/2014/02/13/pre-post-main-function-call-implementation-in-c/
+//https://www.codeguru.com/cplusplus/running-code-before-and-after-main/
+#define PCB_AfterMain(f)            \
+static void f(void);                \
+PCB_DO_PRAGMA(data_seg(".CRT$XPU")) \
+static void (*f##_)(void) = f;      \
+PCB_DO_PRAGMA(data_seg())           \
+static void f(void)
+#else
+#define PCB_AfterMain(f) \
+PCB_EmitWarning("This function will not run after main because the compiler used does not support it") \
+static void f(void)
+#endif //compilers
+#endif //C++?
+#endif //PCB_AfterMain
+
 #ifndef PCB_InitFn
 #define PCB_InitFn(f) PCB_BeforeMain(f)
 #endif //PCB_InitFn
+#ifndef PCB_DeinitFn
+#define PCB_DeinitFn(f) PCB_AfterMain(f)
+#endif //PCB_DeinitFn
 
 #ifndef PCB_Unreachable
 #ifdef PCB_DEBUG
