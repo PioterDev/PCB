@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 5
+#define PCB_VERSION_PATCH 6
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1062,24 +1062,16 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 #ifndef PCB_HAS_STRING_H
 #if PCB_HAS_INCLUDE(<string.h>)
 #include <string.h>
-#define PCB__HAS_STRING_H
+#define PCB_HAS_STRING_H
 #endif //has string.h
-#if PCB_HAS_INCLUDE(<strings.h>)
-#define PCB__HAS_STRINGS_H
-#include <strings.h>
-#endif //has strings.h
+#endif //PCB_HAS_STRING_H
+
+#ifndef PCB_HAS_WCHAR_H
 #if PCB_HAS_INCLUDE(<wchar.h>)
 #include <wchar.h>
-#define PCB__HAS_WCHAR_H
+#define PCB_HAS_WCHAR_H
 #endif //has wchar.h
-
-#if defined(PCB__HAS_STRING_H)  && \
-    defined(PCB__HAS_STRINGS_H) && \
-    defined(PCB__HAS_STRING_H)
-#define PCB_HAS_STRING_H
-#endif
-
-#endif //PCB_HAS_STRING_H
+#endif //PCB_HAS_WCHAR_H
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L && PCB_HAS_INCLUDE(<uchar.h>)
 #include <uchar.h>
@@ -1107,6 +1099,14 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #include <time.h>
 #define PCB_HAS_TIME_H
 #endif //has time.h
+
+#if PCB_PLATFORM_POSIX
+#if PCB_HAS_INCLUDE(<strings.h>)
+#define PCB_HAS_STRINGS_H
+#include <strings.h>
+#endif //has strings.h
+#endif //POSIX-only header
+
 #else
 //fallback for no booleans
 #if !defined(__cplusplus) && defined(__STDC_VERSION__) && \
@@ -1183,9 +1183,9 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_strncmp
 
 #ifndef PCB_strncasecmp
-#ifdef PCB__HAS_STRINGS_H
+#ifdef PCB_HAS_STRINGS_H
 #define PCB_strncasecmp strncasecmp
-#endif //PCB__HAS_STRINGS_H
+#endif //PCB_HAS_STRINGS_H
 #endif //PCB_strncasecmp
 
 #ifndef PCB_strlen
@@ -1212,27 +1212,27 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 //TODO: strpbrk
 
 #ifndef PCB_wcscmp
-#ifdef PCB__HAS_WCHAR_H
+#ifdef PCB_HAS_WCHAR_H
 #define PCB_wcscmp wcscmp
-#endif //PCB__HAS_WCHAR_H
+#endif //PCB_HAS_WCHAR_H
 #endif //PCB_wcscmp
 
 #ifndef PCB_wcsncmp
-#ifdef PCB__HAS_WCHAR_H
+#ifdef PCB_HAS_WCHAR_H
 #define PCB_wcsncmp wcsncmp
-#endif //PCB__HAS_WCHAR_H
+#endif //PCB_HAS_WCHAR_H
 #endif //PCB_wcsncmp
 
 #ifndef PCB_wcslen
-#ifdef PCB__HAS_WCHAR_H
+#ifdef PCB_HAS_WCHAR_H
 #define PCB_wcslen wcslen
-#endif //PCB__HAS_WCHAR_H
+#endif //PCB_HAS_WCHAR_H
 #endif //PCB_wcslen
 
 #ifndef PCB_wcsnlen
-#ifdef PCB__HAS_WCHAR_H
+#ifdef PCB_HAS_WCHAR_H
 #define PCB_wcsnlen wcsnlen
-#endif //PCB__HAS_WCHAR_H
+#endif //PCB_HAS_WCHAR_H
 #endif //PCB_wcsnlen
 
 #ifndef PCB_isspace
