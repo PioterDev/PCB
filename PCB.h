@@ -2069,10 +2069,11 @@ for(                                                    \
 
 #ifndef PCB_Vec_enumerate
 #ifdef PCB_Typeof
-#define PCB_Vec_enumerate(vec, i, it, enumPair, ...)                                \
-for(                                                                                \
-    struct { size_t i; PCB_Typeof((vec)->data) it; } enumPair = { 0, (vec)->data }; \
-    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++                         \
+#define PCB_Vec_enumerate(vec, i, it, enumPair, ...)                            \
+for(                                                                            \
+    struct PCB_MANGLE(dummytypename_v) { size_t i; PCB_Typeof((vec)->data) it; }\
+        enumPair = { 0, (vec)->data };                                          \
+    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++                     \
 )
 #else
 /**
@@ -2101,10 +2102,11 @@ for(                                                                            
  * }
  * ```
  */
-#define PCB_Vec_enumerate(vec, i, it, enumPair, elemType)               \
-for(                                                                    \
-    struct { size_t i; elemType *it; } enumPair = { 0, (vec)->data };   \
-    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++             \
+#define PCB_Vec_enumerate(vec, i, it, enumPair, elemType)           \
+for(                                                                \
+    struct PCB_MANGLE(dummytypename_v) { size_t i; elemType *it; }  \
+        enumPair = { 0, (vec)->data };                              \
+    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++         \
 )
 #endif //PCB_Typeof?
 #endif //PCB_Vec_enumerate
@@ -2567,14 +2569,16 @@ for(                                                    \
 #ifdef PCB_Typeof
 #define PCB_Arr_enumerate(arr, i, it, enumPair, type)                           \
 for(                                                                            \
-    struct { size_t i; PCB_Typeof(&(arr)[0]) it; } enumPair = { 0, &(arr)[0] }; \
+    struct PCB_MANGLE(dummytypename_a) { size_t i; PCB_Typeof(&(arr)[0]) it; }  \
+        enumPair = { 0, &(arr)[0] };                                            \
     enumPair.i < PCB_ARRAY_LEN(arr); enumPair.i++, enumPair.it++                \
 )
 #else
-#define PCB_Arr_enumerate(arr, i, it, enumPair, type)               \
-for(                                                                \
-    struct { size_t i; type *it; } enumPair = { 0, &(arr)[0] };     \
-    enumPair.i < PCB_ARRAY_LEN(arr); enumPair.i++, enumPair.it++    \
+#define PCB_Arr_enumerate(arr, i, it, enumPair, type)           \
+for(                                                            \
+    struct PCB_MANGLE(dummytypename_a) { size_t i; type *it; }  \
+        enumPair = { 0, &(arr)[0] };                            \
+    enumPair.i < PCB_ARRAY_LEN(arr); enumPair.i++, enumPair.it++\
 )
 #endif //PCB_Typeof?
 #endif //PCB_Arr_enumerate
