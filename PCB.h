@@ -6655,16 +6655,15 @@ int PCB_strncmp(const char* s1, const char* s2, size_t n) {
 #endif //PCB_strncmp
 
 #ifndef PCB_strncasecmp
-static int PCB_toupper(int ch) { return (ch >= 'a' && ch <= 'a') ? ch - 'a' - 'A' : ch; }
-static int PCB_tolower(int ch) { return (ch >= 'A' && ch <= 'Z') ? ch + 'a' - 'A' : ch; }
+static unsigned char PCB__tolower(unsigned char ch) { return (ch >= 'A' && ch <= 'Z') ? ch + 'a' - 'A' : ch; }
 
 //https://stackoverflow.com/questions/7299119/source-code-for-strncasecmp-function
 int PCB_strncasecmp(const char* s1, const char* s2, size_t n) {
     if(n == 0) return 0;
-    const unsigned char* x1 = (const unsigned char*)s1;
-    const unsigned char* x2 = (const unsigned char*)s2;
-    while(n > 0 && PCB_tolower(*x1) == PCB_tolower(x2)) { ++x1; ++x2; --n; }
-    unsigned char c1 = PCB_tolower(*x1), c2 = PCB_tolower(*x2);
+    const unsigned char *x1 = (const unsigned char*)s1;
+    const unsigned char *x2 = (const unsigned char*)s2;
+    while(n > 0 && PCB__tolower(*x1) == PCB__tolower(*x2)) { ++x1; ++x2; --n; }
+    unsigned char c1 = PCB__tolower(*x1), c2 = PCB__tolower(*x2);
     return n == 0 ? 0 : ((c1 > c2) - (c1 < c2));
 }
 #define PCB_strncasecmp PCB_strncasecmp
