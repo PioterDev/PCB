@@ -3963,9 +3963,10 @@ typedef struct {
     PCB_ShellCommand commandBuffer;
     //Internal vector of child process handles.
     PCB_Processes processes;
-    //Internal arena allocator. May be safely reset after building and used for your own things.
-    //DO NOT ALLOCATE ANYTHING PRIOR TO BUILDING!!! THE ALLOCATION WILL BE OVERRIDDEN!
+    //Arena allocator for transient build state. You can provide your own.
     PCB_Arena* arena;
+    //Initial state of `arena` is saved here. Do not set it yourself.
+    PCB_Arena_Mark* mark;
     //Internal buffer used for accumulating source file paths for compilation.
     PCB_CStrings sourceFiles;
     //Internal buffer used for accumulating object file paths for linking.
