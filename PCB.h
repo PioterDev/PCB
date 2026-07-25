@@ -4047,8 +4047,8 @@ typedef enum {
         PCB_BUILDOPTION_DEFAULT_PATHS    |
         PCB_BUILDOPTION_DEFAULT_COMPILER |
         PCB_BUILDOPTION_DEFAULT_WARNINGS,
-    //Causes debug symbols to be emitted into object files. TODO: in MSVC
-    PCB_BUILDOPTION_DEBUG = 1 << 4,
+    //Disables debug information.
+    PCB_BUILDOPTION_NODEBUG = 1 << 4,
     //Equivalent to -O3 or /O2. For more granularity modify the build context manually.
     PCB_BUILDOPTION_OPTIMIZE = 1 << 5,
     //Turns the thread sanitizer (TSan) on if available. Incompatible with ASan and LSan.
