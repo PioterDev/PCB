@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 6
+#define PCB_VERSION_PATCH 7
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -299,24 +299,30 @@ extern "C" {
 #define PCB_ARCH_x86_64 1
 #define PCB_ARCH_x64 1
 #define PCB_ARCH "x64"
+#define _X64_
+#define _AMD64_
 #elif defined(_M_IX86)
 #define PCB_ARCH_i386 1
 #define PCB_ARCH_i686 1
 #define PCB_ARCH_x86 1
 #define PCB_ARCH "x86"
+#define _X86_
 #elif defined(_M_ARM64)
 #define PCB_ARCH_AArch64 1
 #define PCB_ARCH_ARM64 1
 #define PCB_ARCH "ARM64"
+#define _ARM64_
 #elif defined(_M_ARM)
 #define PCB_ARCH_ARM _M_ARM
 #define PCB_ARCH "ARMv?"
+#define _ARM_
 #elif defined(_M_ALPHA)
 #define PCB_ARCH_Alpha 1
 #define PCB_ARCH "Alpha"
 #elif defined(_M_PPC)
 #define PCB_ARCH_PowerPC 1
 #define PCB_ARCH "PowerPC"
+#define _MPPC_
 #endif //architectures
 #elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
 #if defined(__x86_64__) || defined(__x86_64) || \
