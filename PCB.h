@@ -2983,7 +2983,7 @@ typedef struct {
 /**
  * @brief Helper macro for less typing.
  */
-#define PCB_STATUS(domain, code) PCB_CLITERAL(PCB_Status){domain, code}
+#define PCB_STATUS(domain, code) (PCB_CLITERAL(PCB_Status){domain, code})
 #endif //PCB_STATUS
 /**
  * @brief Most commonly encountered error conditions.
