@@ -3999,10 +3999,6 @@ typedef struct {
             unsigned char parallel;
             //Whether to force recompilation of all detected source files.
             unsigned char alwaysBuild : 1;
-            /* Specifies the command-line argument parsing syntax.
-             * See the `PCB_ArgvSyntax` enum for details.
-             */
-            PCB_ArgvSyntax argvSyntax : 2;
             /* Whether to use GNU extensions.
              * Only relevant with compilers that support it.
              * Otherwise it should be set to false.
