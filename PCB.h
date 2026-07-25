@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 7
+#define PCB_VERSION_PATCH 8
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6633,7 +6633,9 @@ static void PCB__SYSTEM_INFO_GET(void) {
     //Should always be mapped, be we're paranoid.
     if(ntdll == NULL) return;
     //https://stackoverflow.com/questions/36543301/detecting-windows-10-version
-    typedef NTSTATUS (WINAPI *RtlGetVersion_pfn)(OSVERSIONINFOW*);
+    //Return value should be NTSTATUS, but we don't want to impose any particular
+    //value of _WIN32_WINNT, so LONG, which is the same as NTSTATUS, is used.
+    typedef LONG (WINAPI *RtlGetVersion_pfn)(OSVERSIONINFOW*);
     RtlGetVersion_pfn rtlGetVersion;
     FARPROC proc = GetProcAddress(ntdll, "RtlGetVersion");
     if(proc == NULL) return;
