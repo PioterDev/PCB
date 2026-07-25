@@ -3029,6 +3029,14 @@ PCB_Enum(PCB_Common_Error, uint32_t) {
 //Helper macros.
 #define PCB_CERR_NOMEM (PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENOMEM))
 
+#if PCB_PLATFORM_WINDOWS
+#define PCB_STATUS_NATIVE_SYSTEM_API() PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError())
+#elif PCB_PLATFORM_POSIX
+#define PCB_STATUS_NATIVE_SYSTEM_API() PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno)
+#else
+#define PCB_STATUS_NATIVE_SYSTEM_API() PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB) //stub
+#endif
+
 /**
  * @brief Different error values returned in conjunction with the
  * `PCB_STATUS_DOMAIN_PCB` domain.
@@ -7683,7 +7691,7 @@ PCB_Status PCB_File_Info_get_ne(
     }
     if(!GetFileInformationByHandle(f, &hinfo)) {
         info->type = PCB_FILETYPE_ERROR;
-        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError()));
+        PCB__return_defer(PCB_STATUS_NATIVE_SYSTEM_API());
     }
     PCB__File_Info_from_hinfo(info, &hinfo);
     //TODO: Windows has something called "reparse points"
@@ -7691,7 +7699,7 @@ PCB_Status PCB_File_Info_get_ne(
     if(info->type != PCB_FILETYPE_DIR) do {
         info->type = PCB__FileType_from_handle(f);
         if(info->type != PCB_FILETYPE_ERROR) break;
-        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError()));
+        PCB__return_defer(PCB_STATUS_NATIVE_SYSTEM_API());
     } while(0);
 defer:
     CloseHandle(f);
@@ -7720,11 +7728,11 @@ PCB_Status PCB_FS_mkdir(const char* path) {
 PCB_Status PCB_FS_mkdir_ne(const PCB_FS_char* path) {
     PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
 #if PCB_PLATFORM_POSIX
-    if(mkdir(path, 0775) < 0) return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (uint32_t)errno);
+    if(mkdir(path, 0775) < 0) return PCB_STATUS_NATIVE_SYSTEM_API();
     return PCB_OK(0);
 #elif PCB_PLATFORM_WINDOWS
     if(!CreateDirectoryW(path, NULL))
-        return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+        return PCB_STATUS_NATIVE_SYSTEM_API();
     return PCB_OK(0);
 #else
     (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
@@ -7791,7 +7799,7 @@ PCB_Status PCB_FS_rm_ne(const PCB_FS_char* path) {
     return PCB_OK(0);
 #elif PCB_PLATFORM_WINDOWS
     if(!DeleteFileW(path))
-        return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+        return PCB_STATUS_NATIVE_SYSTEM_API();
     return PCB_OK(0);
 #else
     (void)path; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
@@ -7812,7 +7820,7 @@ PCB_Status PCB_FS_getcwd_ne(PCB_FS_StringSlice buf) {
 #if PCB_PLATFORM_WINDOWS
     DWORD reqlen = GetCurrentDirectoryW((DWORD)buf.length, buf.data);
     if(reqlen == 0)
-        return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+        return PCB_STATUS_NATIVE_SYSTEM_API();
     if(reqlen <= buf.length) return PCB_OK((uint32_t)reqlen);
     return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_BUFFER_TOO_SMALL);
 #elif PCB_PLATFORM_POSIX
@@ -8036,7 +8044,7 @@ static PCB_Status PCB__File_Type_from_handle(PCB_File_Info *info, const wchar_t*
     }
     info->type = PCB__FileType_from_handle(f);
     if(info->type == PCB_FILETYPE_ERROR)
-        result = PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, GetLastError());
+        result = PCB_STATUS_NATIVE_SYSTEM_API();
     PCB__File_Info_standard(info, f);
     CloseHandle(f);
     return result;
