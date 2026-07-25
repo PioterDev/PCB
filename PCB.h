@@ -3588,6 +3588,12 @@ typedef struct {
 
 /**
  * @brief A prefix of `PCB_Arena` for allocator metadata.
+ *
+ * You MAY cast `PCB_Arena*` to `PCB_Arena_Prefix*` and access the internal
+ * structure directly. However:
+ *
+ * The library reserves the ability to make breaking changes
+ * to this structure without them treated as a breaking change.
  */
 typedef struct {
     size_t length;
