@@ -301,6 +301,7 @@ extern "C" {
 #define PCB_ARCH "x64"
 #elif defined(_M_IX86)
 #define PCB_ARCH_i386 1
+#define PCB_ARCH_i686 1
 #define PCB_ARCH_x86 1
 #define PCB_ARCH "x86"
 #elif defined(_M_ARM64)
@@ -319,12 +320,15 @@ extern "C" {
 #endif //architectures
 #elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
 #if defined(__x86_64__) || defined(__x86_64) || \
-    defined(__amd64__)  || defined(__amd64)
+    defined(__amd64__)  || defined(__amd64) || \
+    defined(__k8__)     || defined(__k8)
 #define PCB_ARCH_x86_64 1
 #define PCB_ARCH_x64 1
 #define PCB_ARCH "x86_64"
-#elif defined(i386) || defined(__i386) || defined(__i386__)
+#elif defined(__i386) || defined(__i386__) || defined(i386) || \
+      defined(__i686) || defined(__i686__)
 #define PCB_ARCH_i386 1
+#define PCB_ARCH_i686 1
 #define PCB_ARCH_x86 1
 #define PCB_ARCH "i386"
 #elif defined(__aarch64__)
@@ -418,6 +422,9 @@ extern "C" {
 #ifndef PCB_ARCH_i386
 #define PCB_ARCH_i386 0
 #endif //PCB_ARCH_i386
+#ifndef PCB_ARCH_i686
+#define PCB_ARCH_i686 0
+#endif //PCB_ARCH_i686
 #ifndef PCB_ARCH_x86
 #define PCB_ARCH_x86 0
 #endif //PCB_ARCH_x86
