@@ -1374,6 +1374,14 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB__ASSERT_HANDLED //assume available
 #endif //PCB_assert
 
+#ifndef PCB_abort
+#ifdef PCB_HAS_STDLIB_H
+#define PCB_abort() abort()
+#else
+#error "PCB requires a way to abort execution in case of detected invariant or security violations."
+#endif
+#endif //PCB_abort
+
 //Section 1.7: Define other useful macros
 //Section 1.7.1: General purpose macros
 #ifndef PCB_TODO
@@ -11674,14 +11682,14 @@ static inline void PCB__Arena_do_free(
 }
 
 //TODO: would be better to somehow use ASan for these.
-static void PCB__Arena_diagnose_df(const char* func, void* ptr) {
+PCB_Noreturn static void PCB__Arena_diagnose_df(const char* func, void* ptr) {
     PCB_log(PCB_LOGLEVEL_FATAL, "%s: double free detected for %p.", func, ptr);
-    abort();
+    PCB_abort();
 }
 
-static void PCB__Arena_diagnose_uaf(const char* func, void* ptr) {
+PCB_Noreturn static void PCB__Arena_diagnose_uaf(const char* func, void* ptr) {
     PCB_log(PCB_LOGLEVEL_FATAL, "%s: use-after-free detected for %p.", func, ptr);
-    abort();
+    PCB_abort();
 }
 
 static inline bool PCB__Arena_try_shrink_buf(
@@ -12087,7 +12095,7 @@ void* PCB_Arena_realloc(PCB_Arena* arena, void* ptr, size_t size) {
 
     size /= sizeof(void*);
     size_t length = PCB__Arena_offsetof(a, ptr);
-    if(PCB_unlikely(length >= a->length)) { PCB__Arena_diagnose_uaf(__func__, ptr); return NULL; }
+    if(PCB_unlikely(length >= a->length)) { PCB__Arena_diagnose_uaf(__func__, ptr); }
     PCB_Arena_Alloc_Meta* meta = (PCB_Arena_Alloc_Meta*)ptr - 1;
 #ifdef __SANITIZE_ADDRESS__
     ASAN_UNPOISON_MEMORY_REGION(meta, sizeof(*meta));
