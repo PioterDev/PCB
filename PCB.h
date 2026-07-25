@@ -4049,7 +4049,7 @@ typedef enum {
         PCB_BUILDOPTION_DEFAULT_WARNINGS,
     //Disables debug information.
     PCB_BUILDOPTION_NODEBUG = 1 << 4,
-    //Equivalent to -O3 or /O2. For more granularity modify the build context manually.
+    //Equivalent to -O2 or /O2.
     PCB_BUILDOPTION_OPTIMIZE = 1 << 5,
     //Turns the thread sanitizer (TSan) on if available. Incompatible with ASan and LSan.
     PCB_BUILDOPTION_TSAN = 1 << 6,
@@ -4059,7 +4059,8 @@ typedef enum {
     PCB_BUILDOPTION_LSAN = 1 << 8,
     //Turns the undefined behavior sanitizer (UBSan) on if available.
     PCB_BUILDOPTION_UBSAN = 1 << 9,
-    /* There are more sanitizers available, but they are compiler-exclusive:
+    /*
+     * There are more sanitizers available, but they are compiler-exclusive:
      * Memory sanitizer (clang only):
      * https://clang.llvm.org/docs/MemorySanitizer.html
      * Fuzzing (MSVC only):
