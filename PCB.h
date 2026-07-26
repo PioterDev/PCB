@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 13
+#define PCB_VERSION_PATCH 14
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5948,7 +5948,8 @@ PCBAPI bool PCBCALL PCB_Process_waitForExit(PCB_Process* p) PCB_Nonnull_Arg(1);
  */
 PCBAPI PCB_Status PCBCALL PCB_Process_checkExit(PCB_Process* p) PCB_Nonnull_Arg(1);
 /**
- * @brief Get the exit code of process `p`.
+ * @brief Get the exit code of process `p`. Returned in the `code` field
+ * if there is no error; check with `PCB_ISOK()`.
  *
  * You should only call it after `p` has exited.
  * Otherwise, on POSIX systems, the result will most likely be incorrect.
@@ -5957,18 +5958,19 @@ PCBAPI PCB_Status PCBCALL PCB_Process_checkExit(PCB_Process* p) PCB_Nonnull_Arg(
  *
  * - value in the range of [0, 255] for a normal exit,
  *
- * - `-s-1` if terminated by a signal with a numeric value `s`,
+ * - `s + 256` if terminated by a signal with a numeric value `s`,
  *
- * - -1 otherwise - this can mean that `process` was stopped/continued; use
+ * - `(uint32_t)-1` otherwise - this can mean that `process` was stopped/continued; use
  *   `WIFSTOPPED`, `WSTOPSIG`, `WIFCONTINUED` macros inside
  *   `#if PCB_PLATFORM_POSIX` on `p->status`
  *   to handle that case since it's platform-specific.
  * On Windows, the entire range is used for exit codes.
+ * This function can fail on Windows; see GetExitCodeProcess.
  *
  * Abnormal exits are logged as errors. See the implementation for what is
  * considered an "abnormal" exit.
  */
-PCBAPI int PCBCALL PCB_Process_getExitCode(const PCB_Process* p) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_Process_getExitCode(const PCB_Process *p) PCB_Nonnull_Arg(1);
 /**
  * @brief Destroys the passed `p` process structure, invalidates
  * its member fields.
@@ -11621,11 +11623,12 @@ PCB_Status PCB_Process_checkExit(PCB_Process* p) {
 #endif //platforms
 }
 
-int PCB_Process_getExitCode(const PCB_Process* p) {
-    PCB_CHECK_SELF(p, (PCB_ClearError(), errno = EFAULT, -1) );
+PCB_Status PCB_Process_getExitCode(const PCB_Process *p) {
+    PCB_CHECK_SELF(p, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
 #if PCB_PLATFORM_WINDOWS
     DWORD exitCode;
-    if(!GetExitCodeProcess(p->handle, &exitCode)) return -1;
+    if(!GetExitCodeProcess(p->handle, &exitCode))
+        return PCB_STATUS_NATIVE_SYSTEM_API();
     bool abnormalExit =
         exitCode == STATUS_ACCESS_VIOLATION ||
         exitCode == STATUS_HEAP_CORRUPTION;
@@ -11641,11 +11644,11 @@ int PCB_Process_getExitCode(const PCB_Process* p) {
             (uint32_t)GetProcessId(p->handle), cause
         );
     }
-    return (int)exitCode;
+    return PCB_OK(exitCode);
 #elif PCB_PLATFORM_POSIX
-    if(WIFEXITED(p->status)) return WEXITSTATUS(p->status);
+    if(WIFEXITED(p->status)) return PCB_OK(WEXITSTATUS(p->status));
     if(WIFSIGNALED(p->status)) {
-        int signal = WTERMSIG(p->status);
+        unsigned int signal = WTERMSIG(p->status);
         const char* cause = NULL;
         switch(signal) {
           case SIGABRT: cause = "Aborted"; break;
@@ -11664,11 +11667,11 @@ int PCB_Process_getExitCode(const PCB_Process* p) {
             PCB_LOGLEVEL_ERROR, "Process %u exited abnormally: %s",
             (uint32_t)p->handle, cause
         );
-        return -signal - 1;
+        return PCB_OK(signal + 256);
     }
-    return -1;
+    return PCB_OK((uint32_t)-1);
 #else
-    return 1;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
 
@@ -11911,12 +11914,13 @@ int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
     PCB_Process process = PCB_ShellCommand_runBg(command);
     if(!PCB_Process_isValid(&process)) return -1;
     if(!PCB_Process_waitForExit(&process)) {
-        PCB_logLatestError("Failed to wait for shell command to exit");
+        PCB_Status st = PCB_STATUS_NATIVE_SYSTEM_API();
+        PCB_Status_log(st, "Failed to wait for shell command to exit");
         return -1;
     }
-    int code = PCB_Process_getExitCode(&process);
+    PCB_Status st = PCB_Process_getExitCode(&process);
     PCB_Process_destroy(&process);
-    return code;
+    return (int)st.code;
 }
 #endif //PCB_IMPLEMENTATION_PROCESS
 
