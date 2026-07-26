@@ -8151,7 +8151,7 @@ PCB_Status PCB_FS_Exists(const char *path) {
     PCB_File_Info info;
     PCB_Status result = PCB_File_Info_get(&info, path, true);
     if(!PCB_ISOK(result)) return result;
-    return PCB_OK((info.type != PCB_FILETYPE_NONE));
+    return PCB_OK(info.type != PCB_FILETYPE_NONE);
 }
 
 PCB_Status PCB_FS_Exists_PATH(const char *target, PCB_StringView *PATH) {
@@ -11555,7 +11555,7 @@ PCB_Status PCB_Process_getExitCode(const PCB_Process *p) {
     }
     return PCB_OK(exitCode);
 #elif PCB_PLATFORM_POSIX
-    if(WIFEXITED(p->status)) return PCB_OK(WEXITSTATUS(p->status));
+    if(WIFEXITED(p->status)) return PCB_OK((unsigned int)WEXITSTATUS(p->status));
     if(WIFSIGNALED(p->status)) {
         unsigned int signal = WTERMSIG(p->status);
         const char* cause = NULL;
