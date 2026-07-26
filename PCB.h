@@ -2228,6 +2228,16 @@ for(                                                                    \
 #endif //C++
 #endif //PCB_CLITERAL
 
+//Sometimes, for whatever reason, code is compiled as either C or C++ and
+//only a specific function needs to have C linkage.
+#ifndef PCB_extern_C
+#ifdef __cplusplus
+#define PCB_extern_C extern "C"
+#else
+#define PCB_extern_C
+#endif //C++
+#endif //PCB_extern_C
+
 #ifndef PCB_const_cast
 #ifdef __cplusplus
 #define PCB_const_cast(Type) const_cast<Type>
