@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 14
+#define PCB_VERSION_PATCH 15
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6022,10 +6022,17 @@ PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes) PCB_Nonnul
 PCBAPI PCB_Process PCBCALL PCB_ShellCommand_runBg(PCB_ShellCommand* command) PCB_Nonnull_Arg(1);
 /**
  * @brief Runs `command` and waits for it to exit.
- * @return the exit code of `command` or -1 on error,
- * to get the error code call `PCB_GetError()`. The error is logged automatically.
+ * @return `PCB_OK(<exit code of `command`>)` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEINVAL: `command` was empty.
+ * - POSIX domain (POSIX):
+ *   See fork(2), (Linux)clone3(2), pipe(2), fcntl(2), execvp(2), waitpid(2).
+ * - WinAPI domain (Windows):
+ *   See CreateProcessA, WaitForSingleObject.
+ * This mess will be cleaned up in the future.
  */
-PCBAPI int PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) PCB_Nonnull_Arg(1);
 
 
 
@@ -11905,22 +11912,25 @@ end:
 #endif //platform-dependent way of running a shell command
 }
 
-int PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
-    if(command->length < 1) {
-        PCB_log(PCB_LOGLEVEL_ERROR, "Cannot run an empty command");
-        PCB_ClearError(); errno = EINVAL; return -1;
-    }
+PCB_Status PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
+    PCB_Status result;
+    PCB_CHECK_SELF(command, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(command->length < 1) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
 
     PCB_Process process = PCB_ShellCommand_runBg(command);
-    if(!PCB_Process_isValid(&process)) return -1;
-    if(!PCB_Process_waitForExit(&process)) {
-        PCB_Status st = PCB_STATUS_NATIVE_SYSTEM_API();
-        PCB_Status_log(st, "Failed to wait for shell command to exit");
-        return -1;
+    if(!PCB_Process_isValid(&process)) {
+        result = PCB_STATUS_NATIVE_SYSTEM_API();
+        PCB_Status_log(result, "Failed to spawn child process");
+        return result;
     }
-    PCB_Status st = PCB_Process_getExitCode(&process);
+    if(!PCB_Process_waitForExit(&process)) {
+        result = PCB_STATUS_NATIVE_SYSTEM_API();
+        PCB_Status_log(result, "Failed to wait for shell command to exit");
+        return result;
+    }
+    result = PCB_Process_getExitCode(&process);
     PCB_Process_destroy(&process);
-    return (int)st.code;
+    return result;
 }
 #endif //PCB_IMPLEMENTATION_PROCESS
 
