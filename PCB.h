@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 10
+#define PCB_VERSION_PATCH 11
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1218,12 +1218,10 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 //Section 1.6: Define functions/macros that the library uses from libc.
 #ifndef PCB_realloc
 #ifdef PCB_HAS_STDLIB_H
-#define PCB_realloc(oldPtr, newSize) (errno = 0, realloc(oldPtr, newSize))
-#define PCB_realloc_failed() (errno != 0)
+#define PCB_realloc(oldPtr, newSize) realloc(oldPtr, newSize)
 #else
 #error "PCB Error: PCB requires PCB_realloc defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #define PCB_realloc(oldPtr, newSize) NULL //stub
-#define PCB_realloc_failed() 1 //stub
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_realloc
 
