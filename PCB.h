@@ -6006,6 +6006,22 @@ PCBAPI PCB_Process PCBCALL PCB_ShellCommand_runBg(PCB_ShellCommand* command) PCB
  * This mess will be cleaned up in the future.
  */
 PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) PCB_Nonnull_Arg(1);
+/**
+ * @brief Constructs a flat string from `command` with shell-safe escaping
+ * into `buf`.
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CENOMEM: Insufficient memory.
+ *   - PCB_CEFAULT:
+ *      `command` contained a NULL argument followed by a non-NULL argument.
+ *      For portability, trailing NULLs are allowed at the end.
+ *      The one encountered was not at the end.
+ */
+PCBAPI PCB_Status PCBCALL PCB_ShellCommand_render(
+    const PCB_ShellCommand *command,
+    PCB_String *buf
+) PCB_Nonnull_Arg(1);
 
 
 
@@ -11710,31 +11726,13 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     STARTUPINFO startupinfo   = PCB_ZEROED; startupinfo.cb = sizeof(startupinfo);
     PROCESS_INFORMATION pInfo = PCB_ZEROED;
 
-    PCB_String s = PCB_ZEROED; //Windows wants a flat string instead of char* const*
-    //a heuristic prediction to minimize reallocs
-    PCB_String_reserve(&s, 8 * command->length);
-    for(size_t i = 0; i < command->length; i++) {
-        //other whitespace characters are nonsensical inside a shell command...right?
-        bool needs_quotes =
-            strpbrk(command->data[i], " \t\v") != NULL ||
-            command->data[i][0] == '\0'; //""
-        if(needs_quotes) PCB_String_append_chars(&s, '"', 1);
-        const char* cursor = command->data[i];
-        while(*cursor) {
-            const char* needs_escaping = strpbrk(cursor, "\"\'\\");
-            if(needs_escaping == NULL) {
-                PCB_String_append_cstr(&s, cursor);
-                break;
-            }
-            int l = (int)(needs_escaping - cursor);
-            PCB_String_appendf(&s, "%.*s\\%c", l, cursor, *needs_escaping);
-            cursor += l + 1;
-        }
-        if(needs_quotes) PCB_String_append_chars(&s, '"', 1);
-
-        PCB_String_append_chars(&s, ' ', 1);
+    PCB_String s = PCB_ZEROED;
+    PCB_Status st = PCB_ShellCommand_render(command, &s);
+    if(!PCB_ISOK(st)) {
+        PCB_String_destroy(&s);
+        return PCB_Process_init();
     }
-    PCB_String_pop(&s); //remove trailing ' '
+    if(PCB_String_isEmpty(&s)) return PCB_Process_init();
 
     errno = 0;
     BOOL success = CreateProcessA(
@@ -11836,6 +11834,56 @@ PCB_Status PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
     }
     result = PCB_Process_getExitCode(&process);
     PCB_Process_destroy(&process);
+    return result;
+}
+
+PCB_Status PCB_ShellCommand_render(
+    const PCB_ShellCommand *command, PCB_String *buf
+) {
+    PCB_CHECK_SELF(command, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_SELF(buf, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_Status result = PCB_CERR_NOMEM;
+    size_t start_len = buf->length;
+    PCB_CStringsView cv = PCB_View_Vec_A(command);
+    if(PCB_Vec_isEmpty(&cv)) return PCB_OK();
+    //a heuristic prediction to minimize reallocs
+    if(!PCB_String_reserve(buf, 8 * cv.length)) goto error;
+    PCB_Vec_enumerate(&cv, i, v, it, const char* const) {
+        if(*it.v == NULL) {
+            //allow multiple NULLs at the end of `command` everywhere for portability
+            for(size_t j = it.i+1; j < cv.length; j++) {
+                if(cv.data[j] == NULL) continue;
+                result = PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT);
+                goto error;
+            }
+            break;
+        }
+        PCB_StringView arg = PCB_StringView_from_cstr(*it.v);
+        //other whitespace characters are nonsensical inside a shell command...right?
+        PCB_StringView sv = PCB_StringView_findCharFrom_cstr(arg, " \t\v");
+        bool needs_quotes = !PCB_String_isEmpty(&sv);
+        if(needs_quotes)
+            if(!PCB_String_append_chars(buf, '"', 1)) goto error;
+        while(arg.length > 0) {
+            sv = PCB_StringView_findCharFrom_cstr(arg, "\"\'");
+            if(PCB_String_isEmpty(&sv)) {
+                if(!PCB_String_append_sv(buf, arg)) goto error;
+                break;
+            }
+            ptrdiff_t l = sv.data - arg.data;
+            if(!PCB_String_appendf(buf, "%.*s\\%c", (int)l, arg.data, *sv.data)) goto error;
+            arg.data   += (size_t)l + 1;
+            arg.length -= (size_t)l + 1;
+        }
+        if(needs_quotes)
+            if(!PCB_String_append_chars(buf, '"', 1)) goto error;
+
+        if(!PCB_String_append_chars(buf, ' ', 1)) goto error;
+    }
+    PCB_String_pop(buf); //remove trailing ' '
+    return PCB_OK();
+error:
+    PCB_String_resize(buf, start_len);
     return result;
 }
 #endif //PCB_IMPLEMENTATION_PROCESS
