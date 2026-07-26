@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 8
+#define PCB_VERSION_PATCH 9
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4357,10 +4357,10 @@ PCBAPI PCB_Status PCBCALL PCB_FS_getcwd_tmp_ne(PCB_FS_String *buf) PCB_Nonnull_A
  * @brief Checks if a filesystem entry exists.
  *
  * @param path path/to/thing/in/filesystem
- * @return `true` if exists, `false` if doesn't, a negative value
- * otherwise. To get the error code call `PCB_GetError`.
+ * @return `PCB_OK(true)` if exists, `PCB_OK(false)` if doesn't; check with `PCB_ISOK()`.
+ * See `PCB_File_Info_get` for errors.
  */
-PCBAPI int PCBCALL PCB_FS_Exists(const char* path) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_FS_Exists(const char *path) PCB_Nonnull_Arg(1);
 /**
  * @brief Get the file type of `path`.
  * Note that if `path` refers to a symbolic link, the value returned
@@ -7913,10 +7913,11 @@ defer:
 #endif //platforms
 }
 
-int PCB_FS_Exists(const char* path) {
-    PCB_FileType type = PCB_FS_GetType(path);
-    if(type == PCB_FILETYPE_ERROR) return -1;
-    return type != PCB_FILETYPE_NONE;
+PCB_Status PCB_FS_Exists(const char *path) {
+    PCB_File_Info info;
+    PCB_Status result = PCB_File_Info_get(&info, path, true);
+    if(!PCB_ISOK(result)) return result;
+    return PCB_OK((info.type != PCB_FILETYPE_NONE));
 }
 
 PCB_FileType PCB_FS_GetType(const char* path) {
