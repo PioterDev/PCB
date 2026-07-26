@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 12
+#define PCB_VERSION_PATCH 13
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5942,10 +5942,11 @@ PCBAPI bool PCBCALL PCB_Process_isValid(const PCB_Process* p) PCB_Nonnull_Arg(1)
 PCBAPI bool PCBCALL PCB_Process_waitForExit(PCB_Process* p) PCB_Nonnull_Arg(1);
 /**
  * @brief Checks if process `p` exited.
- * @return `true` if `p` exited, `false` if not, -1 on error;
- * call `PCB_GetError()` to get the error code.
+ * @return `PCB_OK(true)` if `p` exited, `PCB_OK(false)` if not; check with `PCB_ISOK()`.
+ * On error, the returned status is in the POSIX domain (POSIX systems)
+ * or WinAPI domain (Windows); see waitpid(2) and WaitForSingleObject respectively.
  */
-PCBAPI int PCBCALL PCB_Process_checkExit(PCB_Process* p) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_Process_checkExit(PCB_Process* p) PCB_Nonnull_Arg(1);
 /**
  * @brief Get the exit code of process `p`.
  *
@@ -11600,23 +11601,23 @@ wait:
 #endif //platforms
 }
 
-int PCB_Process_checkExit(PCB_Process* p) {
-    PCB_CHECK_SELF(p, (PCB_ClearError(), errno = EFAULT, -1) );
+PCB_Status PCB_Process_checkExit(PCB_Process* p) {
+    PCB_CHECK_SELF(p, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
 #if PCB_PLATFORM_WINDOWS
     switch(WaitForSingleObject(p->handle, 0)) {
-      case WAIT_FAILED:   errno = 0; return -1;
-      case WAIT_TIMEOUT:  return false;
-      case WAIT_OBJECT_0: return true;
+      case WAIT_FAILED:   return PCB_STATUS_NATIVE_SYSTEM_API();
+      case WAIT_TIMEOUT:  return PCB_OK(false);
+      case WAIT_OBJECT_0: return PCB_OK(true);
+      default: PCB_Unreachable;
     }
-    PCB_Unreachable;
 #elif PCB_PLATFORM_POSIX
     pid_t id = waitpid(p->handle, &p->status, WNOHANG);
-    if(id == -1) return -1;
-    if(id == 0) return false; //no child changed state
+    if(id == -1) return PCB_STATUS_NATIVE_SYSTEM_API();
+    if(id == 0) return PCB_OK(false); //no child changed state
     if(WIFEXITED(p->status) || WIFSIGNALED(p->status)) {
-        return true;
+        return PCB_OK(true);
     }
-    return false;
+    return PCB_OK(false);
 #endif //platforms
 }
 
@@ -11740,12 +11741,9 @@ int PCB_Processes_waitForAny(PCB_Processes* ps) {
 #endif //pidfd
     while(true) {
         for(size_t i = 0; i < ps->length; i++) {
-            switch(PCB_Process_checkExit(&ps->data[i])) {
-              case true: return (int)i;
-              case false: break;
-              case -1: return -1;
-              default: PCB_Unreachable;
-            }
+            PCB_Status st = PCB_Process_checkExit(&ps->data[i]);
+            if(!PCB_ISOK(st)) return -1;
+            if(st.code) return (int)i;
         }
         struct timespec t;
         if(ps->poll_us > 1000000) {
