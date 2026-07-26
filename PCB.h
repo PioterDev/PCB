@@ -46,7 +46,7 @@
 #endif //PCB_VERSION
 
 #if !defined(__STDC_VERSION__) && !defined(__cplusplus)
-#error "PCB Error: C89 is not supported"
+#error "C89 is not supported"
 #endif //C89/90?
 
 #ifdef __cplusplus
@@ -1220,7 +1220,7 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #ifdef PCB_HAS_STDLIB_H
 #define PCB_realloc(oldPtr, newSize) realloc(oldPtr, newSize)
 #else
-#error "PCB Error: PCB requires PCB_realloc defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#error "PCB requires PCB_realloc defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #define PCB_realloc(oldPtr, newSize) NULL //stub
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_realloc
@@ -1229,7 +1229,7 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #ifdef PCB_HAS_STDLIB_H
 #define PCB_free(ptr) free(ptr)
 #else
-#error "PCB Error: PCB requires PCB_free defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#error "PCB requires PCB_free defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #define PCB_free(ptr) //stub
 #endif //PCB_HAS_STDLIB_H
 #endif //PCB_free
@@ -6951,7 +6951,7 @@ void PCB__assert_fail(
     abort();
 #else
     (void)exprStr; (void)file; (void)line; (void)func;
-#error "PCB Error: Assertions cannot be provided or are not implemented for the current platform."
+#error "Assertions cannot be provided or are not implemented for the current platform."
 }
 #endif //sources of assertions
 #endif //PCB_HAS_ASSERT_H
@@ -6960,28 +6960,28 @@ void PCB__assert_fail(
 
 #if defined(PCB_IMPLEMENTATION_LOG) || defined(PCB_IMPLEMENTATION_ERR)
 #ifndef PCB_fprintf
-#error "PCB Error: PCB requires PCB_fprintf defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#error "PCB requires PCB_fprintf defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #define PCB_fprintf(stream, fmt, ...) //stub
 #endif //PCB_fprintf
 #ifndef PCB_vfprintf
 #define PCB_vfprintf(stream, fmt, args) //stub
-#error "PCB Error: PCB requires PCB_vfprintf defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#error "PCB requires PCB_vfprintf defined, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #endif //PCB_vfprintf
 
 #ifndef PCB_stdout
 #define PCB_stdout 0 //stub
-#error "PCB Error: PCB requires PCB_stdout, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#error "PCB requires PCB_stdout, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #endif //PCB_stdout
 #ifndef PCB_stderr
 #define PCB_stderr 0 //stub
-#error "PCB Error: PCB requires PCB_stderr, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#error "PCB requires PCB_stderr, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #endif //PCB_stderr
 #endif //PCB_IMPLEMENTATION_LOG, PCB_IMPLEMENTATION_ERR
 
 #if defined(PCB_IMPLEMENTATION_LOG)
 #ifndef PCB_fflush
 #define PCB_fflush(stream) //stub
-#error "PCB Error: PCB requires PCB_fflush, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
+#error "PCB requires PCB_fflush, but none is available. Perhaps you can't use libc, in which case you need to #define it manually."
 #endif //PCB_fflush
 #endif //PCB_IMPLEMENTATION_LOG
 
