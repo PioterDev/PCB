@@ -4217,6 +4217,16 @@ PCBAPI void PCBCALL PCB_logLatestError(
 
 
 
+#ifndef PCB_FS_PATH_DELIM
+#if PCB_PLATFORM_WINDOWS
+#define PCB_FS_PATH_DELIM ';'
+#elif PCB_PLATFORM_POSIX
+#define PCB_FS_PATH_DELIM ':'
+#else
+#define PCB_FS_PATH_DELIM 0x15 //stub
+#endif //platforms
+#endif //PCB_FS_PATH_DELIM
+
 #ifndef PCB_FS_PATH_SEP
 #if PCB_PLATFORM_WINDOWS
 #define PCB_FS_PATH_SEP '\\'
@@ -4361,6 +4371,33 @@ PCBAPI PCB_Status PCBCALL PCB_FS_getcwd_tmp_ne(PCB_FS_String *buf) PCB_Nonnull_A
  * See `PCB_File_Info_get` for errors.
  */
 PCBAPI PCB_Status PCBCALL PCB_FS_Exists(const char *path) PCB_Nonnull_Arg(1);
+/**
+ * @brief Checks if `target` exists in PATH (environment variable).
+ * `PATH` (argument) is used to allow the caller to decide what to do on error
+ * as well as checking for alternative entries.
+ *
+ * `PATH` shall be initialized by the caller with the PATH environment variable
+ * prior to calling this function.
+ * The function will then check each component delimited by `PCB_FS_PATH_DELIM`
+ * until it either finds an existing entry, consumes all components or
+ * an error occurs. To continue searching after the erroneous component, skip
+ * bytes in `PATH` until `PCB_FS_PATH_DELIM` (this can be done via
+ * `PCB_StringView_findCharFrom` + shifting 1 byte) and call this function again.
+ *
+ * @return On success, `PCB_OK(0)` if `target` was not found in any component
+ * of `PATH` or `PCB_OK(N)`, where `N` contains the number of characters to copy
+ * from `PATH` to get `target`'s location in the filesystem
+ * (for example "gcc" found in "/usr/bin" -> 8).
+ *
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CENOMEM: Failed to allocate memory in the temporary allocator.
+ * This function can also fail for reasons described in `PCB_FS_Exists`.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_Exists_PATH(
+    const char      *target,
+    PCB_StringView  *PATH
+) PCB_Nonnull_Arg(1, 2);
 /**
  * @brief Get the file type of `path`.
  * Note that if `path` refers to a symbolic link, the value returned
@@ -7918,6 +7955,65 @@ PCB_Status PCB_FS_Exists(const char *path) {
     PCB_Status result = PCB_File_Info_get(&info, path, true);
     if(!PCB_ISOK(result)) return result;
     return PCB_OK((info.type != PCB_FILETYPE_NONE));
+}
+
+PCB_Status PCB_FS_Exists_PATH(const char *target, PCB_StringView *PATH) {
+#if PCB_PLATFORM_WINDOWS || PCB_PLATFORM_POSIX
+    PCB_CHECK_NULL(target, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_NULL(PATH  , PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+
+    PCB_Status result = PCB_OK(0);
+    PCB_String path = PCB_ZEROED;
+    const size_t tL = PCB_strlen(target);
+    while(!PCB_String_isEmpty(PATH)) {
+        const char sep[2] = { PCB_FS_PATH_DELIM, '\0' };
+        //PATH component
+        PCB_StringView comp = PCB_StringView_findCharFrom_cstr(*PATH, sep);
+        bool last = false;
+        if(PCB_String_isEmpty(&comp)) {
+            comp = *PATH; last = true;
+        } else {
+            comp.length = (size_t)(comp.data - PATH->data);
+            comp.data = PATH->data;
+        }
+        const size_t len = comp.length + tL + 1 /*'\0'*/ + 1 /*'/'*/;
+        if(comp.length == 0) goto next; //`comp` is malformed, skip
+        if(len > path.capacity) {
+            PCB_temp_free(path.data);
+            path.data = (char*)PCB_temp_alloc(len*sizeof(*path.data));
+            if(path.data == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+            path.capacity = len;
+        }
+        PCB_memcpy(path.data, comp.data, sizeof(*comp.data) * comp.length);
+        if(
+            comp.data[comp.length - 1] == PCB_FS_PATH_DELIM
+#if PCB_PLATFORM_WINDOWS
+            || comp.data[comp.length - 1] == '/'
+#endif
+        ) {
+            PCB_memcpy(path.data + comp.length, target, sizeof(*target) * (tL + 1) /*'\0'*/);
+        } else {
+            path.data[comp.length] = PCB_FS_DIR_DELIM;
+            PCB_memcpy(path.data + comp.length + 1, target, sizeof(*target) * (tL + 1));
+        }
+        result = PCB_FS_Exists(path.data);
+        if(!PCB_ISOK(result)) goto defer;
+        if(result.code) {
+            PCB_temp_free(path.data);
+            return PCB_OK((uint32_t)comp.length);
+        }
+    next:;
+        const size_t shiftAmount = comp.length + (last ? 0 : 1);
+        PATH->data   += shiftAmount;
+        PATH->length -= shiftAmount;
+    }
+defer:
+    PCB_temp_free(path.data);
+    return result;
+#else
+    (void)target; (void)PATH;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
 }
 
 PCB_FileType PCB_FS_GetType(const char* path) {
