@@ -226,7 +226,7 @@ extern "C" {
 //Section 1.2: Identify the compiler used to compile this code
 
 #ifndef PCB_COMPILER
-#if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER) && !defined(__TINYC__)
 //https://gcc.gnu.org/onlinedocs/cpp/Common-Predefined-Macros.html
 #define PCB_COMPILER_GCC (__GNUC__*100*100 + __GNUC_MINOR__*100 + __GNUC_PATCHLEVEL__)
 #if PCB_PLATFORM_WINDOWS
@@ -258,6 +258,39 @@ extern "C" {
 #define PCB_COMPILER "MSVC"
 #define PCB_COMPILER_PATH "cl"
 #define PCB_COMPILER_PATH_ALT PCB_COMPILER_PATH
+#elif defined(__TINYC__)
+//TCC currently is in 0.x and uses 100s to denote the minor version.
+//TODO: Version checks for attributes and other macros
+#define PCB_COMPILER_TCC (__TINYC__)
+#define PCB_COMPILER_PATH "tcc"
+#define PCB_COMPILER_PATH_ALT PCB_COMPILER_PATH
+//This probably doesn't compile on Windows. For now I don't care.
+//TCC has support for various GNU `__attribute__`s, but glibc defines a macro
+//that strips all `__attribute__` if `__GNUC__` or `__clang__` (*) if not defined.
+//I've spent like 4 hours debugging TCC in thought that it skips them interally
+//(multiple locations in the parser suggested that it's being skipped).
+//It really didn't help that the codebase is, with all due respect to maintainers
+//of TCC, a steaming piece of garbage. This much global state sprinkled everywhere
+//should be illegal.
+//This behavior of glibc is unacceptable.
+//Maybe it made sense back in the 1990s when the only compiler with GNU extensions
+//was GCC and glibc wasn't used by everybody. That is not the case in 2026.
+//It is the user's responsibility to make sure that compiler extensions are
+//not used if unavailable. Not a single library shall decide this, not even libc.
+//Code using extensions when unavailable SHOULD NOT compile. End of story.
+//What if someone uses GNU extensions with glibc and a compiler that
+//is detected by glibc as "not supporting GNU extensions", living in belief that
+//these extensions are used, then replaces glibc
+//with, for example, musl, that doesn't strip off `__attribute__`?
+//On top of that, it is infuriating that such thing is tucked neatly deep
+//inside system headers without a SINGLE mention anywhere.
+//(*) - This was "fixed" (i.e. TCC became recognized by glibc as a compiler
+//supporting GNU extensions) in commit 3ac0112b.
+//Nevertheless, we still `#undef __attribute__` whenever `#define`d.
+#include <features.h>
+#ifdef __attribute__
+#undef __attribute__
+#endif //glibc thinks that GCC and Clang have monopoly for __attribute__. We know better.
 #else
 #define PCB_COMPILER "Unknown"
 #define PCB_COMPILER_PATH NULL
@@ -274,6 +307,9 @@ extern "C" {
 #ifndef PCB_COMPILER_MSVC
 #define PCB_COMPILER_MSVC 0
 #endif //PCB_COMPILER_MSVC
+#ifndef PCB_COMPILER_TCC
+#define PCB_COMPILER_TCC 0
+#endif //PCB_COMPILER_TCC
 
 #ifndef PCB_HAS_STMT_EXPR
 #if PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 30100
@@ -667,7 +703,7 @@ extern "C" {
 #define PCB_Noreturn [[noreturn]]
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L
 #define PCB_Noreturn _Noreturn
-#elif PCB_COMPILER_GCC >= 29503
+#elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_TCC
 #define PCB_Noreturn __attribute__((noreturn))
 #elif PCB_COMPILER_CLANG >= 30100
 #define PCB_Noreturn _Noreturn
@@ -683,16 +719,19 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 #if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_Unused [[maybe_unused]]
-#elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 40000
+#elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 40000 || \
+      PCB_COMPILER_TCC
 #define PCB_Unused __attribute__((unused))
 #else
 #define PCB_Unused
 #endif //(C++17+ || C23+) || compilers
        //GCC 2.95.3 || Clang 4.0.0 docs are the oldest versions mentioning this attribute.
+       //As of 2026-02-16, TCC recognizes, but ignores this attribute.
 #endif //PCB_Unused
 
 #ifndef PCB_ForceInline
-#if (PCB_COMPILER_GCC >= 30101) || PCB_COMPILER_CLANG
+#if PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG || \
+    PCB_COMPILER_TCC
 #define PCB_ForceInline inline __attribute__((always_inline))
 #elif PCB_COMPILER_MSVC
 #define PCB_ForceInline __forceinline
@@ -702,7 +741,7 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 #endif //PCB_ForceInline
 
 #ifndef PCB_NoInline
-#if PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG
+#if PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG || PCB_COMPILER_TCC
 #define PCB_NoInline __attribute__((__noinline__))
 #elif PCB_COMPILER_MSVC
 #define PCB_NoInline __declspec(noinline)
@@ -824,7 +863,8 @@ static void f(void)
 #else
 #define PCB_BeforeMain(f) PCB_INITIALIZER_(f,"_")
 #endif
-#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG || \
+      PCB_COMPILER_TCC
 #define PCB_BeforeMain(f) static __attribute__((constructor)) void f(void)
 #else
 #define PCB_BeforeMain(f) \
@@ -842,7 +882,8 @@ struct f##_o { ~f##_o() { f(); } }; \
 static f##_o f##_o_;                \
 static void f(void)
 #else
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG || \
+    PCB_COMPILER_TCC
 #define PCB_AfterMain(f) static __attribute__((__destructor__)) void f(void)
 #elif PCB_COMPILER_MSVC
 //https://learn.microsoft.com/en-us/cpp/preprocessor/data-seg?view=msvc-140
@@ -873,7 +914,8 @@ static void f(void)
 #ifdef PCB_DEBUG
 #define PCB_Unreachable PCB_assert(0 && "Reached an unreachable statement.")
 #else
-#if PCB_COMPILER_GCC >= 40500 || PCB_COMPILER_CLANG >= 30400
+#if PCB_COMPILER_GCC >= 40500 || PCB_COMPILER_CLANG >= 30400 || \
+    PCB_COMPILER_TCC
 #define PCB_Unreachable __builtin_unreachable()
 #elif PCB_COMPILER_MSVC
 #define PCB_Unreachable (__assume(false))
@@ -889,16 +931,18 @@ static void f(void)
 #endif //PCB_Unreachable
 
 #ifndef PCB_Printf_Format
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG || \
+    PCB_COMPILER_TCC
 #define PCB_Printf_Format(fmtIndex, rest) __attribute__((format(printf, fmtIndex, rest)))
 #else
 #define PCB_Printf_Format(fmtIndex, rest)
-#endif //compilers
+#endif //compilers (TCC recognizes, but ignores this attribute)
 #endif //PCB_Printf_Format
 
 #ifndef PCB_Cleanup
 #ifdef PCB_WANT_CLEANUP
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG || \
+    PCB_COMPILER_TCC
 #define PCB_Cleanup(f) __attribute__((cleanup(f)))
 #else
 #error "Cleanup attribute is unavailable with the current compiler or the compiler is not supported."
@@ -942,7 +986,8 @@ static void f(void)
 #define PCB_alignas(bytes) alignas(bytes)
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L
 #define PCB_alignas(bytes) _Alignas(bytes)
-#elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
+#elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000 || \
+      PCB_COMPILER_TCC
 #define PCB_alignas(bytes) __attribute__((__aligned__(bytes)))
 #elif PCB_COMPILER_MSVC
 #define PCB_alignas(bytes) __declspec(align(bytes))
@@ -1002,6 +1047,8 @@ static void f(void)
 #if PCB_COMPILER_MSVC >= 1939 && __STDC_VERSION__ >= 202311L
 #define PCB_Typeof(expr) typeof(expr)
 #endif //VS 2022 17.9 && C23
+#elif PCB_COMPILER_TCC
+#define PCB_Typeof(expr) __typeof__(expr)
 #endif //compilers
 #endif //C++ && __cpp_decltype || C
 #endif //PCB_Typeof
@@ -1043,10 +1090,11 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 #endif //PCB_static_assert
 
 #ifndef PCB_HAS_INCLUDE
-#if (PCB_COMPILER_GCC >= 50000) || \
-    (PCB_COMPILER_CLANG >= 30100) || \
+#if (defined(__cplusplus) && __cplusplus+0 >= 201703L) || \
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L) || \
-    (defined(__cplusplus) && __cplusplus+0 >= 201703L)
+    (PCB_COMPILER_GCC >= 50000) || \
+    (PCB_COMPILER_CLANG >= 30100) || \
+    (PCB_COMPILER_TCC)
 #define PCB_HAS_INCLUDE __has_include
 #else
 #define PCB_HAS_INCLUDE 1 //assume that #include is available
@@ -2652,7 +2700,7 @@ for(                                                                \
 #ifndef PCB_cpuid
 #if PCB_COMPILER_MSVC
 #define PCB_cpuid(cpuinfo, fn, subfn) __cpuidex(cpuinfo, fn, subfn)
-#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#elif PCB_COMPILER_GCC || PCB_COMPILER_CLANG || PCB_COMPILER_TCC
 #define PCB_cpuid(cpuinfo, fn, subfn) \
     __asm__(                    \
         "cpuid\n\t"             \
@@ -3933,6 +3981,7 @@ PCB_Enum(PCB_Compiler_RT, uint8_t) {
     PCB_COMPILER_RT_GCC,
     PCB_COMPILER_RT_CLANG,
     PCB_COMPILER_RT_MSVC,
+    PCB_COMPILER_RT_TCC,
     PCB_COMPILER_RT_COUNT,
     /*
      * Compiler identified when #including the library.
@@ -3947,6 +3996,8 @@ PCB_Enum(PCB_Compiler_RT, uint8_t) {
         PCB_COMPILER_RT_CLANG
 #elif PCB_COMPILER_MSVC
         PCB_COMPILER_RT_MSVC
+#elif PCB_COMPILER_TCC
+        PCB_COMPILER_RT_TCC
 #else
         PCB_COMPILER_RT_UNKNOWN
 #endif //compilers
