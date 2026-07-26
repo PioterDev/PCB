@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 9
+#define PCB_VERSION_PATCH 10
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1097,7 +1097,7 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
     (PCB_COMPILER_TCC)
 #define PCB_HAS_INCLUDE __has_include
 #else
-#define PCB_HAS_INCLUDE 1 //assume that #include is available
+#define PCB_HAS_INCLUDE(header) 1 //assume that #include is available
 #endif //whether __has_include is available
 #endif //PCB_HAS_INCLUDE
 
