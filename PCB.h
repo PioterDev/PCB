@@ -1020,8 +1020,8 @@ static void f(void)
 #endif //PCB_thread_local
 
 //Get type of expression.
-//Portable applications must check whether `PCB_Typeof` is #defined before use.
-//In C++11+, `PCB_Typeof` expands to `decltype`
+//Portable applications MUST check whether `PCB_Typeof` is #defined before use.
+//In C++11+, `PCB_Typeof` expands to `decltype` if it is available.
 //NOTE: Be *very* careful when using in external-facing declarations. This WILL cause problems!
 #ifndef PCB_Typeof
 #if defined(__cplusplus) && defined(__cpp_decltype) && __cpp_decltype+0 >= 200707L
