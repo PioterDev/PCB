@@ -236,8 +236,10 @@ extern "C" {
 #endif //platform
 #ifdef __cplusplus
 #define PCB_COMPILER_PATH "g++"
+#define PCB_COMPILER_PATH_ALT "gcc"
 #else
 #define PCB_COMPILER_PATH "gcc"
+#define PCB_COMPILER_PATH_ALT "g++"
 #endif //C++?
 #elif defined(__clang__)
 //same schema as GCC
@@ -245,17 +247,21 @@ extern "C" {
 #define PCB_COMPILER "Clang"
 #ifdef __cplusplus
 #define PCB_COMPILER_PATH "clang++"
+#define PCB_COMPILER_PATH_ALT "clang"
 #else
 #define PCB_COMPILER_PATH "clang"
+#define PCB_COMPILER_PATH_ALT "clang++"
 #endif //C++?
 #elif defined(_MSC_VER) && !defined(__clang__)
 //MSVC uses a different versioning scheme, https://learn.microsoft.com/en-us/cpp/overview/compiler-versions
 #define PCB_COMPILER_MSVC (_MSC_VER)
 #define PCB_COMPILER "MSVC"
 #define PCB_COMPILER_PATH "cl"
+#define PCB_COMPILER_PATH_ALT PCB_COMPILER_PATH
 #else
 #define PCB_COMPILER "Unknown"
 #define PCB_COMPILER_PATH NULL
+#define PCB_COMPILER_PATH_ALT NULL
 #endif //compiler
 #endif //PCB_COMPILER
 
