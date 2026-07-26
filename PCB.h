@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 16
+#define PCB_VERSION_PATCH 17
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4521,11 +4521,13 @@ PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime(const char* path) PCB_Nonnull
  */
 PCBAPI uint64_t PCBCALL PCB_FS_GetModificationTime_ne(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
 /**
-* @brief Loads entire file from `path` into a dynamically allocated buffer.
-* @return `true` on success, `false` on error; to get the error
-* code call `PCB_GetError()`.
+ * @brief Loads entire file from `path` into a dynamically allocated buffer.
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, either `PCB_CERR_NOMEM` is returned or a status in the C domain.
+ * See fopen, fseek, ftell (_ftelli64 on Windows) and fread for errors.
+ * This mess will be cleaned up in the future.
 */
-PCBAPI bool PCBCALL PCB_FS_ReadEntireFile(
+PCBAPI PCB_Status PCBCALL PCB_FS_ReadEntireFile(
     const char* path,
     PCB_String* buf
 ) PCB_Nonnull_Arg(1, 2);
@@ -8239,39 +8241,35 @@ uint64_t PCB_FS_GetModificationTime_ne(const PCB_FS_char* path) {
     return info.timestamps.modification;
 }
 
-bool PCB_FS_ReadEntireFile(const char* path, PCB_String* buf) {
-    PCB_CHECK_NULL(path, false);
-    PCB_CHECK_NULL(buf, false);
-    bool success = false;
-    FILE* f; int64_t s;
+PCB_Status PCB_FS_ReadEntireFile(const char *path, PCB_String *buf) {
+    PCB_Status result;
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_NULL(buf,  PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    FILE *f; int64_t s;
+    int e;
     f = fopen(path, "rb");
-    if(f == NULL) return false;
-    if(fseek(f, 0, SEEK_END) == -1) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        goto end;
-    }
+    if(f == NULL) return PCB_STATUS(PCB_STATUS_DOMAIN_C, (unsigned int)errno);
+    if(fseek(f, 0, SEEK_END) == -1)
+        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_C, (unsigned int)errno));
 #if PCB_PLATFORM_WINDOWS
     s = _ftelli64(f);
 #else
     s = ftell(f);
 #endif
-    if(s == -1) goto end;
-    if(fseek(f, 0, SEEK_SET) == -1) {
-#if PCB_PLATFORM_WINDOWS
-        SetLastError(0);
-#endif
-        goto end;
-    }
-    if(!PCB_String_reserve(buf, (size_t)s)) goto end;
+    if(s == -1)
+        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_C, (unsigned int)errno));
+    if(fseek(f, 0, SEEK_SET) == -1)
+        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_C, (unsigned int)errno));
+    if(!PCB_String_reserve(buf, (size_t)s)) PCB__return_defer(PCB_CERR_NOMEM);
     fread(buf->data + buf->length, 1, (size_t)s, f);
-    if(ferror(f)) goto end;
+    e = ferror(f);
+    if(e != 0)
+        PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_C, (unsigned int)e));
     buf->data[buf->length += (size_t)s] = '\0';
-    success = true;
-    end:
+    result = PCB_OK();
+defer:
     if(f != NULL) fclose(f);
-    return success;
+    return result;
 }
 
 //skip until not separator
