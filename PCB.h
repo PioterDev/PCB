@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 11
+#define PCB_VERSION_PATCH 12
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -48,10 +48,6 @@
 #if !defined(__STDC_VERSION__) && !defined(__cplusplus)
 #error "C89 is not supported"
 #endif //C89/90?
-
-#ifdef __cplusplus
-extern "C" {
-#endif //C++
 
 //Section 0: The preamble.
 
@@ -2796,6 +2792,10 @@ for(                                                                \
 #endif //use C calling convention on Windows
 #endif //PCBCALL, by default the C calling convention
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif //C++
 
 //The user may not need declarations, for example if only macros are used.
 //This macro allows for a slight preprocessor optimization by omitting declarations.
