@@ -4346,6 +4346,14 @@ PCBAPI PCB_Status PCBCALL PCB_FS_getcwd(PCB_StringSlice buf);
  */
 PCBAPI PCB_Status PCBCALL PCB_FS_getcwd_ne(PCB_FS_StringSlice buf);
 /**
+ * @brief Same as `PCB_FS_getcwd_ne`, but the buffer is allocated on the
+ * temporary allocator; free with `PCB_temp_free` (keeping in mind the LIFO
+ * requirement).
+ * @return Same as `PCB_FS_getcwd_ne`, except it can't fail with "buffer too small",
+ * but can with OOM.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_getcwd_tmp_ne(PCB_FS_String *buf) PCB_Nonnull_Arg(1);
+/**
  * @brief Checks if a filesystem entry exists.
  *
  * @param path path/to/thing/in/filesystem
@@ -7861,6 +7869,46 @@ PCB_Status PCB_FS_getcwd_ne(PCB_FS_StringSlice buf) {
     }
     return PCB_OK((uint32_t)PCB_strlen(buf.data));
 #else
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_FS_getcwd_tmp_ne(PCB_FS_String *buf) {
+#if PCB_PLATFORM_WINDOWS || PCB_PLATFORM_POSIX
+    PCB_Status result;
+    PCB_CHECK_NULL(buf, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    buf->length = 0;
+#if PCB_PLATFORM_WINDOWS
+    buf->capacity = MAX_PATH;
+#else
+    buf->capacity = PATH_MAX;
+#endif
+    buf->data = (PCB_FS_char*)PCB_temp_alloc(buf->capacity*sizeof(*buf->data));
+    if(buf->data == NULL) { buf->capacity = 0; return PCB_CERR_NOMEM; }
+    while(true) {
+        result = PCB_FS_getcwd_ne(PCB_Slice_Vec_A_T(buf, PCB_FS_StringSlice));
+        if(PCB_ISOK(result)) {
+            buf->length = result.code;
+            return result;
+        } else if(result.domain == PCB_STATUS_DOMAIN_PCB) { //buffer too small
+            size_t new_cap = buf->capacity*2;
+            PCB_FS_char *new_buf = (PCB_FS_char*)PCB_temp_realloc(
+                buf->data, sizeof(*buf->data)*new_cap
+            );
+            if(new_buf == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+            buf->data = new_buf;
+            buf->capacity = new_cap;
+        } else {
+            goto defer;
+        }
+    }
+defer:
+    PCB_temp_free(buf->data);
+    buf->data = NULL;
+    buf->length = buf->capacity = 0;
+    return result;
+#else
+    (void)buf;
     return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
