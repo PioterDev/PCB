@@ -930,6 +930,39 @@ static void f(void)
 #endif //PCB_unlikely
 
 /**
+ * @brief Enforce alignment in bytes of a type/variable.
+ * Needs to be placed at the start of a declaration, for example
+ * `PCB_alignas(8) static Type foo;`.
+ * In C++11+ or C11+ you can specify a type in place of `bytes`, but that is
+ * incompatible with compiler extensions. Use `sizeof(type)` for uniform behavior.
+ *
+ * Portable applications MUST check whether `PCB_alignas` is #defined before use.
+ * Also be aware that this affects the ABI, so use with care for externally-facing
+ * declarations.
+ */
+#ifndef PCB_alignas
+#if (defined(__cplusplus) && __cplusplus+0 >= 201103L) || \
+    (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
+#define PCB_alignas(bytes) alignas(bytes)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L
+#define PCB_alignas(bytes) _Alignas(bytes)
+#elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
+#define PCB_alignas(bytes) __attribute__((__aligned__(bytes)))
+#elif PCB_COMPILER_MSVC
+#define PCB_alignas(bytes) __declspec(align(bytes))
+#endif //different alignment sources
+#endif //PCB_aligned
+
+#ifndef PCB_alignas_cacheline
+#ifdef PCB_alignas
+//TODO: 64 is not universal across architectures
+#define PCB_alignas_cacheline PCB_alignas(64)
+#else
+#define PCB_alignas_cacheline
+#endif //PCB_alignas?
+#endif //PCB_alignas_cacheline
+
+/**
  * @brief "thread" storage class specifier.
  *
  * Portable applications MUST check whether `PCB_thread_local` is #defined before use.
@@ -6708,6 +6741,26 @@ bool PCB_Windows_can_opt_out_of_MAX_PATH(void) {
     return false;
 }
 #endif //platform-specific version checks
+
+#if PCB_ARCH_x86_64 || PCB_ARCH_x86
+typedef struct {
+    int manufacturer_id[4];
+    int processor_info_and_features[4];
+    int extended_features[3][4];
+    int extended_proc_info[4];
+} PCB__Cpuid;
+PCB_alignas_cacheline static PCB__Cpuid PCB__cpuid;
+
+PCB_InitFn(PCB__cpuid_get) {
+    PCB_cpuid(PCB__cpuid.manufacturer_id, 0x0, 0x0);
+    PCB_cpuid(PCB__cpuid.processor_info_and_features, 0x1, 0x0);
+    for(int ecx = 0; ecx < 3; ecx++)
+        PCB_cpuid(PCB__cpuid.extended_features[ecx], 0x7, ecx);
+    PCB_cpuid(PCB__cpuid.extended_proc_info, 0x80000001, 0x0);
+}
+#endif //cpuid is really slow and we need to check CPU info in hot loops, cache it.
+       //For now private.
+
 #endif //PCB_IMPLEMENTATION_ANY
 
 #ifdef PCB_IMPLEMENTATION_LIBC_FALLBACKS
@@ -10422,9 +10475,8 @@ PCB_StringView PCB_StringView_substr_n(
 ) {
 #ifdef PCB__HAS_VECTOR_SV
 #if PCB_ARCH_x86_64 || PCB_ARCH_x86
-    int cpuinfo[4];
-    PCB_cpuid(cpuinfo, 0x1, 0x0);
-    if(PCB_cpuid_has_sse4_2(cpuinfo)) return PCB_StringView_substr_n_sse(sv, sub, n);
+    if(PCB_cpuid_has_sse4_2(PCB__cpuid.processor_info_and_features))
+        return PCB_StringView_substr_n_sse(sv, sub, n);
 #endif //x86(_64)
 #endif //PCB__HAS_VECTOR_SV
     return PCB_StringView_substr_n_basic(sv, sub, n);
@@ -10562,9 +10614,8 @@ PCB_StringView PCB_StringView_findCharFrom_n(
 ) {
 #ifdef PCB__HAS_VECTOR_SV
 #if PCB_ARCH_x86_64 || PCB_ARCH_x86
-    int cpuinfo[4];
-    PCB_cpuid(cpuinfo, 0x1, 0x0);
-    if(PCB_cpuid_has_sse4_2(cpuinfo)) return PCB_StringView_findCharFrom_n_sse(sv, accept, n); 
+    if(PCB_cpuid_has_sse4_2(PCB__cpuid.processor_info_and_features))
+        return PCB_StringView_findCharFrom_n_sse(sv, accept, n);
 #endif //x86(_64)
 #endif //PCB__HAS_VECTOR_SV
     return PCB_StringView_findCharFrom_n_basic(sv, accept, n);
@@ -10599,9 +10650,8 @@ PCB_StringView PCB_StringView_findCharNotFrom_n(
 ) {
 #ifdef PCB__HAS_VECTOR_SV
 #if PCB_ARCH_x86_64 || PCB_ARCH_x86
-    int cpuinfo[4];
-    PCB_cpuid(cpuinfo, 0x1, 0x0);
-    if(!PCB_cpuid_has_sse4_2(cpuinfo)) goto basic;
+    if(!PCB_cpuid_has_sse4_2(PCB__cpuid.processor_info_and_features))
+        goto basic;
 
     //Experimentally found that, for such inputs, the vectorized version actually
     //performs worse. Tested on Ryzen 5 6600H under gcc 15.2.1 -O2 -mtune=generic
@@ -10614,8 +10664,8 @@ PCB_StringView PCB_StringView_findCharNotFrom_n(
     if(reject.length <= 8 && n <= 5) goto basic;
     if(reject.length*n < 28) goto basic;
     return PCB_StringView_findCharNotFrom_n_sse(sv, reject, n);
-#endif //x86(_64)
 basic:
+#endif //x86(_64)
 #endif //PCB__HAS_VECTOR_SV
     return PCB_StringView_findCharNotFrom_n_basic(sv, reject, n);
 }
