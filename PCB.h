@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 15
+#define PCB_VERSION_PATCH 16
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4285,35 +4285,6 @@ PCBAPI int PCBCALL PCB_GetError(void);
  */
 PCBAPI void PCBCALL PCB_ClearError(void);
 /**
- * @brief Get the error string corresponding to `errnum` into `buf` of
- * `bufSize` size.
- *
- * WARNING: `errnum` ****MUST**** be obtained by calling `PCB_GetError`,
- * otherwise you lose **ALL** portability with regards to error handling
- * AND are **GUARANTEED** to get incorrect results.
- *
- * DO NOT BLINDLY PASS `errno` OR `GetLastError()` WITHOUT READING THE DOCS ABOVE!!
- *
- * @return 0 on success,
- * otherwise an error code according to the schema above is returned and
- * the previous error code is preserved.
- */
-PCBAPI int PCBCALL PCB_GetErrorString(
-    int errnum,
-    char* buf,
-    size_t bufSize
-) PCB_Nonnull_Arg(2);
-/**
- * @brief Log the latest error obtained from `PCB_GetError()` to stderr.
- * Otherwise functions similarly to `printf`.
- *
- * @param fmt `printf`-like format string
- */
-PCBAPI void PCBCALL PCB_logLatestError(
-    const char* fmt,
-    ...
-) PCB_Printf_Format(1, 2) PCB_Nonnull_Arg(1);
-/**
  * @brief Get a textual representation of `status.code`, depending on
  * `status.domain`.
  * @return whether `bufsize` was sufficient to fit the entire string.
@@ -7186,50 +7157,6 @@ void PCB_ClearError(void) {
     errno = 0;
 }
 
-int PCB_GetErrorString(int errnum, char* buf, size_t bufSize) {
-#if PCB_PLATFORM_WINDOWS
-    if(errnum < 0) {
-#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L && defined(__STDC_LIB_EXT1__)
-        return -strerror_s(buf, bufSize, -errnum);
-#else
-        PCB_snprintf(buf, bufSize, "%s", strerror(-errnum));
-        return 0;
-#endif //C11 shenanigans
-    }
-    DWORD err = GetLastError(); //preserve last error
-    DWORD l = FormatMessageA(
-        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL, errnum, 0, buf, (DWORD)bufSize, NULL
-    );
-    if(l == 0) {
-        DWORD newErr = GetLastError();
-        SetLastError(err);
-        return (int)newErr;
-    }
-    return 0;
-#elif PCB_PLATFORM_POSIX
-    //PCB_GetError() maps errno values to their negative
-    //counterparts for cross-platformness
-    errnum = -errnum;
-//this code right here is a very good example of xkcd 927
-#ifdef _GNU_SOURCE
-    char* errStr = strerror_r(errnum, buf, bufSize);
-    if(buf != errStr) PCB_snprintf(buf, bufSize, "%s", errStr);
-    return 0;
-#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200112L
-    int err = errno; //preserve last error
-    int code = strerror_r(errnum, buf, bufSize);
-    if(code >= 0) return -code; //glibc >= 2.13
-    int newErr = errno; errno = err; return newErr; //glibc < 2.13
-#elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L && defined(__STDC_LIB_EXT1__)
-    return -strerror_s(buf, bufSize, errnum);
-#else
-    PCB_snprintf(buf, bufSize, "%s", strerror(errnum));
-    return 0;
-#endif //this is really annoying...
-#endif //platform
-}
-
 static bool PCB__Status_toString_POSIX(int e, char *buf, size_t bufsize) {
 #ifdef _GNU_SOURCE
     char *str = strerror_r(e, buf, bufsize);
@@ -7354,30 +7281,6 @@ void PCB_Status_log(PCB_Status status, const char *fmt, ...) {
         PCB_temp_free(usermsg);
     }
     va_end(args);
-}
-
-void PCB_logLatestError(const char* fmt, ...) {
-    char buf[256] = PCB_ZEROED;
-#if PCB_PLATFORM_WINDOWS
-    bool addNl = PCB_GetError() <= 0;
-#endif //error strings from WinAPI are ended with '\n'
-    if(PCB_GetErrorString(
-        PCB_GetError(), buf, sizeof(buf)
-    ) != 0) {
-        PCB_log(PCB_LOGLEVEL_ERROR, "Failed to get error string...");
-        return; //wtf are we supposed to do if getting the error string fails...
-    }
-    PCB_log(PCB_LOGLEVEL_ERROR_NL, "%s", ""); //quick'n'dirty hack
-    va_list args;
-    va_start(args, fmt);
-    PCB_vfprintf(PCB_stderr, fmt, args);
-    va_end(args);
-#if PCB_PLATFORM_WINDOWS
-    if(addNl) PCB_fprintf(PCB_stderr, ": %s\n", buf);
-    else PCB_fprintf(PCB_stderr, ": %s", buf);
-#else
-    PCB_fprintf(PCB_stderr, ": %s\n", buf);
-#endif
 }
 
 PCB_StringView PCB_Common_strerror(PCB_Common_Error e) {
@@ -7872,21 +7775,22 @@ bool PCB_isAbsolutePath(const PCB_FS_char* path) {
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
     if(mkdir(path, 0775) == -1) {
-        switch(errno) {
-            case EEXIST: //not an error if already exists
-                return true;
-            default:
-                PCB_logLatestError("Failed to create directory \"%s\"", path);
-                return false;
+        PCB_Status status = {PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno};
+        switch(status.code) {
+          case EEXIST: //not an error if already exists
+            return true;
+          default:
+            PCB_Status_log(status, "Failed to create directory \"%s\"", path);
+            return false;
         }
     }
     return true;
 #elif PCB_PLATFORM_WINDOWS
     errno = 0;
     if(!CreateDirectoryA(path, NULL)) {
-        DWORD err = GetLastError();
-        if(err == ERROR_ALREADY_EXISTS) return true;
-        PCB_logLatestError("Failed to create directory \"%s\"", path);
+        PCB_Status status = {PCB_STATUS_DOMAIN_WINAPI, GetLastError()};
+        if(status.code == ERROR_ALREADY_EXISTS) return true;
+        PCB_Status_log(status, "Failed to create directory \"%s\"", path);
         return false;
     }
     return true;
@@ -11840,7 +11744,8 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     );
     PCB_String_destroy(&s);
     if(!success) {
-        PCB_logLatestError("Failed to create a child process");
+        PCB_Status status = {PCB_STATUS_DOMAIN_WINAPI, GetLastError()};
+        PCB_Status_log(status, "Failed to create a child process");
         return PCB_Process_init();
     }
     CloseHandle(pInfo.hThread);
@@ -11860,12 +11765,14 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     int tmpPipe[2] = { -1, -1 };
     PCB_ssize_t r = -1;
     if(pipe(tmpPipe) < 0) {
-        PCB_logLatestError("Failed to create a temporary pipe");
-        code = -errno; goto end;
+        PCB_Status status = {PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno};
+        PCB_Status_log(status, "Failed to create a temporary pipe");
+        code = -(int)status.code; goto end;
     }
     if(fcntl(tmpPipe[1], F_SETFD, FD_CLOEXEC) < 0) {
-        PCB_logLatestError("Failed to set the temporary pipe to 'close-on-exec'");
-        code = -errno; goto end;
+        PCB_Status status = {PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno};
+        PCB_Status_log(status, "Failed to set the temporary pipe to 'close-on-exec'");
+        code = -(int)status.code; goto end;
     }
 #if PCB_PLATFORM_LINUX
     if(PCB__Linux_has_pidfd()) {
@@ -11881,8 +11788,9 @@ PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
     child.handle = fork();
 #endif //pidfd
     if(child.handle == -1) {
-        PCB_logLatestError("Failed to create a child process");
-        code = -errno; goto end;
+        PCB_Status status = {PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno};
+        PCB_Status_log(status, "Failed to create a child process");
+        code = -(int)status.code; goto end;
     }
     else if(child.handle == 0) {
         close(tmpPipe[0]);
