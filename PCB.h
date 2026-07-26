@@ -229,37 +229,19 @@ extern "C" {
 #if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER)
 //https://gcc.gnu.org/onlinedocs/cpp/Common-Predefined-Macros.html
 #define PCB_COMPILER_GCC (__GNUC__*100*100 + __GNUC_MINOR__*100 + __GNUC_PATCHLEVEL__)
-#define PCB_COMPILER_CLANG 0
-#define PCB_COMPILER_MSVC 0
 #if PCB_PLATFORM_WINDOWS
 #define PCB_COMPILER "MinGW"
-#ifdef __cplusplus
-#define PCB_COMPILER_PATH "g++"
-#else
-#define PCB_COMPILER_PATH "gcc"
-#endif //C++?
-#else
-#ifdef __MINGW32__
-#define PCB_COMPILER "MinGW"
-#ifdef __cplusplus
-#define PCB_COMPILER_PATH "x86_64-w64-mingw32-g++"
-#else
-#define PCB_COMPILER_PATH "x86_64-w64-mingw32-gcc"
-#endif //C++?
 #else
 #define PCB_COMPILER "GCC"
+#endif //platform
 #ifdef __cplusplus
 #define PCB_COMPILER_PATH "g++"
 #else
 #define PCB_COMPILER_PATH "gcc"
 #endif //C++?
-#endif //MinGW check
-#endif //platform
 #elif defined(__clang__)
-#define PCB_COMPILER_GCC 0
 //same schema as GCC
 #define PCB_COMPILER_CLANG (__clang_major__*100*100 + __clang_minor__*100 + __clang_patchlevel__)
-#define PCB_COMPILER_MSVC 0
 #define PCB_COMPILER "Clang"
 #ifdef __cplusplus
 #define PCB_COMPILER_PATH "clang++"
@@ -267,17 +249,25 @@ extern "C" {
 #define PCB_COMPILER_PATH "clang"
 #endif //C++?
 #elif defined(_MSC_VER) && !defined(__clang__)
-#define PCB_COMPILER_GCC 0
-#define PCB_COMPILER_CLANG 0
 //MSVC uses a different versioning scheme, https://learn.microsoft.com/en-us/cpp/overview/compiler-versions
 #define PCB_COMPILER_MSVC (_MSC_VER)
 #define PCB_COMPILER "MSVC"
 #define PCB_COMPILER_PATH "cl"
 #else
-#error PCB Error: Unsupported compiler
+#define PCB_COMPILER "Unknown"
+#define PCB_COMPILER_PATH NULL
 #endif //compiler
 #endif //PCB_COMPILER
 
+#ifndef PCB_COMPILER_GCC
+#define PCB_COMPILER_GCC 0
+#endif //PCB_COMPILER_GCC
+#ifndef PCB_COMPILER_CLANG
+#define PCB_COMPILER_CLANG 0
+#endif //PCB_COMPILER_CLANG
+#ifndef PCB_COMPILER_MSVC
+#define PCB_COMPILER_MSVC 0
+#endif //PCB_COMPILER_MSVC
 
 #ifndef PCB_HAS_STMT_EXPR
 #if PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 30100
