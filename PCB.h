@@ -3369,6 +3369,17 @@ typedef struct {
     size_t capacity;
 } PCB_CStringPairs;
 
+//Create a `S`tructure out of the string `lit`eral.
+#ifndef PCB_SV_LITS
+#define PCB_SV_LITS(lit) {lit, (sizeof(lit)/sizeof(lit[0])) - 1}
+#endif //PCB_SV_LITS
+
+#ifndef PCB_SV_LIT
+//The name is a bit misleading because you can pass an array as `lit`, not necessarily
+//a literal.
+#define PCB_SV_LIT(lit) PCB_CLITERAL(PCB_StringView)PCB_SV_LITS(lit)
+#endif //PCB_SV_LIT
+
 typedef PCB_CStrings PCB_ShellCommand;
 
 #ifndef PCB_CStrings_append
@@ -4302,6 +4313,30 @@ PCBAPI void PCBCALL PCB_logLatestError(
     const char* fmt,
     ...
 ) PCB_Printf_Format(1, 2) PCB_Nonnull_Arg(1);
+/**
+ * @brief Get a textual representation of `status.code`, depending on
+ * `status.domain`.
+ * @return whether `bufsize` was sufficient to fit the entire string.
+ */
+PCBAPI bool PCBCALL PCB_Status_toString(PCB_Status status, char *buf, size_t bufsize);
+/**
+ * @brief Log `status` in the form
+ * "<logger error prefix> <printf-like user message>: <status>" to stderr.
+ */
+PCBAPI void PCBCALL PCB_Status_log(
+    PCB_Status status,
+    const char* fmt,
+    ...
+) PCB_Printf_Format(2, 3) PCB_Nonnull_Arg(2);
+
+/*
+ * These return a textual representation of the enum value passed.
+ * The returned view points to a static read-only null-terminated string.
+ */
+
+PCBAPI PCB_StringView PCBCALL PCB_Status_domain(PCB_Status status);
+PCBAPI PCB_StringView PCBCALL PCB_Common_strerror(PCB_Common_Error errnum);
+PCBAPI PCB_StringView PCBCALL PCB_Result_strerror(PCB_Result errnum);
 
 
 
@@ -7185,6 +7220,132 @@ int PCB_GetErrorString(int errnum, char* buf, size_t bufSize) {
 #endif //platform
 }
 
+static bool PCB__Status_toString_POSIX(int e, char *buf, size_t bufsize) {
+#ifdef _GNU_SOURCE
+    char *str = strerror_r(e, buf, bufsize);
+    if(str != buf)
+        return (unsigned int)PCB_snprintf(buf, bufsize, "%s", str) < bufsize;
+    else return true; //no way to tell if it would fit or not
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200112L
+    int code = strerror_r(e, buf, bufsize);
+    if(code < 0) return errno != ERANGE; //glibc < 2.13
+    else if(code == ERANGE) return false; //glibc >= 2.13
+    return true;
+#else
+    return (unsigned int)PCB_snprintf(buf, bufsize, "%s", strerror(e)) < bufsize;
+#endif //this is really annoying...
+}
+
+#if PCB_PLATFORM_WINDOWS
+static bool PCB__Status_toString_WinAPI(DWORD e, char *buf, size_t bufsize) {
+    DWORD l = FormatMessageA(
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, e, 0, buf, (DWORD)bufsize, NULL
+    );
+    if(l == 0) return false;
+    return true;
+}
+#else
+static bool PCB__Status_toString_WinAPI(uint32_t e, char *buf, size_t bufsize) {
+    return (unsigned int)PCB_snprintf(buf, bufsize, "WinAPI error %u", e);
+}
+#endif //no WinAPI outside of Windows
+
+static PCB_StringView PCB__Common_strerror(PCB_Common_Error e) {
+    switch(e) {
+      case PCB_CEOK:     return PCB_SV_LIT("Success");
+      case PCB_CENOMEM:  return PCB_SV_LIT("Insufficient memory");
+      case PCB_CEFAULT:  return PCB_SV_LIT("Bad memory address");
+      case PCB_CEINVAL:  return PCB_SV_LIT("Invalid argument");
+      case PCB_CESTUB:   return PCB_SV_LIT("Interface stubbed");
+      case PCB_CEACCES:  return PCB_SV_LIT("Permission denied");
+      case PCB_CENORES:  return PCB_SV_LIT("No such resource");
+      case PCB_CE2BIG:   return PCB_SV_LIT("Too big");
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_common(PCB_Common_Error e, char *buf, size_t bufsize) {
+    const char *msg = PCB__Common_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown common error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
+static PCB_StringView PCB__Result_strerror(PCB_Result e) {
+    switch(e) {
+      case PCB_RESULT_SUCCESS: return PCB_SV_LIT("Success");
+      case PCB_RESULT_BUFFER_TOO_SMALL: return PCB_SV_LIT("Buffer too small");
+      case PCB_RESULT_TOCTOU:
+        return PCB_SV_LIT("Time-of-check-time-of-use condition was detected");
+      case PCB_RESULT_COUNT:
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_PCB(PCB_Result e, char *buf, size_t bufsize) {
+    const char *msg = PCB__Result_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown PCB error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
+bool PCB_Status_toString(PCB_Status st, char* buf, size_t bufsize) {
+    if(buf == NULL) return false;
+    switch(st.domain) {
+      case PCB_STATUS_DOMAIN_SUCCESS:
+        return (unsigned int)PCB_snprintf(buf, bufsize, "Success") < bufsize;
+      case PCB_STATUS_DOMAIN_COMMON:
+        return PCB__Status_toString_common((PCB_Common_Error)st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_C:
+        return (unsigned int)PCB_snprintf(buf, bufsize, "%s", strerror((int)st.code)) < bufsize;
+      case PCB_STATUS_DOMAIN_POSIX:
+        return PCB__Status_toString_POSIX((int)st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_WINAPI:
+        return PCB__Status_toString_WinAPI(st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_PCB:
+        return PCB__Status_toString_PCB((PCB_Result)st.code, buf, bufsize);
+      default:
+        return (unsigned int)PCB_snprintf(
+            buf, bufsize, "Unknown domain-code pair (%u, %u)", st.domain, st.code
+        ) < bufsize;
+    }
+}
+
+PCB_StringView PCB_Status_domain(PCB_Status st) {
+    switch(st.domain) {
+      case PCB_STATUS_DOMAIN_SUCCESS:   return PCB_SV_LIT("Success");
+      case PCB_STATUS_DOMAIN_COMMON:    return PCB_SV_LIT("Common");
+      case PCB_STATUS_DOMAIN_C:         return PCB_SV_LIT("ISO C");
+      case PCB_STATUS_DOMAIN_POSIX:     return PCB_SV_LIT("POSIX");
+      case PCB_STATUS_DOMAIN_WINAPI:    return PCB_SV_LIT("WinAPI");
+      case PCB_STATUS_DOMAIN_PCB:       return PCB_SV_LIT("PCB");
+      default:                          return PCB_SV_LIT("Unknown");
+    }
+}
+
+void PCB_Status_log(PCB_Status status, const char *fmt, ...) {
+    //WinAPI error message have an implicit '\n'.
+    const char *end = status.domain == PCB_STATUS_DOMAIN_WINAPI ? "" : "\n";
+    char buf[256], *usermsg;
+    va_list args;
+
+    PCB_Status_toString(status, buf, sizeof(buf));
+    va_start(args, fmt);
+    usermsg = PCB_temp_vasprintf(fmt, args);
+    if(usermsg == NULL) {
+        PCB_fprintf(PCB_stderr, "[Error] ");
+        PCB_vfprintf(PCB_stderr, fmt, args);
+        PCB_fprintf(PCB_stderr, ": %s%s", buf, end);
+    } else {
+        PCB_log(PCB_LOGLEVEL_ERROR_NL, "%s: %s%s", usermsg, buf, end);
+        PCB_temp_free(usermsg);
+    }
+    va_end(args);
+}
+
 void PCB_logLatestError(const char* fmt, ...) {
     char buf[256] = PCB_ZEROED;
 #if PCB_PLATFORM_WINDOWS
@@ -7207,6 +7368,18 @@ void PCB_logLatestError(const char* fmt, ...) {
 #else
     PCB_fprintf(PCB_stderr, ": %s\n", buf);
 #endif
+}
+
+PCB_StringView PCB_Common_strerror(PCB_Common_Error e) {
+    PCB_StringView msg = PCB__Common_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
+}
+
+PCB_StringView PCB_Result_strerror(PCB_Result e) {
+    PCB_StringView msg = PCB__Result_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
 }
 #endif //PCB_IMPLEMENTATION_ERR
 
