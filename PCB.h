@@ -3487,16 +3487,6 @@ typedef struct {
 #define PCB_SV_LIT(lit) PCB_CLITERAL(PCB_StringView)PCB_SV_LITS(lit)
 #endif //PCB_SV_LIT
 
-#ifndef PCB_CStrings_append
-#define PCB_CStrings_append(cstrs, str) PCB_Vec_append(cstrs, str)
-#endif //PCB_CStrings_append
-
-#ifndef PCB_CStrings_append_many
-#define PCB_CStrings_append_many(cstrs, ...) \
-    PCB_Vec_append_variadic(cstrs, const char*, __VA_ARGS__)
-#endif //PCB_CStrings_append_many
-
-
 /**
  * Definitions of character types that work in C99+ and C++11+.
  * As you can see, it is rather convoluted.
@@ -6113,6 +6103,26 @@ PCBAPI PCB_char16* PCBCALL PCB_StoreUTF16Codepoint(
 static PCB_ForceInline PCB_char32* PCB_StoreUTF32Codepoint(
     PCB_char32* buf, uint32_t codepoint
 ) { *buf++ = codepoint; return buf; }
+
+/**
+ * Can you guess what these functions do?
+ * See `PCB_VEC_OK` for return values.
+ */
+
+PCBAPI int PCBCALL PCB_CStrings_append(PCB_CStrings *cstrs, const char* cstr) PCB_Nonnull_Arg(1);
+PCBAPI int PCBCALL PCB_CStrings_append_variadic(PCB_CStrings *cstrs, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+PCBAPI int PCBCALL PCB_CStrings_append_multiple(PCB_CStrings *cstrs, const char *const *data, size_t n) PCB_Nonnull_Arg(1, 2);
+#ifdef PCB_HAS_STMT_EXPR
+#define PCB_CStrings_append_many(cstrs, ...) __extension__ ({ \
+    const char *const PCB_MANGLE(args)[] = { __VA_ARGS__ }; \
+    PCB_CStrings_append_multiple(cstrs, PCB_MANGLE(args), PCB_ARRAY_LEN(PCB_MANGLE(args))); \
+})
+#else
+#define PCB_CStrings_append_many(cstrs, ...) \
+    PCB_CStrings_append_variadic(cstrs, __VA_ARGS__, NULL)
+#endif //PCB_HAS_STMT_EXPR
+
+PCBAPI int PCBCALL PCB_CStringPairs_append(PCB_CStringPairs *pairs, PCB_CStringPair pair) PCB_Nonnull_Arg(1);
 
 
 /**
@@ -11419,6 +11429,50 @@ PCB_char16* PCB_StoreUTF16Codepoint(PCB_char16* buf, uint32_t codepoint) {
 #undef PCB__strlen_PCB_char8
 #undef PCB__strlen_PCB_char16
 #undef PCB__strlen_PCB_char32
+
+static int PCB__CStrings_reserve(PCB_CStrings *cstrs, size_t n) {
+    int res; PCB_Vec_try_reserve(cstrs, n, res); return res;
+}
+
+int PCB_CStrings_append(PCB_CStrings *cstrs, const char* cstr) {
+    PCB_CHECK_NULL(cstrs, -1);
+    int res = PCB__CStrings_reserve(cstrs, 1);
+    if(res != PCB_VEC_OK) return res;
+    PCB_Vec_do_append_unchecked(cstrs, cstr);
+    return res;
+}
+
+int PCB_CStrings_append_variadic(PCB_CStrings *cstrs, ...) {
+    PCB_CHECK_NULL(cstrs, -1);
+    va_list args;
+    int res;
+    size_t n_start = cstrs->length;
+    va_start(args, cstrs);
+    PCB_VA_forEach_until(args, const char*, NULL, arg) {
+        if((res = PCB_CStrings_append(cstrs, arg))) goto error;
+    }
+    return res;
+error:
+    cstrs->length = n_start;
+    return res;
+}
+
+int PCB_CStrings_append_multiple(
+    PCB_CStrings *cstrs, const char *const *data, size_t n
+) {
+    PCB_CHECK_NULL(cstrs, -1);
+    PCB_CHECK_NULL(data,  -1);
+    int res = PCB__CStrings_reserve(cstrs, n);
+    if(res != PCB_VEC_OK) return res;
+    PCB_Vec_do_append_multiple(cstrs, data, n);
+    return res;
+}
+
+int PCB_CStringPairs_append(PCB_CStringPairs *pairs, PCB_CStringPair pair) {
+    int res;
+    PCB_Vec_try_append(pairs, pair, res);
+    return res;
+}
 #endif //PCB_IMPLEMENTATION_STRING
 
 #if (!defined(PCB_NO_INLINE_EXPORTS) || (defined(PCB_NO_INLINE_EXPORTS) && defined(PCB_IMPLEMENTATION_STRING))) && !defined(PCB_NO_DECLARATIONS)
