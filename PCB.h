@@ -307,6 +307,15 @@
 #define PCB_COMPILER_TCC 0
 #endif //PCB_COMPILER_TCC
 
+#if !defined(__STDC_VERSION__) && !defined(__cplusplus)
+#define PCB_LOCAL_STRIP_INLINE
+#if PCB_COMPILER_GCC
+#define inline __inline__
+#else
+#define inline
+#endif //compilers
+#endif //lower the number of errors if someone tries to compile with C89
+
 #ifndef PCB_HAS_STMT_EXPR
 #if PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 30100
 #define PCB_HAS_STMT_EXPR 1
@@ -1700,8 +1709,10 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_VEC_INITIAL_CAPACITY
 
 #define PCB_VEC_OK 0
-#define PCB_VEC_OOM 1 //Out Of Memory
-#define PCB_VEC_IOV 2 //Integer OVerflow
+//Out Of Memory
+#define PCB_VEC_OOM 1
+//Integer OVerflow
+#define PCB_VEC_IOV 2
 
 #ifndef PCB_Vec_iov
 //Check if `newcap` would cause a signed integer overflow.
@@ -3426,6 +3437,8 @@ typedef char8_t PCB_char8;
 #else
 typedef char PCB_char8;
 #endif //C23 && <uchar.h>
+#else
+typedef char PCB_char8;
 #endif //language
 
 #if defined(__cplusplus)
@@ -3440,6 +3453,8 @@ typedef char16_t PCB_char16;
 #else
 typedef uint_least16_t PCB_char16;
 #endif //C11?
+#else
+typedef unsigned short PCB_char16;
 #endif //language
 
 #if defined(__cplusplus)
@@ -3454,6 +3469,8 @@ typedef char32_t PCB_char32;
 #else
 typedef uint_least32_t PCB_char32;
 #endif //C11?
+#else
+typedef unsigned int PCB_char32;
 #endif //language
 
 typedef struct { wchar_t*    data; size_t length; size_t capacity; } PCB_WString;
@@ -13142,8 +13159,12 @@ int PCB_buildFromContext(PCB_BuildContext* context) {
 #undef false
 #endif //PCB_BOOL_LOCALLY_DEFINED
 
-//Appendix 1: Extended documentation of certain functions
+#ifdef PCB_LOCAL_STRIP_INLINE
+#undef PCB_LOCAL_STRIP_INLINE
+#undef inline
+#endif //PCB_LOCAL_STRIP_INLINE
 
+//Appendix 1: Extended documentation of certain functions
 
 
 
