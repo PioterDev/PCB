@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 18
+#define PCB_VERSION_PATCH 19
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5600,6 +5600,10 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_parts(
     const char* PCB_restrict ptr,
     size_t length
 ) PCB_Nonnull_Arg(1) PCB_ConstFn;
+/**
+ * @brief Skip 1 byte in `sv`, unless empty.
+ */
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_shift(PCB_StringView sv) PCB_PureFn;
 
 PCB_maybe_inline bool PCBCALL PCB_String_replace_range_cstr(
     PCB_String* PCB_restrict str,
@@ -5699,15 +5703,15 @@ PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_subcstr  (PCB_St
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_subcstr_n(PCB_StringView sv, const char*    sub, size_t n) PCB_Nonnull_Arg(2);
 
 //Convenience aliases for consistency.
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom       (PCB_StringView sv, PCB_StringView accept)           { return PCB_StringView_findCharFrom       (sv, accept); }
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom_n     (PCB_StringView sv, PCB_StringView accept, size_t n) { return PCB_StringView_findCharFrom_n     (sv, accept, n); }
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom_cstr  (PCB_StringView sv, const char*    accept)           { return PCB_StringView_findCharFrom_cstr  (sv, accept); }
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharFrom_cstr_n(PCB_StringView sv, const char*    accept, size_t n) { return PCB_StringView_findCharFrom_cstr_n(sv, accept, n); }
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharFrom       (PCB_StringView sv, PCB_StringView accept);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharFrom_n     (PCB_StringView sv, PCB_StringView accept, size_t n);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharFrom_cstr  (PCB_StringView sv, const char*    accept) PCB_Nonnull_Arg(2);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharFrom_cstr_n(PCB_StringView sv, const char*    accept, size_t n) PCB_Nonnull_Arg(2);
 
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom       (PCB_StringView sv, PCB_StringView accept)           { return PCB_StringView_findCharNotFrom       (sv, accept); }
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_n     (PCB_StringView sv, PCB_StringView accept, size_t n) { return PCB_StringView_findCharNotFrom_n     (sv, accept, n); }
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cstr  (PCB_StringView sv, const char*    accept)           { return PCB_StringView_findCharNotFrom_cstr  (sv, accept); }
-static PCB_ForceInline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cstr_n(PCB_StringView sv, const char*    accept, size_t n) { return PCB_StringView_findCharNotFrom_cstr_n(sv, accept, n); }
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharNotFrom       (PCB_StringView sv, PCB_StringView accept);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharNotFrom_n     (PCB_StringView sv, PCB_StringView accept, size_t n);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharNotFrom_cstr  (PCB_StringView sv, const char*    accept) PCB_Nonnull_Arg(2);
+PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_anyCharNotFrom_cstr_n(PCB_StringView sv, const char*    accept, size_t n) PCB_Nonnull_Arg(2);
 
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_skipPast_whitespace(PCB_StringView sv);
 
@@ -11286,6 +11290,10 @@ PCB__SV_from_parts(PCB_U16StringView, PCB_char16) //PCB_U16StringView_from_parts
 PCB__SV_from_parts(PCB_U32StringView, PCB_char32) //PCB_U32StringView_from_parts()
 #undef PCB__SV_from_parts
 
+PCB_maybe_inline PCB_StringView PCB_StringView_shift(PCB_StringView sv) {
+    if(PCB_String_isEmpty(&sv)) return sv;
+    return PCB_StringView_from_parts(sv.data + 1, sv.length - 1);
+}
 
 PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_cstr(
     PCB_StringView sv, const char* s
@@ -11582,6 +11590,39 @@ PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_subcstr(
 PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_subcstr_n(
     PCB_StringView sv, const char* sub, size_t n
 ) { return PCB_StringView_skipPast_sub_n(sv, PCB_StringView_from_cstr(sub), n); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharFrom(
+    PCB_StringView sv, PCB_StringView accept
+) { return PCB_StringView_shift(PCB_StringView_findCharFrom(sv, accept)); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharFrom_n(
+    PCB_StringView sv, PCB_StringView accept, size_t n
+) { return PCB_StringView_shift(PCB_StringView_findCharFrom_n(sv, accept, n)); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharFrom_cstr(
+    PCB_StringView sv, const char* accept
+) { return PCB_StringView_shift(PCB_StringView_findCharFrom_cstr(sv, accept)); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharFrom_cstr_n(
+    PCB_StringView sv, const char* accept, size_t n
+) { return PCB_StringView_shift(PCB_StringView_findCharFrom_cstr_n(sv, accept, n)); }
+
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom(
+    PCB_StringView sv, PCB_StringView accept
+) { return PCB_StringView_findCharNotFrom(sv, accept); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_n(
+    PCB_StringView sv, PCB_StringView accept, size_t n
+) { return PCB_StringView_findCharNotFrom_n(sv, accept, n); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cstr(
+    PCB_StringView sv, const char* accept
+) { return PCB_StringView_findCharNotFrom_cstr(sv, accept); }
+
+PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_anyCharNotFrom_cstr_n(
+    PCB_StringView sv, const char* accept, size_t n
+) { return PCB_StringView_findCharNotFrom_cstr_n(sv, accept, n); }
 
 
 PCB_maybe_inline PCB_StringView PCB_StringView_skipPast_whitespace(
