@@ -4279,11 +4279,13 @@ typedef struct {
     PCB_CStrings optimizationFlags;
     //Vector of debug flags. Put your own sanitizer flags here.
     PCB_CStrings debugFlags;
-    /* Vector of warning flags, as well as warning-as-error flags.
+    /*
+     * Vector of diagnostic flags, i.e. warnings, warning-as-error flags and
+     * any other flags for static analysis.
      * Interpreted directly, a.k.a. if you add "1234",
      * the compiler will receive "1234" as a flag.
      */
-    PCB_CStrings warningFlags;
+    PCB_CStrings diagnosticFlags;
     //Vector of flags for the preprocessor (defs and undefs).
     struct {
         PCB_CStringPairs defines;
