@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 19
+#define PCB_VERSION_PATCH 20
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -12044,8 +12044,9 @@ int PCB_Processes_waitForAny(PCB_Processes* ps) {
             polls[i].fd = ps->data[i].pidfd;
             polls[i].events = POLLIN;
         }
-        int exited = -1;
+        int exited;
     retry:
+        exited = -1;
         if(poll(polls, ps->length, -1/*infinite*/) > 0) {
             while(!(polls[++exited].revents & POLLIN)) {}
         } else switch(errno) {
