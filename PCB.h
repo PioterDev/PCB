@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 21
+#define PCB_VERSION_PATCH 22
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1866,10 +1866,11 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_Vec_do_append
 
 #ifndef PCB_Vec_do_append_multiple
-#define PCB_Vec_do_append_multiple(vec, items, howMany)                         \
+#define PCB_Vec_do_append_multiple(vec, items, howMany) do {                    \
     for(size_t PCB_MANGLE(j) = 0; PCB_MANGLE(j) < (howMany); PCB_MANGLE(j)++) { \
         (vec)->data[PCB_MANGLE(j) + (vec)->length] = (items)[PCB_MANGLE(j)];    \
-    } (vec)->length += (howMany);
+    } (vec)->length += (howMany);                                               \
+} while(0)
 #endif //PCB_Vec_do_append_multiple
 
 #ifndef PCB_Vec_append
