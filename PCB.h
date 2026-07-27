@@ -3209,6 +3209,38 @@ PCB_Enum(PCB_Result, uint32_t) {
     PCB_RESULT_COUNT,
 };
 
+
+/**
+ * @brief Dynamic array of untyped bytes.
+ * "RWE" stands for "Read-Write-Expand".
+ */
+typedef struct {
+    void* data;
+    size_t length;
+    size_t capacity;
+} PCB_RWEBuffer;
+/**
+ * @brief View on untyped bytes.
+ * "R" stands for "Read" (in this case specifically "Read-only").
+ */
+typedef struct {
+    const void* data;
+    size_t length;
+} PCB_RBuffer;
+/**
+ * @brief Slice on untyped bytes.
+ * "RW" stands for "Read-Write".
+ */
+typedef struct {
+    void* data;
+    size_t length;
+} PCB_RWBuffer;
+/**
+ * @brief The commonly used pair of `(void*, size_t)` merged into a struct.
+ */
+typedef PCB_RWBuffer PCB_Buffer;
+
+
 typedef enum {
     PCB_LOGLEVEL_NONE,  PCB_LOGLEVEL_NONE_NL,  //without the prefix
     PCB_LOGLEVEL_TRACE, PCB_LOGLEVEL_TRACE_NL,
@@ -4586,6 +4618,16 @@ PCBAPI PCB_Status PCBCALL PCB_FS_ReadEntireFile(
     const char* path,
     PCB_String* buf
 ) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Writes entire `buf` to `path`. The file is truncated.
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status is either PCB_CERR_NOMEM or one in the C domain.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_WriteEntireFile(
+    const char* path,
+    PCB_RBuffer buf
+) PCB_Nonnull_Arg(1);
+
 /**
  * @brief Get the basename (filename) of `path`.
  *
@@ -8349,6 +8391,26 @@ PCB_Status PCB_FS_ReadEntireFile(const char *path, PCB_String *buf) {
     result = PCB_OK();
 defer:
     if(f != NULL) fclose(f);
+    return result;
+}
+
+PCB_Status PCB_FS_WriteEntireFile(const char *path, const PCB_RBuffer buf) {
+    PCB_Status result = PCB_OK();
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    FILE *f = fopen(path, "wb");
+    if(f == NULL) {
+        int e = errno;
+        if(e == ENOMEM) return PCB_CERR_NOMEM;
+        return PCB_STATUS(PCB_STATUS_DOMAIN_C, (unsigned int)e);
+    }
+    if(!PCB_Vec_isEmpty(&buf)) do {
+        if(fwrite(buf.data, buf.length, 1, f) == 1) break;
+        if(ferror(f))
+            PCB__return_defer(PCB_STATUS(PCB_STATUS_DOMAIN_C, (unsigned int)errno));
+        //Unreachable?
+    } while(0);
+defer:
+    fclose(f);
     return result;
 }
 
