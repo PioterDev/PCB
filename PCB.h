@@ -787,6 +787,22 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 #endif //why tf is there no "restrict" keyword in C++?!
 #endif //PCB_restrict
 
+#ifndef PCB_PureFn
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB_PureFn __attribute__((__pure__))
+#else
+#define PCB_PureFn
+#endif //compilers
+#endif //PCB_PureFn
+
+#ifndef PCB_ConstFn
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB_ConstFn __attribute__((__const__))
+#else
+#define PCB_ConstFn
+#endif //compilers
+#endif //PCB_ConstFn
+
 #ifndef PCB_Nullable
 #if PCB_COMPILER_CLANG >= 40000
 /*
@@ -4344,9 +4360,9 @@ PCBAPI void PCBCALL PCB_Status_log(
  * The returned view points to a static read-only null-terminated string.
  */
 
-PCBAPI PCB_StringView PCBCALL PCB_Status_domain(PCB_Status status);
-PCBAPI PCB_StringView PCBCALL PCB_Common_strerror(PCB_Common_Error errnum);
-PCBAPI PCB_StringView PCBCALL PCB_Result_strerror(PCB_Result errnum);
+PCBAPI PCB_StringView PCBCALL PCB_Status_domain(PCB_Status status) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_Common_strerror(PCB_Common_Error errnum) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_Result_strerror(PCB_Result errnum) PCB_ConstFn;
 
 
 
@@ -4758,20 +4774,20 @@ PCBAPI PCB_File PCBCALL PCB_IO_get_stderr(void);
 
 
 //Why exactly is there no standard strlen for these...?
-PCBAPI size_t PCBCALL PCB_strlen_char8 (const PCB_char8*  str) PCB_Nonnull_Arg(1);
-PCBAPI size_t PCBCALL PCB_strlen_char16(const PCB_char16* str) PCB_Nonnull_Arg(1);
-PCBAPI size_t PCBCALL PCB_strlen_char32(const PCB_char32* str) PCB_Nonnull_Arg(1);
-PCBAPI size_t PCBCALL PCB_strnlen_char8 (const PCB_char8*  str, size_t maxlen) PCB_Nonnull_Arg(1);
-PCBAPI size_t PCBCALL PCB_strnlen_char16(const PCB_char16* str, size_t maxlen) PCB_Nonnull_Arg(1);
-PCBAPI size_t PCBCALL PCB_strnlen_char32(const PCB_char32* str, size_t maxlen) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strlen_char8 (const PCB_char8  *str) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI size_t PCBCALL PCB_strlen_char16(const PCB_char16 *str) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI size_t PCBCALL PCB_strlen_char32(const PCB_char32 *str) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI size_t PCBCALL PCB_strnlen_char8 (const PCB_char8  *str, size_t maxlen) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI size_t PCBCALL PCB_strnlen_char16(const PCB_char16 *str, size_t maxlen) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI size_t PCBCALL PCB_strnlen_char32(const PCB_char32 *str, size_t maxlen) PCB_Nonnull_Arg(1) PCB_PureFn;
 
-PCBAPI int PCBCALL PCB_strcmp_char8 (const PCB_char8*  s1, const PCB_char8*  s2) PCB_Nonnull_Arg(1, 2);
-PCBAPI int PCBCALL PCB_strcmp_char16(const PCB_char16* s1, const PCB_char16* s2) PCB_Nonnull_Arg(1, 2);
-PCBAPI int PCBCALL PCB_strcmp_char32(const PCB_char32* s1, const PCB_char32* s2) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strcmp_char8 (const PCB_char8  *s1, const PCB_char8  *s2) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
+PCBAPI int PCBCALL PCB_strcmp_char16(const PCB_char16 *s1, const PCB_char16 *s2) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
+PCBAPI int PCBCALL PCB_strcmp_char32(const PCB_char32 *s1, const PCB_char32 *s2) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 
-PCBAPI int PCBCALL PCB_strncmp_char8 (const PCB_char8*  s1, const PCB_char8*  s2, size_t n) PCB_Nonnull_Arg(1, 2);
-PCBAPI int PCBCALL PCB_strncmp_char16(const PCB_char16* s1, const PCB_char16* s2, size_t n) PCB_Nonnull_Arg(1, 2);
-PCBAPI int PCBCALL PCB_strncmp_char32(const PCB_char32* s1, const PCB_char32* s2, size_t n) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strncmp_char8 (const PCB_char8  *s1, const PCB_char8  *s2, size_t n) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
+PCBAPI int PCBCALL PCB_strncmp_char16(const PCB_char16 *s1, const PCB_char16 *s2, size_t n) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
+PCBAPI int PCBCALL PCB_strncmp_char32(const PCB_char32 *s1, const PCB_char32 *s2, size_t n) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 
 
 /**
@@ -5423,7 +5439,7 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n(
 PCBAPI PCB_StringView PCBCALL PCB_StringView_skipPast(
     PCB_StringView sv,
     PCB_StringView s
-);
+) PCB_PureFn;
 /**
  * @brief Skips past leading whitespace characters from `sv`.
  */
@@ -5455,7 +5471,7 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_trim_right(PCB_StringView sv);
 PCBAPI uint8_t PCBCALL PCB_StringView_GetCodepointLength(
     PCB_StringView sv,
     size_t index
-);
+) PCB_PureFn;
 /**
  * @brief Get the length of the Unicode codepoint in `sv` from byte (!)
  * at index `index`.
@@ -5472,7 +5488,7 @@ PCBAPI uint8_t PCBCALL PCB_StringView_GetCodepointLength(
 PCBAPI uint8_t PCBCALL PCB_StringView_GetCodepointLength_unchecked(
     PCB_StringView sv,
     size_t index
-);
+) PCB_PureFn;
 /**
  * @brief Get the Unicode codepoint in `sv` from byte (!) at index `index`.
  * @return `PCB_Codepoint` structure with:
@@ -5499,7 +5515,7 @@ PCBAPI uint8_t PCBCALL PCB_StringView_GetCodepointLength_unchecked(
 PCBAPI PCB_Codepoint PCBCALL PCB_StringView_GetCodepoint(
     PCB_StringView sv,
     size_t index
-);
+) PCB_PureFn;
 /**
  * @brief Get the Unicode codepoint in `sv` from byte (!) at index `index`.
  *
@@ -5511,7 +5527,7 @@ PCBAPI PCB_Codepoint PCBCALL PCB_StringView_GetCodepoint(
 PCBAPI PCB_Codepoint PCBCALL PCB_StringView_GetCodepoint_unchecked(
     PCB_StringView sv,
     size_t index
-);
+) PCB_PureFn;
 
 /**
  * Vectorized versions of certain `PCB_StringView_*` functions.
@@ -5521,27 +5537,27 @@ PCBAPI PCB_Codepoint PCBCALL PCB_StringView_GetCodepoint_unchecked(
  * @sa PCB_cpuid
  */
 #if PCB_ARCH_x86_64 || PCB_ARCH_x86
-PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n_sse(PCB_StringView sv, PCB_StringView sub, size_t n) PCB_Target_ISA("sse4.2");
-PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharFrom_n_sse(PCB_StringView sv, PCB_StringView accept, size_t n) PCB_Target_ISA("sse4.2");
-PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n_sse(PCB_StringView sv, PCB_StringView accept, size_t n) PCB_Target_ISA("sse4.2");
+PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n_sse(PCB_StringView sv, PCB_StringView sub, size_t n) PCB_Target_ISA("sse4.2") PCB_PureFn;
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharFrom_n_sse(PCB_StringView sv, PCB_StringView accept, size_t n) PCB_Target_ISA("sse4.2") PCB_PureFn;
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n_sse(PCB_StringView sv, PCB_StringView accept, size_t n) PCB_Target_ISA("sse4.2") PCB_PureFn;
 #endif //x86(_64)
 /**
  * Non-vectorized versions of the above functions.
  */
-PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n_basic(PCB_StringView sv, PCB_StringView sub, size_t n);
-PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharFrom_n_basic(PCB_StringView sv, PCB_StringView accept, size_t n);
-PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n_basic(PCB_StringView sv, PCB_StringView reject, size_t n);
+PCBAPI PCB_StringView PCBCALL PCB_StringView_substr_n_basic(PCB_StringView sv, PCB_StringView sub, size_t n) PCB_PureFn;
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharFrom_n_basic(PCB_StringView sv, PCB_StringView accept, size_t n) PCB_PureFn;
+PCBAPI PCB_StringView PCBCALL PCB_StringView_findCharNotFrom_n_basic(PCB_StringView sv, PCB_StringView reject, size_t n) PCB_PureFn;
 
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_String(
     const PCB_String* PCB_restrict str
-) PCB_Nonnull_Arg(1);
+) PCB_Nonnull_Arg(1) PCB_PureFn;
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_cstr(
     const char* PCB_restrict str
-) PCB_Nonnull_Arg(1);
+) PCB_Nonnull_Arg(1) PCB_PureFn;
 PCB_maybe_inline PCB_StringView PCBCALL PCB_StringView_from_parts(
     const char* PCB_restrict ptr,
     size_t length
-) PCB_Nonnull_Arg(1);
+) PCB_Nonnull_Arg(1) PCB_ConstFn;
 
 PCB_maybe_inline bool PCBCALL PCB_String_replace_range_cstr(
     PCB_String* PCB_restrict str,
@@ -5699,11 +5715,11 @@ PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str) PCB_Nonnul
 PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out) PCB_Nonnull_Arg(1);
 
 //See `PCB_U(16|32)String_GetCodepoint`.
-PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint(PCB_WStringView sv, size_t index);
+PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint(PCB_WStringView sv, size_t index) PCB_PureFn;
 //See `PCB_U(16|32)String_GetCodepoint_unchecked`.
-PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint_unchecked(PCB_WStringView sv, size_t index);
-PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_cstr(const wchar_t* PCB_restrict str) PCB_Nonnull_Arg(1);
-PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_parts(const wchar_t* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint_unchecked(PCB_WStringView sv, size_t index) PCB_PureFn;
+PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_cstr(const wchar_t* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_parts(const wchar_t* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
@@ -5740,11 +5756,11 @@ PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str) PCB_No
 PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out) PCB_Nonnull_Arg(1);
 
 //See `PCB_String_GetCodepoint`.
-PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint(PCB_U8StringView sv, size_t index);
+PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint(PCB_U8StringView sv, size_t index) PCB_PureFn;
 //See `PCB_String_GetCodepoint_unchecked`.
-PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint_unchecked(PCB_U8StringView sv, size_t index);
-PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_cstr(const PCB_char8* PCB_restrict str) PCB_Nonnull_Arg(1);
-PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_parts(const PCB_char8* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint_unchecked(PCB_U8StringView sv, size_t index) PCB_PureFn;
+PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_cstr(const PCB_char8* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_parts(const PCB_char8* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
@@ -5798,7 +5814,7 @@ PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, s
 PCBAPI PCB_Codepoint PCBCALL PCB_U16StringView_GetCodepoint(
     PCB_U16StringView sv,
     size_t index
-);
+) PCB_PureFn;
 /**
  * @brief Get the Unicode codepoint in `sv` from character at index `index`.
  *
@@ -5810,9 +5826,9 @@ PCBAPI PCB_Codepoint PCBCALL PCB_U16StringView_GetCodepoint(
 PCBAPI PCB_Codepoint PCBCALL PCB_U16StringView_GetCodepoint_unchecked(
     PCB_U16StringView sv,
     size_t index
-);
-PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_cstr(const PCB_char16* PCB_restrict str) PCB_Nonnull_Arg(1);
-PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_parts(const PCB_char16* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
+) PCB_PureFn;
+PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_cstr(const PCB_char16* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_parts(const PCB_char16* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
@@ -5849,16 +5865,16 @@ PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str) PCB
 PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out) PCB_Nonnull_Arg(1);
 
 //Provided for API consistency.
-PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint(PCB_U32StringView sv, size_t index);
-PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint_unchecked(PCB_U32StringView sv, size_t index);
-PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_cstr(const PCB_char32* PCB_restrict str) PCB_Nonnull_Arg(1);
-PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_parts(const PCB_char32* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint(PCB_U32StringView sv, size_t index) PCB_PureFn;
+PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint_unchecked(PCB_U32StringView sv, size_t index) PCB_PureFn;
+PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_cstr(const PCB_char32* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_parts(const PCB_char32* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
 //----------------------------------------------------------------------------
 
 /**
  * @brief Check if `codepoint` is a valid Unicode character.
  */
-PCBAPI bool PCBCALL PCB_IsValidUnicode(uint32_t codepoint);
+PCBAPI bool PCBCALL PCB_IsValidUnicode(uint32_t codepoint) PCB_ConstFn;
 /**
  * @brief Get the UTF-8 length of the Unicode `codepoint`.
  *
@@ -5870,7 +5886,7 @@ PCBAPI bool PCBCALL PCB_IsValidUnicode(uint32_t codepoint);
  * * - the full theoretical range of [1, 6] is available by #defining
  * `PCB_UTF8_FULL_RANGE`. It is disabled by default in compliance with RFC 3629.
  */
-PCBAPI uint8_t PCBCALL PCB_GetUTF8Length_unchecked(uint32_t codepoint);
+PCBAPI uint8_t PCBCALL PCB_GetUTF8Length_unchecked(uint32_t codepoint) PCB_ConstFn;
 /**
  * @brief Get the UTF-8 length of the Unicode `codepoint`.
  * @return value in range [1, 4*] or 0 if `codepoint` is invalid.
@@ -5878,7 +5894,7 @@ PCBAPI uint8_t PCBCALL PCB_GetUTF8Length_unchecked(uint32_t codepoint);
  * * - the full theoretical range of [1, 6] is available by #defining
  * `PCB_UTF8_FULL_RANGE`. It is disabled by default in compliance with RFC 3629.
  */
-PCBAPI uint8_t PCBCALL PCB_GetUTF8Length(uint32_t codepoint);
+PCBAPI uint8_t PCBCALL PCB_GetUTF8Length(uint32_t codepoint) PCB_ConstFn;
 /**
  * @brief Get the UTF-16 length of the Unicode `codepoint`.
  *
@@ -5887,15 +5903,15 @@ PCBAPI uint8_t PCBCALL PCB_GetUTF8Length(uint32_t codepoint);
  * You've been warned.
  * @return value in range [1, 2].
  */
-PCBAPI uint8_t PCBCALL PCB_GetUTF16Length_unchecked(uint32_t codepoint);
+PCBAPI uint8_t PCBCALL PCB_GetUTF16Length_unchecked(uint32_t codepoint) PCB_ConstFn;
 /**
  * @brief Get the UTF-16 length of the Unicode `codepoint`.
  * @return value in range [1, 2] or 0 if `codepoint` is invalid.
  */
-PCBAPI uint8_t PCBCALL PCB_GetUTF16Length(uint32_t codepoint);
+PCBAPI uint8_t PCBCALL PCB_GetUTF16Length(uint32_t codepoint) PCB_ConstFn;
 //For API consistency.
-PCBAPI uint8_t PCBCALL PCB_GetUTF32Length_unchecked(uint32_t codepoint);
-PCBAPI uint8_t PCBCALL PCB_GetUTF32Length(uint32_t codepoint);
+PCBAPI uint8_t PCBCALL PCB_GetUTF32Length_unchecked(uint32_t codepoint) PCB_ConstFn;
+PCBAPI uint8_t PCBCALL PCB_GetUTF32Length(uint32_t codepoint) PCB_ConstFn;
 /**
  * @brief Store UTF-8-encoded `codepoint` in `buf`.
  *
@@ -5940,12 +5956,12 @@ PCBAPI PCB_Process PCBCALL PCB_Process_self(void);
  * rely on this fact). This function MUST be used instead of usual
  * zero-initialization, otherwise the behavior is undefined.
  */
-PCBAPI PCB_Process PCBCALL PCB_Process_init(void);
+PCBAPI PCB_Process PCBCALL PCB_Process_init(void) PCB_ConstFn;
 /**
  * @brief Checks whether process `p` is a valid process.
  * NOTE: does NOT check whether `p` is an existing process.
  */
-PCBAPI bool PCBCALL PCB_Process_isValid(const PCB_Process* p) PCB_Nonnull_Arg(1);
+PCBAPI bool PCBCALL PCB_Process_isValid(const PCB_Process* p) PCB_Nonnull_Arg(1) PCB_PureFn;
 /**
  * @brief Waits for process `p` to exit.
  * @return `true` if `p` exited, `false` on error; call `PCB_GetError()`
@@ -6557,23 +6573,23 @@ PCBAPI bool PCBCALL PCB_Windows_can_opt_out_of_MAX_PATH(void);
  * In case of platforms that may or may not have a POSIX layer (for example
  * embedded), -1 is returned meaning "maybe".
  */
-PCBAPI int PCBCALL PCB_Platform_RT_is_POSIX(PCB_Platform_RT platform);
+PCBAPI int PCBCALL PCB_Platform_RT_is_POSIX(PCB_Platform_RT platform) PCB_ConstFn;
 /**
  * @brief Check whether the `platform` is known to implement a BSD-style system API.
  */
-PCBAPI bool PCBCALL PCB_Platform_RT_is_BSD(PCB_Platform_RT platform);
+PCBAPI bool PCBCALL PCB_Platform_RT_is_BSD(PCB_Platform_RT platform) PCB_ConstFn;
 /**
  * @brief Get the string version of the C standard from an integer value
  * `standard` (for example, `199901` for "c99").
- * @return a pointer to a string literal or NULL if a match wasn't found
+ * @return a pointer to a static read-only string or NULL if a match wasn't found.
  */
-PCBAPI const char* PCBCALL PCB_GetCStandardStr(long standard);
+PCBAPI const char* PCBCALL PCB_GetCStandardStr(long standard) PCB_ConstFn;
 /**
  * @brief Get the string version of the C standard from an integer value
  * `standard` (for example, `202002` for "c++20").
- * @return a pointer to a string literal or NULL if a match wasn't found
+ * @return a pointer to a static read-only string or NULL if a match wasn't found.
  */
-PCBAPI const char* PCBCALL PCB_GetCppStandardStr(long standard);
+PCBAPI const char* PCBCALL PCB_GetCppStandardStr(long standard) PCB_ConstFn;
 
 /**
  * @brief Get the integer version of the C standard from a C string.
@@ -6586,7 +6602,7 @@ PCBAPI const char* PCBCALL PCB_GetCppStandardStr(long standard);
  * For C89, the value returned is exceptionally `1` since it didn't have
  * a specific value associated.
  */
-PCBAPI long PCBCALL PCB_GetCStandardInt(const char* standard) PCB_Nonnull_Arg(1);
+PCBAPI long PCBCALL PCB_GetCStandardInt(const char* standard) PCB_Nonnull_Arg(1) PCB_PureFn;
 /**
  * @brief Get the integer version of the C++ standard from a C string
  *
@@ -6596,7 +6612,7 @@ PCBAPI long PCBCALL PCB_GetCStandardInt(const char* standard) PCB_Nonnull_Arg(1)
  * for "-std=" flag.
  * @return non-zero integer value of a standard or 0 if a match wasn't found.
  */
-PCBAPI long PCBCALL PCB_GetCppStandardInt(const char* standard) PCB_Nonnull_Arg(1);
+PCBAPI long PCBCALL PCB_GetCppStandardInt(const char* standard) PCB_Nonnull_Arg(1) PCB_PureFn;
 
 
 /**
@@ -6649,43 +6665,43 @@ PCBAPI void* PCBCALL PCB_memset(
 #ifndef PCB_memcmp
 PCBAPI int PCBCALL PCB_memcmp(
     const void* p1, const void* p2, size_t n
-) PCB_Nonnull_Arg(1, 2);
+) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 #endif //PCB_memcmp
 
 #ifndef PCB_strcmp
-PCBAPI int PCBCALL PCB_strcmp(const char *s1, const char *s2) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strcmp(const char *s1, const char *s2) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 #endif //PCB_strcmp
 
 #ifndef PCB_strncmp
-PCBAPI int PCBCALL PCB_strncmp(const char *s1, const char *s2, size_t n) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strncmp(const char *s1, const char *s2, size_t n) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 #endif //PCB_strncmp
 
 #ifndef PCB_strncasecmp
-PCBAPI int PCBCALL PCB_strncasecmp(const char *s1, const char *s2, size_t n) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_strncasecmp(const char *s1, const char *s2, size_t n) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 #endif //PCB_strncasecmp
 
 #ifndef PCB_strlen
-PCBAPI size_t PCBCALL PCB_strlen(const char *s) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strlen(const char *s) PCB_Nonnull_Arg(1) PCB_PureFn;
 #endif //PCB_strlen
 
 #ifndef PCB_strnlen
-PCBAPI size_t PCBCALL PCB_strnlen(const char *s, size_t n) PCB_Nonnull_Arg(1);
+PCBAPI size_t PCBCALL PCB_strnlen(const char *s, size_t n) PCB_Nonnull_Arg(1) PCB_PureFn;
 #endif //PCB_strnlen
 
 #ifndef PCB_wcscmp
-PCBAPI int PCBCALL PCB_wcscmp(const wchar_t *s1, const wchar_t *s2) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_wcscmp(const wchar_t *s1, const wchar_t *s2) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 #endif //PCB_wcscmp
 
 #ifndef PCB_wcsncmp
-PCBAPI int PCBCALL PCB_wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 #endif //PCB_wcsncmp
 
 #ifndef PCB_wcslen
-PCBAPI int PCBCALL PCB_wcslen(const wchar_t *s) PCB_Nonnull_Arg(1);
+PCBAPI int PCBCALL PCB_wcslen(const wchar_t *s) PCB_Nonnull_Arg(1) PCB_PureFn;
 #endif //PCB_wcslen
 
 #ifndef PCB_wcsnlen
-PCBAPI int PCBCALL PCB_wcsnlen(const wchar_t *s, size_t n) PCB_Nonnull_Arg(1);
+PCBAPI int PCBCALL PCB_wcsnlen(const wchar_t *s, size_t n) PCB_Nonnull_Arg(1) PCB_PureFn;
 #endif //PCB_wcsnlen
 
 #ifndef PCB_isspace
@@ -11968,7 +11984,7 @@ static PCB_ForceInline size_t PCB__Arena_offsetof(PCB_Arena_Prefix* a, void* ptr
 }
 
 //size rounded up to a multiple of pointer size
-static PCB_ForceInline size_t PCB__Arena_ceil(size_t size) {
+static inline PCB_ConstFn size_t PCB__Arena_ceil(size_t size) {
     return (size + sizeof(void*) - 1) & ~(sizeof(void*) - 1);
 }
 
@@ -12050,7 +12066,7 @@ static inline PCB_Arena_Prefix* PCB__Arena_ptrnode(PCB_Arena* arena, const void*
  *
  * The result is correct and well-defined even if `start` and `reserve` are 0.
  */
-static PCB_ForceInline size_t PCB__Arena_pad(
+static inline PCB_ConstFn size_t PCB__Arena_pad(
     uintptr_t start, size_t alignment, size_t reserve
 ) {
     return reserve + alignment - ((size_t)start+reserve-1)%alignment - 1;
