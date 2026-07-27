@@ -11421,6 +11421,10 @@ PCB_char16* PCB_StoreUTF16Codepoint(PCB_char16* buf, uint32_t codepoint) {
 #endif //PCB_IMPLEMENTATION_STRING
 
 #if (!defined(PCB_NO_INLINE_EXPORTS) || (defined(PCB_NO_INLINE_EXPORTS) && defined(PCB_IMPLEMENTATION_STRING))) && !defined(PCB_NO_DECLARATIONS)
+#if PCB_COMPILER_CLANG
+PCB_PushDiagnostics()
+PCB_IgnoreDiagnostic("-Wunused-function")
+#endif //Shut up, Clang!
 #define PCB__strlen_char(str) PCB_strlen(str)
 #define PCB__strlen_wchar_t(str) PCB_wcslen(str)
 
@@ -11816,6 +11820,9 @@ PCB_maybe_inline PCB_StringView PCB_StringView_trim(PCB_StringView sv) {
 #undef PCB__strlen_PCB_char8
 #undef PCB__strlen_PCB_char16
 #undef PCB__strlen_PCB_char32
+#if PCB_COMPILER_CLANG
+PCB_PopDiagnostics()
+#endif
 #endif //PCB_IMPLEMENTATION_STRING (inline)
 
 //Section 3.5: Platform-independent (sort of) process functions.
