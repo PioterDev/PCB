@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 20
+#define PCB_VERSION_PATCH 21
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -730,10 +730,8 @@
 #define PCB_Noreturn [[noreturn]]
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 201112L
 #define PCB_Noreturn _Noreturn
-#elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_TCC
-#define PCB_Noreturn __attribute__((noreturn))
-#elif PCB_COMPILER_CLANG >= 30100
-#define PCB_Noreturn _Noreturn
+#elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 30100 || PCB_COMPILER_TCC
+#define PCB_Noreturn __attribute__((__noreturn__))
 #elif PCB_COMPILER_MSVC
 #define PCB_Noreturn __declspec(noreturn)
 #else
