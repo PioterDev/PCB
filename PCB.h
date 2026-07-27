@@ -4201,7 +4201,7 @@ PCB_Enum(PCB_Platform_RT, uint16_t) {
  * Enum for compiler identification at *runtime* (hence the _RT suffix)
  * rather than compile time (without the _RT suffix).
  */
-PCB_Enum(PCB_Compiler_RT, uint8_t) {
+PCB_Enum(PCB_Compiler_RT, uint16_t) {
     PCB_COMPILER_RT_UNKNOWN,
     PCB_COMPILER_RT_GCC,
     PCB_COMPILER_RT_CLANG,
@@ -4243,10 +4243,16 @@ PCB_Enum(PCB_BuildType, uint8_t) {
 };
 
 typedef struct {
-    /* Path to the compiler executable to use for C and C++ respectively.
-     * Defaults to the compiler's name used to build this file.
+    PCB_Compiler_RT kind;
+    /**
+     * @brief Version of the compiler in the format of `PCB_COMPILER_*` macros.
      */
-    const char* compilerPath;
+    unsigned int version;
+    const char *path;
+} PCB_Compiler;
+
+typedef struct {
+    PCB_Compiler compiler;
     //Path to the build directory for caching object files. Defaults to "build/".
     const char* buildPath;
     //Name of the final executable/shared object.
@@ -4337,8 +4343,6 @@ typedef struct {
              * Otherwise it should be set to false.
              */
             unsigned char gnu : 1;
-            //TODO: implementation & docs
-            PCB_Compiler_RT compilerUsed : 3;
             /* Whether to use a C compiler for C files in a C++ build.
              * Setting this flag in C will cause C++ files to be compiled
              * with a C++ compiler instead of being skipped.
@@ -4366,8 +4370,8 @@ typedef enum {
     PCB_BUILDOPTION_NONE = 0,
     //Sets build path to "build/", adds "src/" to sources and "include/" to includes.
     PCB_BUILDOPTION_DEFAULT_PATHS = 1 << 1,
-    //Sets compiler path, language standard to the compiler name,
-    //standard used to compile this file and the compiler's argv syntax.
+    //Sets compiler path, compiler version, language standard and extensions
+    //to values used when compiling this library.
     PCB_BUILDOPTION_DEFAULT_COMPILER = 1 << 2,
     //Adds a list of warnings from `PCB__BuildContext_addDefaultWarnings()`.
     PCB_BUILDOPTION_DEFAULT_WARNINGS = 1 << 3,
