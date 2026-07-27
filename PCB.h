@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 17
+#define PCB_VERSION_PATCH 18
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5985,25 +5985,34 @@ PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes) PCB_Nonnul
 
 /**
  * @brief Spawns a child process, which runs `command` concurrently.
- * @return a valid `PCB_Process` structure with information about the
- * child process or a structure with an invalid `handle` field on error.
- * To check it, use `PCB_Process_isValid`. The error is logged automatically.
+ * The process information is stored in `process`.
  *
  * On POSIX systems, if `command` is not null-terminated, this function will
  * append `NULL` to `command` prior to calling `exec` and remove it afterwards.
+ *
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEINVAL: `command` was empty or (Windows) resulted in an empty string.
+ * - POSIX domain (POSIX):
+ *     See pipe(2), fcntl(2) & F_SETFD(2), fork(2), execvp(2), (Linux)clone3(2).
+ * - WinAPI domain (Windows): See CreateProcessA.
+ * The returned status can also hold any value returned by `PCB_ShellCommand_render`.
+ * On error, `*process` is initialized to invalid fields (see `PCB_Process_init`).
  */
-PCBAPI PCB_Process PCBCALL PCB_ShellCommand_runBg(PCB_ShellCommand* command) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runBg(
+    PCB_ShellCommand *command,
+    PCB_Process *process
+) PCB_Nonnull_Arg(1, 2);
 /**
  * @brief Runs `command` and waits for it to exit.
  * @return `PCB_OK(<exit code of `command`>)` on success; check with `PCB_ISOK()`.
  * On error, the returned status can hold the following domain-code pairs:
  * - Common domain:
  *   - PCB_CEINVAL: `command` was empty.
- * - POSIX domain (POSIX):
- *   See fork(2), (Linux)clone3(2), pipe(2), fcntl(2), execvp(2), waitpid(2).
- * - WinAPI domain (Windows):
- *   See CreateProcessA, WaitForSingleObject.
- * This mess will be cleaned up in the future.
+ * - POSIX domain (POSIX): See waitpid(2).
+ * - WinAPI domain (Windows): See WaitForSingleObject.
+ * The returned status can also hold any value returned by `PCB_ShellCommand_runBg`.
  */
 PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) PCB_Nonnull_Arg(1);
 /**
@@ -11715,83 +11724,75 @@ int PCB_Processes_waitForAll(PCB_Processes* processes) {
     return PCB_Processes_waitForRange(processes, 0, processes->length);
 }
 
-PCB_Process PCB_ShellCommand_runBg(PCB_ShellCommand* command) {
-    PCB_CHECK_SELF(command, PCB_Process_init());
-    if(command->data == NULL || command->length < 1) {
-        PCB_log(PCB_LOGLEVEL_ERROR, "Cannot run an empty command");
-        PCB_ClearError(); errno = EINVAL;
-        return PCB_Process_init();
-    }
+PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
+    PCB_CHECK_SELF(cmd, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_NULL(p,   PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+
+    *p = PCB_Process_init();
+    if(cmd->data == NULL || cmd->length < 1)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
 #if PCB_PLATFORM_WINDOWS
     STARTUPINFO startupinfo   = PCB_ZEROED; startupinfo.cb = sizeof(startupinfo);
     PROCESS_INFORMATION pInfo = PCB_ZEROED;
 
-    PCB_String s = PCB_ZEROED;
-    PCB_Status st = PCB_ShellCommand_render(command, &s);
+    PCB_String cmdline = PCB_ZEROED;
+    PCB_Status st = PCB_ShellCommand_render(cmd, &cmdline);
     if(!PCB_ISOK(st)) {
-        PCB_String_destroy(&s);
-        return PCB_Process_init();
+        PCB_String_destroy(&cmdline);
+        return st;
     }
-    if(PCB_String_isEmpty(&s)) return PCB_Process_init();
+    if(PCB_String_isEmpty(&cmdline)) {
+        PCB_String_destroy(&cmdline);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    }
 
-    errno = 0;
     BOOL success = CreateProcessA(
-        NULL, s.data, NULL, NULL, true, 0, NULL, NULL, &startupinfo, &pInfo
+        NULL, cmdline.data, NULL, NULL, true, 0, NULL, NULL, &startupinfo, &pInfo
     );
-    PCB_String_destroy(&s);
-    if(!success) {
-        PCB_Status status = {PCB_STATUS_DOMAIN_WINAPI, GetLastError()};
-        PCB_Status_log(status, "Failed to create a child process");
-        return PCB_Process_init();
-    }
+    PCB_String_destroy(&cmdline);
+    if(!success) return PCB_STATUS_NATIVE_SYSTEM_API();
     CloseHandle(pInfo.hThread);
-    PCB_Process process = PCB_Process_init();
-    process.handle = pInfo.hProcess;
-    return process;
+    p->handle = pInfo.hProcess;
+    return PCB_OK();
 #elif PCB_PLATFORM_POSIX
     //the caller may depend on the lack of null termination afterwards
     bool hadNullLast = true;
-    if(command->data[command->length - 1] != NULL) {
-        PCB_ShellCommand_append_arg(command, NULL);
+    if(cmd->data[cmd->length - 1] != NULL) {
+        PCB_ShellCommand_append_arg(cmd, NULL);
         hadNullLast = false;
     }
-    int code = 0;
-    PCB_Process child = PCB_Process_init();
+    PCB_Status result = PCB_OK();
     //checking what error has occured in the child is impossible with fork(2) without some IPC
-    int tmpPipe[2] = { -1, -1 };
+    int tmpPipe[2] = {-1, -1}, code;
     PCB_ssize_t r = -1;
-    if(pipe(tmpPipe) < 0) {
-        PCB_Status status = {PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno};
-        PCB_Status_log(status, "Failed to create a temporary pipe");
-        code = -(int)status.code; goto end;
+    if(pipe(tmpPipe) < 0) { //can only fail with fd limit reached
+        result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno);
+        goto end;
     }
-    if(fcntl(tmpPipe[1], F_SETFD, FD_CLOEXEC) < 0) {
-        PCB_Status status = {PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno};
-        PCB_Status_log(status, "Failed to set the temporary pipe to 'close-on-exec'");
-        code = -(int)status.code; goto end;
+    if(fcntl(tmpPipe[1], F_SETFD, FD_CLOEXEC) < 0) { //should not happen
+        result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno);
+        goto end;
     }
 #if PCB_PLATFORM_LINUX
     if(PCB__Linux_has_pidfd()) {
         struct clone_args a = PCB_ZEROED;
         a.flags = CLONE_PIDFD;
-        a.pidfd = (__u64)(uintptr_t)&child.pidfd;
+        a.pidfd = (__u64)(uintptr_t)&p->pidfd;
         a.exit_signal = SIGCHLD;
-        child.handle = (pid_t)syscall(SYS_clone3, &a, sizeof(a));
+        p->handle = (pid_t)syscall(SYS_clone3, &a, sizeof(a));
     } else {
-        child.handle = fork();
+        p->handle = fork();
     }
 #else
-    child.handle = fork();
+    p->handle = fork();
 #endif //pidfd
-    if(child.handle == -1) {
-        PCB_Status status = {PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno};
-        PCB_Status_log(status, "Failed to create a child process");
-        code = -(int)status.code; goto end;
-    }
-    else if(child.handle == 0) {
+    if(p->handle < 0) {
+        result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)errno);
+        goto end;
+    } else if(p->handle == 0) {
         close(tmpPipe[0]);
-        execvp(command->data[0], (char* const*)command->data);
-        code = -errno;
+        execvp(cmd->data[0], (char* const*)cmd->data);
+        code = errno;
         write(tmpPipe[1], &code, sizeof(code));
         _exit(255);
     }
@@ -11802,31 +11803,35 @@ repeat:
         if(errno == EINTR) goto repeat;
         PCB_Unreachable; //at least it should be...
     } else if(r > 0) {
-        errno = -code;
+        //Exactly sizeof(int) bytes were written, which should be atomically
+        //updated in kernel structures. If not...well...
+        PCB_assert(r == sizeof(code));
+        errno = code;
+        result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)code);
     } //0 means nothing was written and no error has occured
 end:
     if(tmpPipe[1] >= 0) close(tmpPipe[1]);
     if(tmpPipe[0] >= 0) close(tmpPipe[0]);
-    if(code != 0) {
-        if(child.handle > 0) waitpid(child.handle, NULL, 0); //reap the child on error
-        child.handle = code;
+    if(!PCB_ISOK(result)) {
+#if PCB_PLATFORM_LINUX
+        if(p->pidfd >= 0) { close(p->pidfd); p->pidfd = -1; }
+#endif
+        if(p->handle > 0) waitpid(p->handle, NULL, 0); //reap the child on error
+        p->handle = -1;
     }
-    if(!hadNullLast) --command->length;
-    return child;
+    if(!hadNullLast) --cmd->length;
+    return result;
 #endif //platform-dependent way of running a shell command
 }
 
-PCB_Status PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) {
+PCB_Status PCB_ShellCommand_runAndWait(PCB_ShellCommand *cmd) {
     PCB_Status result;
-    PCB_CHECK_SELF(command, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
-    if(command->length < 1) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    PCB_CHECK_SELF(cmd, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(cmd->length < 1) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
 
-    PCB_Process process = PCB_ShellCommand_runBg(command);
-    if(!PCB_Process_isValid(&process)) {
-        result = PCB_STATUS_NATIVE_SYSTEM_API();
-        PCB_Status_log(result, "Failed to spawn child process");
-        return result;
-    }
+    PCB_Process process;
+    result = PCB_ShellCommand_runBg(cmd, &process);
+    if(!PCB_ISOK(result)) return result;
     if(!PCB_Process_waitForExit(&process)) {
         result = PCB_STATUS_NATIVE_SYSTEM_API();
         PCB_Status_log(result, "Failed to wait for shell command to exit");
@@ -13141,23 +13146,6 @@ int PCB_buildFromContext(PCB_BuildContext* context) {
 
 
 
-//PCB_ShellCommand_runAndWait:
-//On Linux:
-//The function creates a pipe to check if an error
-//happened when attempting to run the command. This does not
-//mean however that the command itself failed - only that
-//it couldn't be run.
-//A return value of -1 indicates that an empty command
-//was passed.
-//A return value of -2 indicates that the pipe couldn't be
-//created.
-//A return value of -3 indicates that creating a child process
-//to run the command failed.
-//A return value of -4 indicates that the command couldn't be run.
-//Any other return value can be interpreted as the exit code
-//of the executed shell command.
-//On Windows:
-//TODO: not finished
 
 
 //Appendix 2: Changelog
