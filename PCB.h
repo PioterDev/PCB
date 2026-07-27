@@ -3264,6 +3264,33 @@ PCB_Enum(PCB_Aeqa, uint8_t) {
     PCB_AEQA_OTHER_ERR   //an error has occured while checking for availability
 };
 
+//https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
+#ifndef PCB_AEQ_RESET
+//Remove all current effects.
+#define PCB_AEQ_RESET "\033[0m"
+#endif //PCB_AEQ_RESET
+
+#ifndef PCB_AEQ_BOLD
+//Make text bold.
+#define PCB_AEQ_BOLD "\033[1m"
+#endif //PCB_AEQ_BOLD
+
+#ifndef PCB_AEQ_FG_RGB
+//Set foreground (text) color to an RGB triplet.
+#define PCB_AEQ_FG_RGB(r, g, b) "\033[38;2;" PCB__STRINGIFY(r) ";" PCB__STRINGIFY(g) ";" PCB__STRINGIFY(b) "m"
+#endif //PCB_AEQ_FG_RGB
+
+#ifndef PCB_AEQ_BG_RGB
+//Set background color to an RGB triplet.
+#define PCB_AEQ_BG_RGB(r, g, b) "\033[48;2;" PCB__STRINGIFY(r) ";" PCB__STRINGIFY(g) ";" PCB__STRINGIFY(b) "m"
+#endif //PCB_AEQ_BG_RGB
+
+#ifndef PCB_AEQ_UNDERLINE
+//Make text underlined.
+#define PCB_AEQ_UNDERLINE "\033[4m"
+#endif //PCB_AEQ_UNDERLINE
+
+
 
 typedef enum {
     //Unknown/unsupported file type.
