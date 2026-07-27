@@ -3605,6 +3605,20 @@ typedef struct { const PCB_char8*  const* data; size_t length; } PCB_U8CStringsV
 typedef struct { const PCB_char16* const* data; size_t length; } PCB_U16CStringsView;
 typedef struct { const PCB_char32* const* data; size_t length; } PCB_U32CStringsView;
 
+#ifndef PCB_WSV_LIT
+#define PCB_WSV_LIT(lit) PCB_CLITERAL(PCB_WStringView)PCB_SV_LITS(lit)
+#endif //PCB_WSV_LIT
+#ifndef PCB_U8SV_LIT
+#define PCB_U8SV_LIT(lit) PCB_CLITERAL(PCB_U8StringView)PCB_SV_LITS(lit)
+#endif //PCB_U8SV_LIT
+#ifndef PCB_U16SV_LIT
+#define PCB_U16SV_LIT(lit) PCB_CLITERAL(PCB_U16StringView)PCB_SV_LITS(lit)
+#endif //PCB_U16SV_LIT
+#ifndef PCB_U32SV_LIT
+#define PCB_U32SV_LIT(lit) PCB_CLITERAL(PCB_U32StringView)PCB_SV_LITS(lit)
+#endif //PCB_U32SV_LIT
+
+
 /**
  * Unicode codepoint.
  * `code` stores the actual scalar value, while `length` is the number of code
