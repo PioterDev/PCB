@@ -4395,7 +4395,10 @@ typedef enum {
      * Fuzzing (MSVC only):
      * https://learn.microsoft.com/en-us/cpp/build/reference/fsanitize?view=msvc-170
      */
-
+    //Hint that the target will only be used on the system of whoever's building it.
+    //Adds "-march=native" in GCC/Clang, "/arch:<depends on local system>" in MSVC
+    //when used with `PCB_BUILDOPTION_OPTIMIZE`.
+    PCB_BUILDOPTION_LOCAL_SYSTEM = 1 << 10
     //TODO: more options
 } PCB_BuildOption;
 
