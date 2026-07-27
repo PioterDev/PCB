@@ -11870,7 +11870,7 @@ PCB_Process PCB_Process_self(void) {
 #elif PCB_PLATFORM_POSIX
     p.handle = getpid();
 #if PCB_PLATFORM_LINUX
-    if(PCB__Linux_has_pidfd()) p.pidfd = syscall(SYS_pidfd_open, p.handle, 0);
+    if(PCB__Linux_has_pidfd()) p.pidfd = (int)syscall(SYS_pidfd_open, p.handle, 0);
 #endif //pidfd
 #endif //platforms
     return p;
