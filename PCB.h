@@ -876,7 +876,7 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
  * @brief Used on function declarations with variadic arguments where the last
  * argument must to be a null pointer.
  */
-#define PCB_Sentinel_Null __attribute__((sentinel))
+#define PCB_Sentinel_Null __attribute__((__sentinel__))
 #else
 #define PCB_Sentinel_Null
 #endif //compilers
@@ -2690,11 +2690,11 @@ for(                                                                    \
 #endif //PCB_SSIZE_FMT
 
 #ifndef PCB_VA_forEach_until
-#define PCB_VA_forEach_until(args, argType, end, name)      \
-for(                                                        \
-    argType name = va_arg((args), argType);                 \
-    name != (end);                                          \
-    name = va_arg((args), argType)                          \
+#define PCB_VA_forEach_until(args, argType, end, name)  \
+for(                                                    \
+    argType name = va_arg((args), argType);             \
+    name != (end);                                      \
+    name = va_arg((args), argType)                      \
 )
 #endif //PCB_VA_forEach_until
 
@@ -3488,23 +3488,14 @@ typedef struct {
 #define PCB_SV_LIT(lit) PCB_CLITERAL(PCB_StringView)PCB_SV_LITS(lit)
 #endif //PCB_SV_LIT
 
-typedef PCB_CStrings PCB_ShellCommand;
-
 #ifndef PCB_CStrings_append
 #define PCB_CStrings_append(cstrs, str) PCB_Vec_append(cstrs, str)
 #endif //PCB_CStrings_append
-#ifndef PCB_ShellCommand_append_arg
-#define PCB_ShellCommand_append_arg PCB_CStrings_append
-#endif //PCB_ShellCommand_append_arg
 
 #ifndef PCB_CStrings_append_many
 #define PCB_CStrings_append_many(cstrs, ...) \
     PCB_Vec_append_variadic(cstrs, const char*, __VA_ARGS__)
 #endif //PCB_CStrings_append_many
-#ifndef PCB_ShellCommand_append_args
-#define PCB_ShellCommand_append_args PCB_CStrings_append_many
-#endif //PCB_ShellCommand_append_args
-
 
 
 /**
@@ -3724,6 +3715,10 @@ typedef PCB_CStrings PCB_FS_CStrings;
        //Then came codepoints outside of BMP...
        //@sa https://www.moria.us/articles/wchar-is-a-historical-accident/
 
+typedef struct {
+    PCB_CStrings argv;
+} PCB_ShellCommand;
+
 //NOTE: Zero-initialization of this structure is non-portable.
 //ALWAYS use `PCB_Process_init`.
 typedef struct {
@@ -3770,6 +3765,7 @@ typedef struct {
      */
     size_t poll_us;
 } PCB_Processes;
+
 
 
 typedef struct PCB_Arena PCB_Arena;
@@ -6120,6 +6116,63 @@ static PCB_ForceInline PCB_char32* PCB_StoreUTF32Codepoint(
 ) { *buf++ = codepoint; return buf; }
 
 
+/**
+ * @brief Appends `arg`, which may be NULL, to `cmd`.
+ * @return see `PCB_VEC_OK`.
+ */
+PCBAPI int PCBCALL PCB_ShellCommand_append_arg(
+    PCB_ShellCommand *cmd,
+    const char *arg
+) PCB_Nonnull_Arg(1);
+/**
+ * @brief Append a variable number of arguments to `cmd`. Each argument
+ * MUST be of type `const char*`, otherwise the behavior is undefined.
+ * The last argument MUST be NULL.
+ *
+ * You should use `PCB_ShellCommand_append_args`, which implicitly
+ * adds a NULL at the end, instead of this function directly.
+ *
+ * The function resets the number of arguments in `cmd` to however many there
+ * were at entry on error.
+ *
+ * @return see `PCB_VEC_OK`.
+ */
+PCBAPI int PCBCALL PCB_ShellCommand_append_args_variadic(
+    PCB_ShellCommand *cmd,
+    ...
+) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+
+/**
+ * @brief Append a variable number of arguments to `cmd`.
+ * To avoid problems with runtime variadics, this macro uses `append_n_args`
+ * whenever possible.
+ * @sa PCB_ShellCommand_append_args_variadic
+ */
+#ifdef PCB_HAS_STMT_EXPR
+#define PCB_ShellCommand_append_args(cmd, ...) __extension__ ({ \
+    const char *const PCB_MANGLE(args)[] = { __VA_ARGS__ }; \
+    PCB_ShellCommand_append_n_args(cmd, PCB_MANGLE(args), PCB_ARRAY_LEN(PCB_MANGLE(args))); \
+})
+#else
+#define PCB_ShellCommand_append_args(cmd, ...) \
+    PCB_ShellCommand_append_args_variadic(cmd, __VA_ARGS__, NULL)
+#endif //PCB_HAS_STMT_EXPR
+
+/**
+ * @brief When using this function with argc and argv,
+ * cast argv to `const char* const*` and argc to `unsigned int`.
+ * @return see `PCB_VEC_OK`.
+ */
+PCBAPI int PCBCALL PCB_ShellCommand_append_n_args(
+    PCB_ShellCommand *cmd,
+    const char *const *args,
+    size_t n
+) PCB_Nonnull_Arg(1, 2);
+PCBAPI void PCBCALL PCB_ShellCommand_reset(PCB_ShellCommand *cmd) PCB_Nonnull_Arg(1);
+/**
+ * @brief Free any resources associated with `cmd`.
+ */
+PCBAPI void PCBCALL PCB_ShellCommand_destroy(PCB_ShellCommand *cmd);
 
 /**
  * @brief Returns a `PCB_Process` structure with data about itself.
@@ -11769,6 +11822,47 @@ PCB_maybe_inline PCB_StringView PCB_StringView_trim(PCB_StringView sv) {
 
 //Section 3.5: Platform-independent (sort of) process functions.
 #ifdef PCB_IMPLEMENTATION_PROCESS
+int PCB_ShellCommand_append_arg(PCB_ShellCommand *cmd, const char *arg) {
+    PCB_CHECK_NULL(cmd, -1);
+    int res; PCB_Vec_try_append(&cmd->argv, arg, res); return res;
+}
+
+int PCB_ShellCommand_append_args_variadic(PCB_ShellCommand *cmd, ...) {
+    PCB_CHECK_NULL(cmd, -1);
+    va_list args;
+    int res;
+    size_t nargs_start = cmd->argv.length;
+    va_start(args, cmd);
+    PCB_VA_forEach_until(args, const char*, NULL, arg) {
+        PCB_Vec_try_append(&cmd->argv, arg, res);
+        if(res != PCB_VEC_OK) {
+            cmd->argv.length = nargs_start;
+            return res;
+        }
+    }
+    return 0;
+}
+
+int PCB_ShellCommand_append_n_args(
+    PCB_ShellCommand *cmd, const char *const *args, size_t n
+) {
+    PCB_CHECK_NULL(cmd,  -1);
+    PCB_CHECK_NULL(args, -1);
+    int res;
+    PCB_Vec_try_append_multiple(&cmd->argv, args, n, res);
+    return res;
+}
+
+void PCB_ShellCommand_reset(PCB_ShellCommand *cmd) {
+    PCB_CHECK_NULL(cmd,);
+    PCB_Vec_reset(&cmd->argv);
+}
+
+void PCB_ShellCommand_destroy(PCB_ShellCommand *cmd) {
+    if(cmd == NULL) return;
+    PCB_Vec_destroy(&cmd->argv);
+}
+
 PCB_Process PCB_Process_self(void) {
     PCB_Process p = PCB_Process_init();
 #if PCB_PLATFORM_WINDOWS
@@ -12015,7 +12109,7 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
     PCB_CHECK_NULL(p,   PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
 
     *p = PCB_Process_init();
-    if(cmd->data == NULL || cmd->length < 1)
+    if(cmd->argv.data == NULL || cmd->argv.length < 1)
         return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
 #if PCB_PLATFORM_WINDOWS
     STARTUPINFO startupinfo   = PCB_ZEROED; startupinfo.cb = sizeof(startupinfo);
@@ -12043,7 +12137,7 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
 #elif PCB_PLATFORM_POSIX
     //the caller may depend on the lack of null termination afterwards
     bool hadNullLast = true;
-    if(cmd->data[cmd->length - 1] != NULL) {
+    if(cmd->argv.data[cmd->argv.length - 1] != NULL) {
         PCB_ShellCommand_append_arg(cmd, NULL);
         hadNullLast = false;
     }
@@ -12077,7 +12171,7 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
         goto end;
     } else if(p->handle == 0) {
         close(tmpPipe[0]);
-        execvp(cmd->data[0], (char* const*)cmd->data);
+        execvp(cmd->argv.data[0], (char* const*)cmd->argv.data);
         code = errno;
         write(tmpPipe[1], &code, sizeof(code));
         _exit(255);
@@ -12105,7 +12199,7 @@ end:
         if(p->handle > 0) waitpid(p->handle, NULL, 0); //reap the child on error
         p->handle = -1;
     }
-    if(!hadNullLast) --cmd->length;
+    if(!hadNullLast) --cmd->argv.length;
     return result;
 #endif //platform-dependent way of running a shell command
 }
@@ -12113,7 +12207,7 @@ end:
 PCB_Status PCB_ShellCommand_runAndWait(PCB_ShellCommand *cmd) {
     PCB_Status result;
     PCB_CHECK_SELF(cmd, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
-    if(cmd->length < 1) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    if(cmd->argv.length < 1) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
 
     PCB_Process process;
     result = PCB_ShellCommand_runBg(cmd, &process);
@@ -12135,7 +12229,7 @@ PCB_Status PCB_ShellCommand_render(
     PCB_CHECK_SELF(buf, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
     PCB_Status result = PCB_CERR_NOMEM;
     size_t start_len = buf->length;
-    PCB_CStringsView cv = PCB_View_Vec_A(command);
+    PCB_CStringsView cv = PCB_View_Vec_A(&command->argv);
     if(PCB_Vec_isEmpty(&cv)) return PCB_OK();
     //a heuristic prediction to minimize reallocs
     if(!PCB_String_reserve(buf, 8 * cv.length)) goto error;
