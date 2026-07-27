@@ -4050,6 +4050,84 @@ PCB_Enum(PCB_ArgvSyntax, uint8_t) {
 };
 
 /*
+ * Enum for architecture identification at *runtime* (hence the _RT suffix)
+ * rather than compile time (without the _RT suffix).
+ */
+PCB_Enum(PCB_Arch_RT, uint16_t) {
+    PCB_ARCH_RT_UNKNOWN,
+    PCB_ARCH_RT_x86_64,
+    PCB_ARCH_RT_x64 = PCB_ARCH_RT_x86_64,
+    PCB_ARCH_RT_i386,
+    PCB_ARCH_RT_x86 = PCB_ARCH_RT_i386,
+    PCB_ARCH_RT_i686 = PCB_ARCH_RT_i386,
+    PCB_ARCH_RT_ARM64,
+    PCB_ARCH_RT_AArch64 = PCB_ARCH_RT_ARM64,
+    //NOTE: This is generic 32-bit ARM. You should use the "v" variants if available.
+    PCB_ARCH_RT_ARM,
+    PCB_ARCH_RT_ARMv2,
+    PCB_ARCH_RT_ARMv3,
+    PCB_ARCH_RT_ARMv4T,
+    PCB_ARCH_RT_ARMv5,
+    PCB_ARCH_RT_ARMv5T,
+    PCB_ARCH_RT_ARMv6T2,
+    PCB_ARCH_RT_ARMv6,
+    PCB_ARCH_RT_ARMv7A,
+    PCB_ARCH_RT_ARMv7R,
+    PCB_ARCH_RT_ARMv7M,
+    PCB_ARCH_RT_ARMv7S,
+    PCB_ARCH_RT_Alpha,
+    PCB_ARCH_RT_M68k,
+    PCB_ARCH_RT_MIPS,
+    PCB_ARCH_RT_PowerPC,
+    PCB_ARCH_RT_SPARC,
+
+    PCB_ARCH_RT_CURRENT =
+#if   PCB_ARCH_x86_64 || PCB_ARCH_x64
+        PCB_ARCH_RT_x86_64
+#elif PCB_ARCH_i386 || PCB_ARCH_x86
+        PCB_ARCH_RT_i386
+#elif PCB_ARCH_ARM64 || PCB_ARCH_AArch64
+        PCB_ARCH_RT_ARM64
+#elif PCB_ARCH_ARMv2
+        PCB_ARCH_RT_ARMv2
+#elif PCB_ARCH_ARMv3
+        PCB_ARCH_RT_ARMv3
+#elif PCB_ARCH_ARMv4T
+        PCB_ARCH_RT_ARMv4T
+#elif PCB_ARCH_ARMv5
+        PCB_ARCH_RT_ARMv5
+#elif PCB_ARCH_ARMv5T
+        PCB_ARCH_RT_ARMv5T
+#elif PCB_ARCH_ARMv6T2
+        PCB_ARCH_RT_ARMv6T2
+#elif PCB_ARCH_ARMv6
+        PCB_ARCH_RT_ARMv6
+#elif PCB_ARCH_ARMv7A
+        PCB_ARCH_RT_ARMv7A
+#elif PCB_ARCH_ARMv7R
+        PCB_ARCH_RT_ARMv7R
+#elif PCB_ARCH_ARMv7M
+        PCB_ARCH_RT_ARMv7M
+#elif PCB_ARCH_ARMv7S
+        PCB_ARCH_RT_ARMv7S
+#elif PCB_ARCH_ARM
+        PCB_ARCH_RT_ARM
+#elif PCB_ARCH_Alpha
+        PCB_ARCH_RT_Alpha
+#elif PCB_ARCH_M68k
+        PCB_ARCH_RT_M68k
+#elif PCB_ARCH_MIPS
+        PCB_ARCH_RT_MIPS
+#elif PCB_ARCH_PowerPC
+        PCB_ARCH_RT_PowerPC
+#elif PCB_ARCH_SPARC
+        PCB_ARCH_RT_SPARC
+#else
+        PCB_ARCH_RT_UNKNOWN
+#endif //architectures
+};
+
+/*
  * Enum for platform identification at *runtime* (hence the _RT suffix)
  * rather than compile time (without the _RT suffix).
  */
