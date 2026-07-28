@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Piotr Mikolajewski
  *
  * This is PCB, a header-only general purpose C library
- * with build capabilities (well, not yet :>).
+ * with build capabilities.
  *
  * PCB is free software: you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -34,11 +34,11 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 8
+#define PCB_VERSION_MINOR 9
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 22
+#define PCB_VERSION_PATCH 0
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -2930,6 +2930,11 @@ PCB_Enum_Fixed(PCB_Status_Domain, uint32_t) {
      * `code` corresponds to values defined in `PCB_Result`.
      */
     PCB_STATUS_DOMAIN_PCB = 65536,
+    /**
+     * @brief Status comes from PCB's build system.
+     * `code` corresponds to values defined in `PCB_Build_Result`.
+     */
+    PCB_STATUS_DOMAIN_PCB_BUILD = 65537,
 };
 #else
 /*
@@ -2950,6 +2955,7 @@ typedef uint32_t PCB_Status_Domain;
 #define PCB_STATUS_DOMAIN_POSIX (PCB_Status_Domain)3
 #define PCB_STATUS_DOMAIN_WINAPI (PCB_Status_Domain)4
 #define PCB_STATUS_DOMAIN_PCB (PCB_Status_Domain)65536
+#define PCB_STATUS_DOMAIN_PCB_BUILD (PCB_Status_Domain)65537
 #endif //provide an actual enumeration if possible, fallback to macros
 /**
  * @brief The first 2^16 domains are permanently reserved for mapping to
@@ -3208,6 +3214,19 @@ PCB_Enum(PCB_Result, uint32_t) {
     PCB_RESULT_COUNT,
 };
 
+PCB_Enum(PCB_Build_Result, uint32_t) {
+    //Provided only for backwards compatibility. Not actually used.
+    PCB_BUILD_RESULT_SUCCESS = 0,
+    PCB_BUILD_RESULT_COMPILATION_ERROR,
+    PCB_BUILD_RESULT_ARCHIVAL_ERROR,
+    PCB_BUILD_RESULT_LINKING_ERROR,
+    PCB_BUILD_RESULT_NO_SRC,
+    PCB_BUILD_RESULT_NO_NAME_1SRC,
+    PCB_BUILD_RESULT_NO_BUILD_PATH,
+    PCB_BUILD_RESULT_NO_OBJ_TO_ARCHIVE,
+    PCB_BUILD_RESULT_NO_OBJ_TO_LINK,
+    PCB_BUILD_RESULT_ILLEGAL_USER_STATE,
+};
 
 /**
  * @brief Dynamic array of untyped bytes.
@@ -3475,6 +3494,18 @@ typedef struct {
     size_t length;
     size_t capacity;
 } PCB_CStringPairs;
+
+typedef struct {
+    const PCB_CStringPair* data;
+    size_t length;
+} PCB_CStringPairsView;
+
+#ifndef PCB_SV_Fmt
+#define PCB_SV_Fmt "%.*s"
+#endif //PCB_SV_Fmt
+#ifndef PCB_SV_Arg
+#define PCB_SV_Arg(sv) (int)(sv).length, (sv).data
+#endif //PCB_SV_Arg
 
 //Create a `S`tructure out of the string `lit`eral.
 #ifndef PCB_SV_LITS
@@ -4238,11 +4269,12 @@ typedef struct {
 
 typedef struct {
     PCB_Compiler compiler;
-    //Path to the build directory for caching object files. Defaults to "build/".
+    //Path to the build directory for caching object files.
     const char* buildPath;
-    //Name of the final executable/shared object.
+    //Name of the final build artifact.
     const char* outputPath;
-    /* Vector of paths to source directories/individual files.
+    /*
+     * Vector of paths to source directories/individual files.
      * Currently only 1 source directory is supported,
      * while individual files are not implemented yet.
      */
@@ -4253,11 +4285,13 @@ typedef struct {
     PCB_CStrings libs;
     //Vector of names of libraries to link *statically*.
     PCB_CStrings staticLibs;
-    /* Vector of additional paths to pass to the compiler
+    /*
+     * Vector of additional paths to pass to the linker
      * to search for specified libraries.
      */
     PCB_CStrings librarySearchPaths;
-    /* Vector of compiler optimization flags.
+    /*
+     * Vector of compiler optimization flags.
      * Not a singular `const char*` since, for example in GCC,
      * you can pass "-f*" optimization flags on top of "-O*" flags.
      */
@@ -4294,13 +4328,26 @@ typedef struct {
     PCB_Arena_Mark* mark;
     //Internal buffer used for accumulating source file paths for compilation.
     PCB_CStrings sourceFiles;
-    //Internal buffer used for accumulating object file paths for linking.
+    /*
+     * Mapping of `sourceFiles` to corresponding build paths.
+     * You can add your own object files here, as long as you do so
+     * before calling `PCB_build_fromContext`.
+     * If you manage the build process manually, you must ensure that the mapping
+     * remains correct during the entire compilation step.
+     */
     PCB_CStrings objectFiles;
-    /* The language standard used to compile source files.
+    /*
+     * The language standard used to compile source files.
      * Defaults to the standard used to build this file.
-     * Setting it to 0 stops the standard flag from being added.
      */
     long standard;
+    //You are kindly advised to not use target triplets, pretty please?
+    //It's a nightmare to deal with.
+    //See https://mcyoung.xyz/2025/04/14/target-triples/ for a breakdown.
+    struct {
+        PCB_Arch_RT arch;
+        PCB_Platform_RT platform;
+    } target;
 
     //Flags for the build context.
     //TODO: add useful stuff here
@@ -4315,31 +4362,85 @@ typedef struct {
 #endif //C++ || <C11
 #endif //PCB_TEMP
         struct {
-            /* Specifies how many commands should be run in parallel.
+            /*
+             * Specifies how many commands should be run in parallel.
              *
              * A value of 0, 1, >1 means
-             * no parallelism,
-             * running "number of cores in the system" commands in parallel,
+             * no parallelism (*),
+             * running "number of cores in the system" commands in parallel (*),
              * running this exact amount of commands in parallel respectively.
+             *
+             * (*) - this logic is flipped if the library is built with
+             * `PCB_BUILD_0_AS_PARALLEL` macro; see
+             * "list of macros with special meaning" for details.
              */
-            unsigned char parallel;
+            uint8_t parallel;
             //Whether to force recompilation of all detected source files.
-            unsigned char alwaysBuild : 1;
-            /* Whether to use GNU extensions.
+            uint8_t alwaysBuild : 1;
+            /*
+             * Whether to use GNU extensions.
              * Only relevant with compilers that support it.
              * Otherwise it should be set to false.
              */
-            unsigned char gnu : 1;
-            /* Whether to use a C compiler for C files in a C++ build.
+            uint8_t gnu : 1;
+            /*
+             * Whether to use a C compiler for C files in a C++ build.
              * Setting this flag in C will cause C++ files to be compiled
              * with a C++ compiler instead of being skipped.
              */
-            unsigned char ccInCpp : 1;
+            uint8_t ccInCpp : 1;
             //Whether anything was rebuilt. Only use when the entire build succeeded.
-            unsigned char rebuiltAnything : 1;
-            //TODO: implementation & docs
+            uint8_t rebuiltAnything : 1;
+            /**
+             * @brief Determines the build artifact kind.
+             */
             PCB_BuildType buildType : 2;
-            unsigned int _unused : 12;
+            //Suppresses the "up-to-date" log if set to `true`.
+            uint8_t noutd : 1;
+            /**
+             * @brief Defer checks for source file modifications until all source
+             * files are collected.
+             * If set, `sourceFiles` contains all paths to source files
+             * discovered, regardless if they need to be rebuilt or not.
+             * Otherwise, modification checks are performed as soon as the file
+             * is discovered, while the content of `sourceFiles` depends on
+             * the `buildImmediately` flag.
+             */
+            uint8_t deferModChecks : 1;
+            /**
+             * @brief Build source files as soon as they are discovered.
+             * If set, `sourceFiles` will be empty.
+             * Otherwise, defer rebuilding until all source files that need
+             * to be rebuilt are discovered.
+             * `sourceFiles` will contain all paths to source files
+             * discovered that need to be rebuilt.
+             */
+            uint8_t buildImmediately : 1;
+            /**
+             * @brief Whether to default to statically linking libraries outside
+             * of those in `libs` and `staticLibs`.
+             * If false, the default for the target platform is used, unless
+             * `staticLibs` is non-empty, in which case libraries
+             * not specified in `libs` or `staticLibs` are linked dynamically.
+             *
+             * This is required because, for example, if you provide a static
+             * library to link against, the linker may receive a flag that
+             * forces all subsequent libraries to also be linked statically.
+             * That is the case for `ld`, which cannot reset back to
+             * whatever is the platform's default value. Also, for whatever
+             * reason, GCC passes user-provided flags first (at least v16.1.1).
+             */
+            uint8_t linkStaticallyByDefault : 1;
+            /**
+             * @brief Whether to compile, but not link/archive (compile without linking).
+             */
+            uint8_t cwl : 1;
+            /**
+             * @brief Whether to archive/link, but not compile (link without compiling).
+             * Ignored when building only 1 file.
+             */
+            uint8_t lwc : 1;
+            uint16_t _unused : 12;
         } PCB_TEMP;
 #undef PCB_TEMP
     } flags;
@@ -4353,46 +4454,41 @@ typedef struct {
 #endif //C++ || <C11
 #endif //PCB_BuildContext_flags
 
-typedef enum {
-    PCB_BUILDOPTION_NONE = 0,
-    //Sets build path to "build/", adds "src/" to sources and "include/" to includes.
-    PCB_BUILDOPTION_DEFAULT_PATHS = 1 << 1,
-    //Sets compiler path, compiler version, language standard and extensions
-    //to values used when compiling this library.
-    PCB_BUILDOPTION_DEFAULT_COMPILER = 1 << 2,
-    //Adds a list of warnings from `PCB__BuildContext_addDefaultWarnings()`.
-    PCB_BUILDOPTION_DEFAULT_WARNINGS = 1 << 3,
-    //Sets some fields to commonly used defaults.
-    PCB_BUILDOPTION_DEFAULTS =
-        PCB_BUILDOPTION_DEFAULT_PATHS    |
-        PCB_BUILDOPTION_DEFAULT_COMPILER |
-        PCB_BUILDOPTION_DEFAULT_WARNINGS,
-    //Disables debug information.
-    PCB_BUILDOPTION_NODEBUG = 1 << 4,
-    //Equivalent to -O2 or /O2.
-    PCB_BUILDOPTION_OPTIMIZE = 1 << 5,
-    //Turns the thread sanitizer (TSan) on if available. Incompatible with ASan and LSan.
-    PCB_BUILDOPTION_TSAN = 1 << 6,
-    //Turns the address sanitizer (ASan) on if available. Incompatible with TSan.
-    PCB_BUILDOPTION_ASAN = 1 << 7,
-    //Turns the leak sanitizer (LSan) on if available. Incompatible with TSan.
-    PCB_BUILDOPTION_LSAN = 1 << 8,
-    //Turns the undefined behavior sanitizer (UBSan) on if available.
-    PCB_BUILDOPTION_UBSAN = 1 << 9,
-    /*
-     * There are more sanitizers available, but they are compiler-exclusive:
-     * Memory sanitizer (clang only):
-     * https://clang.llvm.org/docs/MemorySanitizer.html
-     * Fuzzing (MSVC only):
-     * https://learn.microsoft.com/en-us/cpp/build/reference/fsanitize?view=msvc-170
-     */
-    //Hint that the target will only be used on the system of whoever's building it.
-    //Adds "-march=native" in GCC/Clang, "/arch:<depends on local system>" in MSVC
-    //when used with `PCB_BUILDOPTION_OPTIMIZE`.
-    PCB_BUILDOPTION_LOCAL_SYSTEM = 1 << 10
-    //TODO: more options
-} PCB_BuildOption;
-
+typedef uint64_t PCB_BuildOptions;
+#define PCB_BUILDOPTION_NONE ((PCB_BuildOptions)0)
+//Sets build path to "build/", adds "src/" to sources and "include/" to includes.
+#define PCB_BUILDOPTION_DEFAULT_PATHS ((PCB_BuildOptions)1 << 1)
+//Sets compiler path, compiler version, language standard and extensions
+//to values used when compiling this library.
+#define PCB_BUILDOPTION_DEFAULT_COMPILER ((PCB_BuildOptions)1 << 2)
+//Adds a list of warnings from `PCB__BuildContext_addDefaultWarnings()`.
+#define PCB_BUILDOPTION_DEFAULT_WARNINGS ((PCB_BuildOptions)1 << 3)
+//Sets some fields to commonly used defaults.
+#define PCB_BUILDOPTION_DEFAULTS (PCB_BUILDOPTION_DEFAULT_PATHS | PCB_BUILDOPTION_DEFAULT_COMPILER | PCB_BUILDOPTION_DEFAULT_WARNINGS)
+//Disables debug information.
+#define PCB_BUILDOPTION_NODEBUG ((PCB_BuildOptions)1 << 4)
+//Equivalent to -O2 or /O2.
+#define PCB_BUILDOPTION_OPTIMIZE ((PCB_BuildOptions)1 << 5)
+//Turns the thread sanitizer (TSan) on if available. Incompatible with ASan and LSan.
+#define PCB_BUILDOPTION_TSAN ((PCB_BuildOptions)1 << 6)
+//Turns the address sanitizer (ASan) on if available. Incompatible with TSan.
+#define PCB_BUILDOPTION_ASAN ((PCB_BuildOptions)1 << 7)
+//Turns the leak sanitizer (LSan) on if available. Incompatible with TSan.
+#define PCB_BUILDOPTION_LSAN ((PCB_BuildOptions)1 << 8)
+//Turns the undefined behavior sanitizer (UBSan) on if available.
+#define PCB_BUILDOPTION_UBSAN ((PCB_BuildOptions)1 << 9)
+/*
+ * There are more sanitizers available, but they are compiler-exclusive:
+ * Memory sanitizer (clang only):
+ * https://clang.llvm.org/docs/MemorySanitizer.html
+ * Fuzzing (MSVC only):
+ * https://learn.microsoft.com/en-us/cpp/build/reference/fsanitize?view=msvc-170
+ */
+//Hint that the target will only be used on the system of whoever's building it.
+//Adds "-march=native" in GCC/Clang, "/arch:<depends on local system>" in MSVC
+//when used with `PCB_BUILDOPTION_OPTIMIZE`.
+#define PCB_BUILDOPTION_LOCAL_SYSTEM ((PCB_BuildOptions)1 << 10)
+//TODO: more options
 
 
 /**
@@ -4508,6 +4604,7 @@ PCBAPI void PCBCALL PCB_Status_log(
 PCBAPI PCB_StringView PCBCALL PCB_Status_domain(PCB_Status status) PCB_ConstFn;
 PCBAPI PCB_StringView PCBCALL PCB_Common_strerror(PCB_Common_Error errnum) PCB_ConstFn;
 PCBAPI PCB_StringView PCBCALL PCB_Result_strerror(PCB_Result errnum) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_Build_Result_strerror(PCB_Build_Result errnum) PCB_ConstFn;
 
 
 
@@ -6796,6 +6893,7 @@ PCBAPI size_t PCBCALL PCB_getNumberOfCores(void);
 /* -------------------------------------------------------------- */
 #if PCB_PLATFORM_WINDOWS
 PCBAPI bool PCBCALL PCB_Windows_can_opt_out_of_MAX_PATH(void);
+PCBAPI bool PCBCALL PCB_Windows_running_under_WINE(void);
 #endif //platform-specific functions
 
 
@@ -6814,6 +6912,10 @@ PCBAPI int PCBCALL PCB_Platform_RT_is_POSIX(PCB_Platform_RT platform) PCB_ConstF
  * @brief Check whether the `platform` is known to implement a BSD-style system API.
  */
 PCBAPI bool PCBCALL PCB_Platform_RT_is_BSD(PCB_Platform_RT platform) PCB_ConstFn;
+/**
+ * @brief Check whether the `platform` is an Apple platform.
+ */
+PCBAPI bool PCBCALL PCB_Platform_RT_is_Apple(PCB_Platform_RT platform) PCB_ConstFn;
 /**
  * @brief Get the string version of the C standard from an integer value
  * `standard` (for example, `199901` for "c99").
@@ -6849,15 +6951,133 @@ PCBAPI long PCBCALL PCB_GetCStandardInt(const char* standard) PCB_Nonnull_Arg(1)
  * @return non-zero integer value of a standard or 0 if a match wasn't found.
  */
 PCBAPI long PCBCALL PCB_GetCppStandardInt(const char* standard) PCB_Nonnull_Arg(1) PCB_PureFn;
-
+/**
+ * @brief Format `*target` into `platform`-specific name, based on `bt`.
+ *
+ * If `*target` has a file extension, no change is made.
+ * Otherwise a new string is allocated in `arena`, formatted based on
+ * the platform's conventions and supersedes `*target`.
+ *
+ * For example, if `bt == PCB_BUILDTYPE_DYNAMICLIB`, `*target` is "bin/foo" and
+ * `platform` is Linux, `*target` is replaced with "bin/libfoo.so".
+ *
+ * There may be strange results if `*target` is a weird filepath, like "/..////./".
+ *
+ * @return false if allocation fails, true otherwise.
+ */
+PCBAPI bool PCBCALL PCB_BuildType_formatName(
+    PCB_BuildType bt, PCB_Platform_RT platform, const char **target, PCB_Arena* arena
+) PCB_Nonnull_Arg(3, 4);
+/**
+ * @brief Returns a flag that specifies "compile without linking" based on `c`.
+ */
+PCBAPI const char* PCBCALL PCB_build_flag_cwl(PCB_Compiler_RT c) PCB_Nonnull_Return PCB_ConstFn;
+/**
+ * @brief Returns a flag that specifies "output to this filepath" based on `c`.
+ */
+PCBAPI const char* PCBCALL PCB_build_flag_output(PCB_Compiler_RT c) PCB_Nonnull_Return PCB_ConstFn;
+/**
+ * @brief Returns a pair of flags that specify "input files are C files" based on `c`,
+ * with the first as `key` and second as `value`.
+ * If `c` is unknown, both flags are empty strings.
+ *
+ * NOTE: Some compilers have this as a single flag, notably MSVC. In that case
+ * the 2nd flag is an empty string.
+ *
+ * NOTE: MSVC does not support building a subset of inputs as one language and
+ * another subset as another language - all inputs must be of the same language.
+ */
+PCBAPI PCB_CStringPair PCBCALL PCB_build_flag_treat_inputs_as_c(PCB_Compiler_RT c) PCB_ConstFn;
+/**
+ * @brief Returns a pair of flags that specify "input files are C++ files" based on `c`,
+ * with the first as `key` and second as `value`.
+ * If `c` is unknown, both flags are empty strings.
+ *
+ * NOTE: Some compilers have this as a single flag, notably MSVC. In that case
+ * the 2nd flag is an empty string.
+ *
+ * NOTE: MSVC does not support building a subset of inputs as one language and
+ * another subset as another language - all inputs must be of the same language.
+ */
+PCBAPI PCB_CStringPair PCBCALL PCB_build_flag_treat_inputs_as_cpp(
+    PCB_Compiler_RT c
+) PCB_ConstFn;
+/**
+ * @brief Returns a flag that specifies "subsequent libraries should
+ * be linked statically".
+ */
+PCBAPI const char* PCBCALL PCB_build_flag_default_to_static_linking(
+    PCB_Compiler_RT c
+) PCB_Nonnull_Return PCB_ConstFn;
+/**
+ * @brief Returns a flag that specifies "subsequent libraries should
+ * be linked dynamically".
+ */
+PCBAPI const char* PCBCALL PCB_build_flag_default_to_dynamic_linking(
+    PCB_Compiler_RT c
+) PCB_Nonnull_Return PCB_ConstFn;
+/**
+ * @brief Returns an `arena`-allocated string that specifies the language
+ * `standard` based on `compiler`.
+ * If `gnu`, GNU extensions are enabled, unless `compiler` doesn't support them
+ * (for example `PCB_COMPILERT_RT_MSVC`).
+ * If `cpp`, the C++ version is used. Otherwise the C version is used.
+ *
+ * @return an `arena`-allocated string on success, NULL if allocation failed.
+ *
+ * If `standard == 0`, or `standard` is not a valid C/C++ standard integer value,
+ * or `compiler` is `PCB_COMPILER_RT_UNKNOWN`, the returned string is empty;
+ * check with `*<returned ptr> == '\0'`.
+ * In the latter 2 cases a warning is issued.
+ */
+PCBAPI char* PCBCALL PCB_build_flag_standard(
+    long standard,
+    PCB_Arena* arena,
+    PCB_Compiler_RT compiler,
+    bool cpp,
+    bool gnu
+) PCB_Nonnull_Arg(2);
+/**
+ * @brief Appends diagnostic flags to `cstrs` chosen by the author of this library.
+ * The specific set of warnings depend on the `compiler`, whether we're in `cpp`,
+ * the compiler version and whether strict ISO conformance is requested.
+ */
+PCBAPI void PCBCALL PCB_build_flags_diagnostics_default(
+    PCB_CStrings* cstrs,
+    PCB_Compiler_RT compiler,
+    bool cpp,
+    unsigned int compilerVersion,
+    bool strict_iso
+) PCB_Nonnull_Arg(1);
+#ifndef PCB_build_flags_diagnostics_current_default
+#ifdef __cplusplus
+#define PCB_build_flags_diagnostics_current_default(cstrs) \
+    PCB_build_flags_diagnostics_default(cstrs, PCB_COMPILER_RT_CURRENT, true, PCB_COMPILER_VERSION, PCB_STRICT_ISO)
+#else
+#define PCB_build_flags_diagnostics_current_default(cstrs) \
+    PCB_build_flags_diagnostics_default(cstrs, PCB_COMPILER_RT_CURRENT, false, PCB_COMPILER_VERSION, PCB_STRICT_ISO)
+#endif //C++?
+#endif //PCB_build_flags_diagnostics_current_default
+/**
+ * Returns the preferred extension of the provided `c`ompiler for object files.
+ * Defaults to ".o" for unknown compilers.
+ * The returned view points to a static read-only null-terminated string.
+ */
+PCBAPI PCB_FS_StringView PCBCALL PCB_build_preferred_obj_file_ext(PCB_Compiler_RT c) PCB_ConstFn;
 
 /**
  * @brief Initializes the passed `context`.
  *
  * @param flags PCB_BuildOptions OR'ed together
- * @return 0 on success or non-zero value on error; TODO: docs for error values
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CENOMEM: Insufficient memory.
  */
-PCBAPI int PCBCALL PCB_BuildContext_init(PCB_BuildContext* context, int flags) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_BuildContext_init(
+    PCB_BuildContext *context,
+    PCB_BuildOptions options
+) PCB_Nonnull_Arg(1);
 /**
  * @brief Create a PCB_BuildContext struct.
  *
@@ -6871,9 +7091,76 @@ PCBAPI int PCBCALL PCB_BuildContext_init(PCB_BuildContext* context, int flags) P
  * Keep in mind that this function may silently fail,
  * which can cause subtle bugs.
  */
-PCBAPI PCB_BuildContext PCBCALL PCB_BuildContext_create(int flags);
-PCBAPI int PCBCALL PCB_build_fromContext(PCB_BuildContext* context) PCB_Nonnull_Arg(1);
+PCBAPI PCB_BuildContext PCBCALL PCB_BuildContext_create(PCB_BuildOptions options);
+/**
+ * @brief Resets `context` so it can be used in another build.
+ * Identical to `PCB_BuildContext_destroy`, but memory is not deallocated.
+ */
+PCBAPI void PCBCALL PCB_BuildContext_reset(PCB_BuildContext* context) PCB_Nonnull_Arg(1);
+/**
+ * @brief Destroys the passed `context`.
+ * Frees any memory allocated by PCB functions that
+ * accept a `PCB_BuildContext` struct 
+ * and resets every field to 0.
+ *
+ * Note that if you allocated memory in this structure
+ * manually, you have to also free it manually.
+ *
+ * @param context build context
+ */
+PCBAPI void PCBCALL PCB_BuildContext_destroy(PCB_BuildContext* context) PCB_Nonnull_Arg(1);
+PCBAPI PCB_Status PCBCALL PCB_needsRebuild(const char *src, const char *out) PCB_Nonnull_Arg(1, 2);
+PCBAPI PCB_Status PCBCALL PCB_needsRebuild_ne(const PCB_FS_char *src, const PCB_FS_char *out) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Build the target stored in `context`.
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ *
+ * There are way too many error conditions that can occur and you most likely
+ * a) don't care about literally all of them;
+ * b) either can't recover or want to blindly continue execution.
+ *
+ * Moreover, this API is meant for use in a human-centric environment with visual
+ * or otherwise direct access to logs. All meaningful errors are logged internally.
+ *
+ * As such, errors that are returned are largely undocumented.
+ *
+ * From the ones that you may actually care about:
+ * - The PCB/build domain contains error values related to the build process.
+ *   See `PCB_STATUS_DOMAIN_PCB_BUILD` for details.
+ */
+PCBAPI PCB_Status PCBCALL PCB_build_fromContext(PCB_BuildContext* context);
+/**
+ * @brief This function does some nice shit, like
+ * automatically rebuilding the build system.
+ *
+ * To use it, simply put it as the first thing in main:
+ * ```c
+int main(int argc, char *argv[]) {
+    PCB_REBUILD_THIS_SHIT(argc, argv);
+    ...
+}
+```
+ * After that and building the file, every subsequent change will be
+ * detected and the file will be automatically rebuilt when the program is ran.
+ * This way, you only need to build the build system manually once.
+ *
+ * The idea is shamelessly stole-I mean inspired by tsoding's nob.h's
+ * "Go Rebuild Urself™ Technology" due to its utter brilliance.
+ *
+ * It is recommended to not use this function directly as it is
+ * subject to change and sort of clunky. The vast majority of use cases are
+ * handled by `PCB_REBUILD_THIS_SHIT`.
+ *
+ * @param src path/to/the/file to be rebuilt, only relevant if it
+ * calls this function as the first statement in main(int, char*[]),
+ * using it outside that will provide strange results.
+ */
+PCBAPI void PCBCALL PCB_rebuild_shit(int argc, char** argv, const char* src) PCB_Nonnull_Arg(2, 3);
 
+//name shamelessly stolen from nob.h...or not
+#ifndef PCB_REBUILD_THIS_SHIT
+#define PCB_REBUILD_THIS_SHIT(argc, argv) PCB_rebuild_shit(argc, argv, __FILE__)
+#endif //PCB_REBUILD_THIS_SHIT
 
 
 /* --------------------------------------------------------------- */
@@ -7036,6 +7323,22 @@ static PCB_ForceInline int PCB_getEndianness(void) {
 /* ---------------------------------------------------------------- */
 #define PCB__defer_l(val, label) PCB_defer_varl(result, val, label)
 #define PCB__return_defer(val)   PCB_defer_varl(result, val, defer)
+#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
+#define PCB__Pragma_Suppress_enumeration_value_not_handled_in_switch() \
+PCB_PushDiagnostics() \
+PCB_IgnoreDiagnostic("-Wswitch-enum")
+#define PCB__Pragma_No_Suppress_enumeration_value_not_handled_in_switch() \
+PCB_PopDiagnostics()
+#else
+#define PCB__Pragma_Suppress_enumeration_value_not_handled_in_switch()
+#define PCB__Pragma_No_Suppress_enumeration_value_not_handled_in_switch()
+#endif
+
+
+#define PCB__BUG(msg) do { \
+    PCB_log(PCB_LOGLEVEL_FATAL, "%s:%d:%s: BUG: %s", __FILE__, __LINE__, __func__, msg); \
+    PCB_abort(); \
+} while(0)
 
 #ifdef PCB_DEBUG_SELF
 #define PCB__logTrace(...) PCB_logTrace(__VA_ARGS__)
@@ -7128,6 +7431,11 @@ bool PCB_Windows_can_opt_out_of_MAX_PATH(void) {
     if(v->dwMajorVersion > 10) return true;
     if(v->dwMajorVersion == 10 && v->dwBuildNumber >= 14393) return true;
     return false;
+}
+
+bool PCB_Windows_running_under_WINE(void) {
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    return ntdll != NULL && GetProcAddress(ntdll, "wine_get_version") != NULL;
 }
 #endif //platform-specific version checks
 
@@ -7407,6 +7715,7 @@ static const char* PCB__log_label(PCB_LogLevel level, PCB_Aeqa aeqa[2]) {
       case PCB_LOGLEVEL_FATAL_NL:
         if(aeqa[1] == PCB_AEQA_YES) return "[\033[1m\033[38;5;1mFatal\033[0m] ";
         return "[Fatal] ";
+      default: PCB_Unreachable;
     }
     return "";
 }
@@ -7433,6 +7742,7 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
       case PCB_LOGLEVEL_FATAL: case PCB_LOGLEVEL_FATAL_NL:
         PCB_fprintf(PCB_stderr, "%s", label);
         PCB_vfprintf(PCB_stderr, fmt, args); break;
+      default: PCB_Unreachable;
     }
     va_end(args);
     switch(level) {
@@ -7451,6 +7761,7 @@ void PCB_log(PCB_LogLevel level, const char* fmt, ...) {
         //fallthrough since stderr isn't buffered
       case PCB_LOGLEVEL_ERROR_NL: case PCB_LOGLEVEL_FATAL_NL:
         break;
+      default: PCB_Unreachable;
     }
 }
 #endif //PCB_IMPLEMENTATION_LOG
@@ -7547,6 +7858,36 @@ static bool PCB__Status_toString_PCB(PCB_Result e, char *buf, size_t bufsize) {
     return (unsigned int)required < bufsize;
 }
 
+static const char PCB_BUILD_RESULT_NO_SRC_STR[] = "No source specified";
+static const char PCB_BUILD_RESULT_NO_NAME_1SRC_STR[] =
+    "Builds with 1 source file require specifying the output name";
+static const char PCB_BUILD_RESULT_NO_BUILD_PATH_STR[] = "No build path specified";
+
+
+static PCB_StringView PCB__Build_Result_strerror(PCB_Build_Result e) {
+    switch(e) {
+      case PCB_BUILD_RESULT_SUCCESS: return PCB_SV_LIT("Success");
+      case PCB_BUILD_RESULT_COMPILATION_ERROR: return PCB_SV_LIT("Compilation error");
+      case PCB_BUILD_RESULT_ARCHIVAL_ERROR: return PCB_SV_LIT("Archival error");
+      case PCB_BUILD_RESULT_LINKING_ERROR: return PCB_SV_LIT("Linking error");
+      case PCB_BUILD_RESULT_NO_SRC: return PCB_SV_LIT(PCB_BUILD_RESULT_NO_SRC_STR);
+      case PCB_BUILD_RESULT_NO_NAME_1SRC: return PCB_SV_LIT(PCB_BUILD_RESULT_NO_NAME_1SRC_STR);
+      case PCB_BUILD_RESULT_NO_BUILD_PATH: return PCB_SV_LIT(PCB_BUILD_RESULT_NO_BUILD_PATH_STR);
+      case PCB_BUILD_RESULT_NO_OBJ_TO_ARCHIVE: return PCB_SV_LIT("No object files to archive");
+      case PCB_BUILD_RESULT_NO_OBJ_TO_LINK: return PCB_SV_LIT("No object files to link");
+      case PCB_BUILD_RESULT_ILLEGAL_USER_STATE: return PCB_SV_LIT("Illegal user-provided state");
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_PCB_build(PCB_Build_Result e, char *buf, size_t bufsize) {
+    const char *msg = PCB__Build_Result_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown PCB/build error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
 bool PCB_Status_toString(PCB_Status st, char* buf, size_t bufsize) {
     if(buf == NULL) return false;
     switch(st.domain) {
@@ -7562,6 +7903,8 @@ bool PCB_Status_toString(PCB_Status st, char* buf, size_t bufsize) {
         return PCB__Status_toString_WinAPI(st.code, buf, bufsize);
       case PCB_STATUS_DOMAIN_PCB:
         return PCB__Status_toString_PCB((PCB_Result)st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_PCB_BUILD:
+        return PCB__Status_toString_PCB_build((PCB_Build_Result)st.code, buf, bufsize);
       default:
         return (unsigned int)PCB_snprintf(
             buf, bufsize, "Unknown domain-code pair (%u, %u)", st.domain, st.code
@@ -7577,6 +7920,7 @@ PCB_StringView PCB_Status_domain(PCB_Status st) {
       case PCB_STATUS_DOMAIN_POSIX:     return PCB_SV_LIT("POSIX");
       case PCB_STATUS_DOMAIN_WINAPI:    return PCB_SV_LIT("WinAPI");
       case PCB_STATUS_DOMAIN_PCB:       return PCB_SV_LIT("PCB");
+      case PCB_STATUS_DOMAIN_PCB_BUILD: return PCB_SV_LIT("PCB/build");
       default:                          return PCB_SV_LIT("Unknown");
     }
 }
@@ -7609,6 +7953,12 @@ PCB_StringView PCB_Common_strerror(PCB_Common_Error e) {
 
 PCB_StringView PCB_Result_strerror(PCB_Result e) {
     PCB_StringView msg = PCB__Result_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
+}
+
+PCB_StringView PCB_Build_Result_strerror(PCB_Build_Result e) {
+    PCB_StringView msg = PCB__Build_Result_strerror(e);
     if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
     return msg;
 }
@@ -8340,6 +8690,7 @@ PCB_Status PCB_FS_mkdir_if_not_exists(const char* path) {
 PCB_Status PCB_FS_mkdir_if_not_exists_ne(const PCB_FS_char* path) {
     PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
     PCB_Status result = PCB_FS_mkdir_ne(path);
+PCB__Pragma_Suppress_enumeration_value_not_handled_in_switch()
     switch(result.domain) {
 #if PCB_PLATFORM_POSIX || PCB_PLATFORM_WINDOWS
       case PCB_STATUS_DOMAIN_SUCCESS: return result;
@@ -8348,20 +8699,17 @@ PCB_Status PCB_FS_mkdir_if_not_exists_ne(const PCB_FS_char* path) {
       case PCB_STATUS_DOMAIN_POSIX:
         if(result.code == EEXIST) return PCB_OK(0);
         return result;
-      case PCB_STATUS_DOMAIN_WINAPI:
 #elif PCB_PLATFORM_WINDOWS
       case PCB_STATUS_DOMAIN_WINAPI:
         if(result.code == ERROR_ALREADY_EXISTS) return PCB_OK(0);
         return result;
-      case PCB_STATUS_DOMAIN_POSIX:
 #endif //POSIX || Windows
-      case PCB_STATUS_DOMAIN_C:
-      case PCB_STATUS_DOMAIN_PCB:
       default: PCB_Unreachable;
 #else
       default: return result;
 #endif
     }
+PCB__Pragma_No_Suppress_enumeration_value_not_handled_in_switch()
 }
 
 PCB_Status PCB_FS_rm(const char* path) {
@@ -10398,8 +10746,9 @@ int PCB_String_compare_cstr(
     const PCB_String* PCB_restrict a, const char* PCB_restrict b
 ) {
     PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
-    if(a->data == NULL) return b != NULL;
-    else if(b == NULL) return -1;
+    if(a->data == NULL) return 1;
+    // if(a->data == NULL) return b != NULL;
+    // else if(b == NULL) return -1;
     return PCB_strcmp(a->data, b);
 }
 
@@ -10407,8 +10756,9 @@ int PCB_String_compare_cstr_ci(
     const PCB_String* PCB_restrict a, const char* PCB_restrict b
 ) {
     PCB_CHECK_SELF(a, 0); PCB_CHECK_SELF(b, 0);
-    if(a->data == NULL) return b != NULL;
-    else if(b == NULL) return -1;
+    if(a->data == NULL) return 1;
+    // if(a->data == NULL) return b != NULL;
+    // else if(b == NULL) return -1;
     return PCB_strncasecmp(a->data, b, a->length);
 }
 
@@ -11900,7 +12250,7 @@ int PCB_ShellCommand_append_args_variadic(PCB_ShellCommand *cmd, ...) {
             return res;
         }
     }
-    return 0;
+    return PCB_VEC_OK;
 }
 
 int PCB_ShellCommand_append_n_args(
@@ -11908,9 +12258,7 @@ int PCB_ShellCommand_append_n_args(
 ) {
     PCB_CHECK_NULL(cmd,  -1);
     PCB_CHECK_NULL(args, -1);
-    int res;
-    PCB_Vec_try_append_multiple(&cmd->argv, args, n, res);
-    return res;
+    int res; PCB_Vec_try_append_multiple(&cmd->argv, args, n, res); return res;
 }
 
 void PCB_ShellCommand_reset(PCB_ShellCommand *cmd) {
@@ -13221,6 +13569,110 @@ size_t PCB_getNumberOfCores(void) {
 
 //Section 3.7: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
+#if PCB_PLATFORM_WINDOWS
+#ifndef PCB_MSVC_ENV_PATH
+#define PCB_MSVC_ENV_PATH ""
+#endif //PCB_MSVC_ENV_PATH
+#ifndef PCB_MSVC_ENV_INCLUDE
+#define PCB_MSVC_ENV_INCLUDE ""
+#endif //PCB_MSVC_ENV_INCLUDE
+#ifndef PCB_MSVC_ENV_LIB
+#define PCB_MSVC_ENV_LIB ""
+#endif //PCB_MSVC_ENV_LIB
+#ifndef PCB_MSVC_ENV_LIBPATH
+#define PCB_MSVC_ENV_LIBPATH ""
+#endif //PCB_MSVC_ENV_LIBPATH
+
+//Environment variables for MSVC are baked into the library.
+static const char PCB__MSVC_ENV_PATH[]    = PCB_MSVC_ENV_PATH;
+static const char PCB__MSVC_ENV_INCLUDE[] = PCB_MSVC_ENV_INCLUDE;
+static const char PCB__MSVC_ENV_LIB[]     = PCB_MSVC_ENV_LIB;
+static const char PCB__MSVC_ENV_LIBPATH[] = PCB_MSVC_ENV_LIBPATH;
+static bool PCB__msvc_env_initialized = false;
+
+static PCB_Status PCB__setup_baked_msvc_environment(
+    PCB_BuildContext *context, bool defineMacros
+) {
+    if(PCB__msvc_env_initialized) return PCB_OK();
+    const char *const names[] = { "PATH", "INCLUDE", "LIB", "LIBPATH" };
+    const char *const macro_keys[] = {
+        "PCB_MSVC_ENV_PATH",
+        "PCB_MSVC_ENV_INCLUDE",
+        "PCB_MSVC_ENV_LIB",
+        "PCB_MSVC_ENV_LIBPATH",
+    };
+    const char *const baked[] = {
+        PCB__MSVC_ENV_PATH, PCB__MSVC_ENV_INCLUDE,
+        PCB__MSVC_ENV_LIB,  PCB__MSVC_ENV_LIBPATH
+    };
+    const PCB_StringView old_env[4] = {
+        PCB_SV_LIT(PCB__MSVC_ENV_PATH), PCB_SV_LIT(PCB__MSVC_ENV_INCLUDE),
+        PCB_SV_LIT(PCB__MSVC_ENV_LIB),  PCB_SV_LIT(PCB__MSVC_ENV_LIBPATH)
+    };
+    PCB_StringSlice env[4] = PCB_ZEROED;
+    PCB_String buf = PCB_ZEROED;
+    PCB_Status result = PCB_OK();
+
+    bool PATH_has_cl = true;
+    for(size_t i = 0; i < PCB_ARRAY_LEN(names); i++) {
+        errno_t err = _dupenv_s(&env[i].data, &env[i].length, names[i]);
+        if(err != 0) PCB__return_defer(PCB_CERR_NOMEM);
+    }
+    for(size_t i = 0; i < PCB_ARRAY_LEN(names); i++) {
+        PCB_StringView sv = {env[i].data, env[i].length};
+        char *macro_val;
+        if(sv.data == NULL) {
+            if(old_env[i].length != 1/*not empty*/) _putenv_s(names[i], baked[i]);
+            continue;
+        }
+        if(i == 0) { //PATH
+            PCB_StringView PATH = sv;
+            while(true) {
+                result = PCB_FS_Exists_PATH("cl.exe", &PATH);
+                if(PCB_ISOK(result)) {
+                    if(result.code == 0) PATH_has_cl = false;
+                    break;
+                }
+                const char sep[2] = {PCB_FS_PATH_DELIM, '\0'};
+                PCB_StringView PATH_next = PCB_StringView_findCharFrom_cstr(PATH, sep);
+                if(PCB_String_isEmpty(&PATH_next)) { PATH_has_cl = false; break; }
+                PATH_next = PCB_StringView_shift(PATH_next);
+                if(PCB_String_isEmpty(&PATH_next)) { PATH_has_cl = false; break; }
+                PATH = PATH_next;
+            }
+        }
+        if(!PATH_has_cl) {
+            if(old_env[i].length != 1) _putenv_s(names[i], baked[i]);
+            sv = old_env[i];
+        }
+        if(!defineMacros) continue;
+        for(; sv.length > 0; ++sv.data, --sv.length) {
+            if(!PCB_String_append_chars(&buf, *sv.data, *sv.data == '\\' ? 2 : 1))
+                PCB__return_defer(PCB_CERR_NOMEM);
+        }
+        macro_val = PCB_Arena_asprintf(context->arena, "\"%s\"", buf.data);
+        if(macro_val == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+        PCB_String_reset(&buf);
+        {
+            PCB_CStringPair macro = {macro_keys[i], macro_val};
+            int res;
+            uint8_t force = PCB_BuildContext_flags(context).alwaysBuild;
+            PCB_Vec_try_append(&context->preprocessorFlags.defines, macro, res);
+            if(res != PCB_VEC_OK) PCB__return_defer(PCB_CERR_NOMEM);
+            if(!force) force = PCB_strcmp(sv.data, baked[i]) == 0;
+            PCB_BuildContext_flags(context).alwaysBuild = force;
+        }
+    }
+    PCB__msvc_env_initialized = true;
+defer:
+    PCB_String_destroy(&buf);
+    for(size_t i = 0; i < PCB_ARRAY_LEN(names); i++) {
+        if(env[i].data != NULL) free(env[i].data);
+    }
+    return result;
+}
+#endif //can MSVC report an environment other than Windows?
+
 int PCB_Platform_RT_is_POSIX(PCB_Platform_RT platform) {
     switch(platform) {
       case PCB_PLATFORM_RT_UNKNOWN:   return -1;
@@ -13276,6 +13728,15 @@ bool PCB_Platform_RT_is_BSD(PCB_Platform_RT platform) {
     }
 }
 
+bool PCB_Platform_RT_is_Apple(PCB_Platform_RT platform) {
+    static const bool apple[PCB_PLATFORM_RT_COUNT] = {
+        false, false, false, false, false, false, false, false,
+        true, true,
+        false, false, false, false, false, false, false, false
+    };
+    return apple[platform];
+}
+
 const char* PCB_GetCStandardStr(long standard) {
     switch(standard) {
       case 1L:      return "c89"; //see below why 1
@@ -13286,7 +13747,7 @@ const char* PCB_GetCStandardStr(long standard) {
       case 199901L: return "c99";
       case 201112L: return "c11";
       case 201710L: return "c17";
-#if PCB_COMPILER_GCC < 140000 && PCB_COMPILER_GCC >= 90000
+#if PCB_COMPILER_GCC >= 130900
       case 202000L: return "c2x";
 #endif //gcc's "c2x", deprecated in GCC14
       case 202311L: return "c23";
@@ -13381,193 +13842,2190 @@ long PCB_GetCppStandardInt(const char* standard) {
     PCB_Unreachable;
 }
 
-static int PCB__build_file(PCB_BuildContext* context) {
-    PCB_log(
-        PCB_LOGLEVEL_INFO,
-        "In: %s, out: %s",
-        context->currentSourcePath.data, context->currentBuildPath.data
-    );
-
-    return 0;
+static bool PCB__BuildType_formatName_exec(
+    PCB_Platform_RT p, PCB_StringView sv,
+    const char **target, PCB_Arena* arena
+) {
+    const char *ext = NULL;
+    if(p == PCB_PLATFORM_RT_WINDOWS || p == PCB_PLATFORM_RT_VMS || p == PCB_PLATFORM_RT_DOS)
+        ext = "exe";
+    else if(p == PCB_PLATFORM_RT_WASM)
+        ext = "wasm";
+    else return true;
+    PCB_StringView svext = PCB_FS_Extension(sv);
+    if(!PCB_String_isEmpty(&svext)) return true;
+    char *formatted = PCB_Arena_asprintf(arena, "%s.%s", *target, ext);
+    if(formatted == NULL) return false;
+    *target = formatted;
+    return true;
 }
 
-//TODO: document return values
-static int PCB__build_directory(PCB_BuildContext* context) {
-#if PCB_PLATFORM_WINDOWS
-    (void)context;
-    PCB_TODO("PCB__build_directory");
-#elif PCB_PLATFORM_POSIX
-#define PCB_err(err) { code = -err; goto error; }
-    int code = 0;
-    switch(PCB_FS_Exists(context->currentBuildPath.data)) {
-        case true: break;
-        case false: {
-            if(!PCB_mkdir(context->currentBuildPath.data)) return -errno;
-            break;
-        }
-        default:
-            code = -errno;
-            PCB_logLatestError(
-                "Cannot check whether %s exists",
-                context->currentBuildPath.data
-            ); return code;
+static bool PCB__BuildType_formatName_staticlib(
+    PCB_Platform_RT p, PCB_StringView sv,
+    const char **target, PCB_Arena* arena
+) {
+    char *formatted;
+    PCB_StringView base, ext, dir;
+    if(p == PCB_PLATFORM_RT_WINDOWS || p == PCB_PLATFORM_RT_DOS || p == PCB_PLATFORM_RT_VMS) {
+        ext = PCB_FS_Extension(sv);
+        if(!PCB_String_isEmpty(&ext)) return true;
+        const char *fext = NULL;
+        if(p == PCB_PLATFORM_RT_WINDOWS || p == PCB_PLATFORM_RT_DOS) fext = "lib";
+        else if(p == PCB_PLATFORM_RT_VMS) fext = "olb";
+        formatted = PCB_Arena_asprintf(arena, "%s.%s", *target, fext);
+    } else { //otherwise this is much more involved
+        base = PCB_FS_Basename(sv);
+        ext  = PCB_FS_Extension_base(base);
+        if(!PCB_String_isEmpty(&ext)) return true;
+        dir  = PCB_FS_Dirname(sv);
+        formatted = PCB_Arena_asprintf(
+            arena,
+            PCB_SV_Fmt "%c" "lib" PCB_SV_Fmt ".a",
+            PCB_SV_Arg(dir), PCB_FS_DIR_DELIM, PCB_SV_Arg(base)
+        );
     }
-    DIR* cwd = opendir(context->currentSourcePath.data);
-    if(cwd == NULL) {
-        code = -errno;
-        PCB_logLatestError(
-            "Could not open directory %s",
-            context->currentSourcePath.data
-        ); return code;
-    }
-//convenience macros
-#define PCB_from (&context->currentSourcePath)
-#define PCB_to (&context->currentBuildPath)
-    struct stat st;
-    for(struct dirent* entry = readdir(cwd); entry != NULL; entry = readdir(cwd)) {
-        if(!PCB_strcmp(entry->d_name, ".") || !PCB_strcmp(entry->d_name, "..")) continue;
-        size_t oldFromLength = PCB_from->length;
-        size_t oldToLength = PCB_to->length;
-        if(!PCB_String_append_cstr(PCB_from, entry->d_name)) PCB_err(ENOMEM)
-        if(stat(PCB_from->data, &st) == -1) {
-            switch(errno) {
-                case ELOOP:  case ENAMETOOLONG:
-                case ENOENT: case EOVERFLOW:
-                    PCB_log(
-                        PCB_LOGLEVEL_WARN,
-                        "Skipping %s: %s",
-                        PCB_from->data, strerror(errno)
-                    ); continue;
-                case ENOMEM:
-                    PCB_log(PCB_LOGLEVEL_FATAL, "The system has ran out of memory.");
-                    PCB_err(ENOMEM)
-                default: PCB_Unreachable;
-            }
-        }
-        if(S_ISDIR(st.st_mode)) {
-            if(!PCB_String_append_cstr(PCB_to, entry->d_name)) PCB_err(ENOMEM)
-            if(!PCB_String_append_chars(PCB_from, '/', 1)) PCB_err(ENOMEM)
-            if(!PCB_String_append_chars(PCB_to, '/', 1)) PCB_err(ENOMEM)
-            //recursively build the subdirectory
-            if((code = PCB__build_directory(context)) != 0) goto error;
-        }
-        else if(S_ISREG(st.st_mode)) {
-            if(PCB_String_endsWith_cstr(PCB_from, ".c")) {
-                if(!PCB_String_append_cstr(PCB_to, entry->d_name)) PCB_err(ENOMEM)
-                PCB_to->data[PCB_to->length - 1] = 'o';
-                if((code = PCB__build_file(context)) != 0) goto error;
-            }
-        }
-        //restore old length in a LIFO fashion
-        PCB_from->data[PCB_from->length = oldFromLength] = '\0';
-        PCB_to->data[PCB_to->length = oldToLength] = '\0';
-        continue;
-        error: {
-            PCB_from->data[PCB_from->length = oldFromLength] = '\0';
-            PCB_to->data[PCB_to->length = oldToLength] = '\0';
-            closedir(cwd);
-            return code;
-        }
-    }
-#undef PCB_to
-#undef PCB_from
-#undef PCB_err
-    closedir(cwd);
-
-    return 0;
-#endif //platform-dependent directory enumeration
+    if(formatted == NULL) return false;
+    *target = formatted;
+    return true;
 }
 
+static bool PCB__BuildType_formatName_dynamiclib(
+    PCB_Platform_RT p, PCB_StringView sv,
+    const char **target, PCB_Arena* arena
+) {
+    char *formatted = NULL;
+    PCB_StringView base, ext, dir;
+    if(p == PCB_PLATFORM_RT_DOS) return true; //no dynamic libs AFAIK
+    if(p == PCB_PLATFORM_RT_WINDOWS || p == PCB_PLATFORM_RT_VMS || p == PCB_PLATFORM_RT_WASM) {
+        ext = PCB_FS_Extension(sv);
+        if(!PCB_String_isEmpty(&ext)) return true;
+        const char *fext;
+        if(p == PCB_PLATFORM_RT_WINDOWS) fext = "dll";
+        else if(p == PCB_PLATFORM_RT_VMS) fext = "exe";
+        else fext = "wasm";
+        formatted = PCB_Arena_asprintf(arena, "%s.%s", *target, fext);
+    } else {
+        const char *out_ext = PCB_Platform_RT_is_Apple(p)
+            ? ".dylib" : ".so";
+        base = PCB_FS_Basename(sv);
+        ext  = PCB_FS_Extension_base(base);
+        if(!PCB_String_isEmpty(&ext)) return true;
+        dir  = PCB_FS_Dirname(sv);
+        //the rich kid is acting up again...
+        formatted = PCB_Arena_asprintf(
+            arena,
+            PCB_SV_Fmt "%c" "lib" PCB_SV_Fmt "%s",
+            PCB_SV_Arg(dir), PCB_FS_DIR_DELIM, PCB_SV_Arg(base), out_ext
+        );
+    }
+    if(formatted == NULL) return false;
+    *target = formatted;
+    return true;
+}
 
+bool PCB_BuildType_formatName(
+    PCB_BuildType bt, PCB_Platform_RT platform,
+    const char **target, PCB_Arena* arena
+) {
+    PCB_CHECK_NULL(target, false);
+    PCB_CHECK_NULL(arena, false);
+    PCB_CHECK(*target == NULL, false);
+    //No idea how to format these, so we just don't.
+    if(platform == PCB_PLATFORM_RT_UNKNOWN) return true;
+    PCB_StringView sv = PCB_StringView_from_cstr(*target);
+    switch(bt) {
+      case PCB_BUILDTYPE_EXEC:
+        return PCB__BuildType_formatName_exec(platform, sv, target, arena);
+      case PCB_BUILDTYPE_STATICLIB:
+        return PCB__BuildType_formatName_staticlib(platform, sv, target, arena);
+      case PCB_BUILDTYPE_DYNAMICLIB:
+        return PCB__BuildType_formatName_dynamiclib(platform, sv, target, arena);
+      default: PCB_Unreachable;
+    }
+}
 
-PCB_BuildContext PCB_CreateBuildContext(int flags) {
-    if(flags == 0) return (PCB_BuildContext) {0};
-    PCB_BuildContext context = {
-        .buildPath = "build/",
-        .standard =
-#ifdef __cplusplus
-            __cplusplus,
-#else
-            __STDC_VERSION__,
-#endif //C++
-        .compilerPath =
-//this is ugly, but it has to be like that
-#if PCB_COMPILER_GCC
-#ifdef __cplusplus
-            "g++"
-#else
-            "gcc"
-#endif //C++
-#elif PCB_COMPILER_CLANG
-#ifdef __cplusplus
-            "clang++"
-#else
-            "clang"
-#endif //C++
-#elif PCB_COMPILER_MSVC
-            "cl"
-#endif //default compiler paths
-    };
-    PCB_Vec_append(&context.sources, "src/");
-    PCB_Vec_append(&context.includes, "include/");
-#if PCB_COMPILER_GCC //https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html
-    PCB_Vec_append_variadic(
-        &context.warningFlags, const char*,
-        "-Wall", "-Wextra", "-Wdouble-promotion",
-        "-Werror=stringop-overflow", "-Wformat=2",
-        "-Wnull-dereference", //-Winit-self
-        "-Werror=use-after-free=2",
-        "-Walloc-size", "-Walloc-zero",
+const char* PCB_build_flag_cwl(PCB_Compiler_RT c) {
+    switch(c) {
+      case PCB_COMPILER_RT_GCC: //fallthrough
+      case PCB_COMPILER_RT_CLANG: //fallthrough
+      case PCB_COMPILER_RT_TCC:
+        return "-c";
+      case PCB_COMPILER_RT_MSVC:
+        return "/c";
+      case PCB_COMPILER_RT_UNKNOWN:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "Unknown compiler; cannot determine a flag to specify \"compile only\""
+        ); return "";
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+const char* PCB_build_flag_output(PCB_Compiler_RT c) {
+    switch(c) {
+      case PCB_COMPILER_RT_UNKNOWN:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "Unknown compiler; cannot determine a flag to specify the output path"
+        ); return "";
+      case PCB_COMPILER_RT_GCC: //fallthrough
+      case PCB_COMPILER_RT_CLANG: //fallthrough
+      case PCB_COMPILER_RT_TCC:
+        return "-o";
+      case PCB_COMPILER_RT_MSVC:
+        return "/Fo:";
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+PCB_CStringPair PCB_build_flag_treat_inputs_as_c(PCB_Compiler_RT c) {
+    switch(c) {
+      case PCB_COMPILER_RT_GCC: //fallthrough
+      case PCB_COMPILER_RT_CLANG: //fallthrough
+      case PCB_COMPILER_RT_TCC:
+        return PCB_CLITERAL(PCB_CStringPair){"-x", "c"};
+      case PCB_COMPILER_RT_MSVC:
+        return PCB_CLITERAL(PCB_CStringPair){"/TC", ""};
+      case PCB_COMPILER_RT_UNKNOWN:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "Unknown compiler; cannot determine a flag to treat inputs as C"
+        );
+        return PCB_CLITERAL(PCB_CStringPair){"", ""};
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+PCB_CStringPair PCB_build_flag_treat_inputs_as_cpp(PCB_Compiler_RT c) {
+    switch(c) {
+      case PCB_COMPILER_RT_GCC: //fallthrough
+      case PCB_COMPILER_RT_CLANG: //fallthrough
+      case PCB_COMPILER_RT_TCC:
+        return PCB_CLITERAL(PCB_CStringPair){"-x", "c++"};
+      case PCB_COMPILER_RT_MSVC:
+        return PCB_CLITERAL(PCB_CStringPair){"/TP", ""};
+      case PCB_COMPILER_RT_UNKNOWN:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "Unknown compiler; cannot determine a flag to treat inputs as C++"
+        );
+        return PCB_CLITERAL(PCB_CStringPair){"", ""};
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+const char* PCB_build_flag_default_to_static_linking(PCB_Compiler_RT c) {
+    switch(c) {
+      case PCB_COMPILER_RT_GCC: //fallthrough
+      case PCB_COMPILER_RT_CLANG:
+        return "-Wl,-Bstatic";
+      case PCB_COMPILER_RT_TCC:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "TCC does not have an option to go back to dynamic linking, "
+            "not returning '-static'"
+        ); return "";
+      case PCB_COMPILER_RT_MSVC: //no such option as it's unnecessary
+        return "";
+      case PCB_COMPILER_RT_UNKNOWN:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "Unknown compiler; cannot determine a flag to default to static linking"
+        ); return "";
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+const char* PCB_build_flag_default_to_dynamic_linking(PCB_Compiler_RT c) {
+    switch(c) {
+      case PCB_COMPILER_RT_GCC: //fallthrough
+      case PCB_COMPILER_RT_CLANG:
+        return "-Wl,-Bdynamic";
+      case PCB_COMPILER_RT_TCC:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "TCC does not have an option to default to dynamic linking"
+        ); return "";
+      case PCB_COMPILER_RT_MSVC: //no such option as it's unnecessary
+        return "";
+      case PCB_COMPILER_RT_UNKNOWN:
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "Unknown compiler; cannot determine a flag to default to dynamic linking"
+        ); return "";
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+char* PCB_build_flag_standard(
+    long standard, PCB_Arena* arena, PCB_Compiler_RT compiler, bool cpp, bool gnu
+) {
+    PCB_CHECK_NULL(arena, NULL);
+    if(standard == 0) return PCB_Arena_strdup(arena, "");
+    const char* standardStr;
+    if(cpp) standardStr = PCB_GetCppStandardStr(standard);
+    else    standardStr = PCB_GetCStandardStr(standard);
+    if(standardStr == NULL) {
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "Unknown language standard integer value: %ld",
+            standard
+        ); return "";
+    }
+    const size_t MAX_STD_STR_LEN = 24;
+    char *flag = (char*)PCB_Arena_alloc(arena, MAX_STD_STR_LEN);
+    //set the standard if the flag can be parsed
+    if(flag == NULL) return NULL;
+    switch(compiler) {
+      case PCB_COMPILER_RT_GCC:
+      case PCB_COMPILER_RT_CLANG:
+      case PCB_COMPILER_RT_TCC:
+        PCB_snprintf(
+            flag, MAX_STD_STR_LEN, "-std=%s%s",
+            gnu ? "gnu" : "",
+            standardStr + (gnu ? 1 : 0)
+        ); break;
+      case PCB_COMPILER_RT_MSVC:
+        PCB_snprintf(flag, MAX_STD_STR_LEN, "/std:%s", standardStr);
+        break;
+      case PCB_COMPILER_RT_UNKNOWN:
+        PCB_log(PCB_LOGLEVEL_WARN, "Cannot parse the language standard");
+        return PCB_Arena_strdup(arena, "");
+      case PCB_COMPILER_RT_COUNT: //fallthrough
+      default: PCB_Unreachable;
+    }
+    return flag;
+}
+
+static void PCB__build_flags_diagnostics_default_gcc(
+    PCB_CStrings* cstrs, bool cpp, unsigned int compilerVersion
+) {
+    //https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html
+    PCB_CStrings_append_many(
+        cstrs,
         "-Werror=array-bounds=1",
-        "-Wduplicated-branches", "-Wduplicated-cond",
-        "-Wshadow", "-Wfree-nonheap-object",
-        "-Wbad-function-cast", "-Wconversion"
+        "-Wformat-signedness",
+        "-Wmissing-declarations",
+        "-Winit-self",
+        "-Wformat=2"
     );
-#elif PCB_COMPILER_CLANG //https://clang.llvm.org/docs/DiagnosticsReference.html
-    PCB_Vec_append_variadic(
-        &context.warningFlags, const char*,
-        "-Wall", "-Wextra", "-Warray-bounds-pointer-arithmetic",
-        "-Warray-parameter", "-Wassign-enum",
-        "-Wbad-function-cast", "-Wbool-operation",
-        "-Wcast-function-type", "-Wconversion",
-        "-Wdouble-promotion", "-Wfloat-conversion",
-        "-Widiomatic-parentheses", "-Winfinite-recursion",
-        "-Wmismatched-tags", "-Wmissing-variable-declarations",
-        "-Wshadow-all", "-Wsign-compare", "-Wshorten-64-to-32",
-        "-Wsign-conversion", "-Wsometimes-uninitialized",
-        "-Wthread-safety", "-Wunused",
-        //-Wpessimizing-move -Wself-move <-- for C++
-        //-Wsuggest-destructor-override -Wsuggest-override
-        //-Wuninitialized-const-reference
-    );
-#elif PCB_COMPILER_MSVC
-    PCB_Vec_append_variadic(
-        &context.warningFlags, const char*,
+    if(compilerVersion >= 30306) {
+        PCB_CStrings_append(cstrs, "-Werror=nonnull");
+        PCB_CStrings_append(cstrs, "-Wswitch-enum");
+        //Forces either explicitly marking default "unreachable" or handling it.
+        //In any case beneficial.
+        PCB_CStrings_append(cstrs, "-Wswitch-default");
+    }
+    if(compilerVersion >= 60100) {
+        PCB_CStrings_append(cstrs, "-Wduplicated-cond");
+        PCB_CStrings_append(cstrs, "-Wnull-dereference");
+    }
+    if(compilerVersion >= 70100) {
+        PCB_CStrings_append(cstrs, "-Werror=stringop-overflow");
+        PCB_CStrings_append(cstrs, "-Walloc-zero");
+        PCB_CStrings_append(cstrs, "-Wduplicated-branches");
+    }
+    if(compilerVersion >= 110100) {
+        PCB_CStrings_append(cstrs, "-Werror=stringop-overread");
+    }
+    if(compilerVersion >= 120100) {
+        PCB_CStrings_append(cstrs, "-Werror=use-after-free=2");
+    }
+    if(compilerVersion >= 140100) {
+        PCB_CStrings_append(cstrs, "-Wcalloc-transposed-args");
+        PCB_CStrings_append(cstrs, "-Werror=alloc-size");
+    }
+    if(cpp) {
+        if(compilerVersion >= 40704) {
+            PCB_CStrings_append(cstrs, "-Wzero-as-null-pointer-constant");
+        }
+    } else {
+        PCB_CStrings_append(cstrs, "-Wbad-function-cast");
+        PCB_CStrings_append(cstrs, "-Wmissing-prototypes");
+#if 0
+        if(compilerVersion >= 150100) {
+            PCB_CStrings_append(cstrs, "-Wzero-as-null-pointer-constant");
+        }
+#endif //As of 21.06.2026, this diagnostic diagnoses {0}, where the 1st field
+       //is a pointer. This special case should be ignored, imo.
+    }
+}
+
+static void PCB__build_flags_diagnostics_default_clang(
+    PCB_CStrings* cstrs, bool cpp, unsigned int compilerVersion
+) {
+    //https://clang.llvm.org/docs/DiagnosticsReference.html
+    //Clang <4.0.0 seems to be underdocumented.
+    //https://releases.llvm.org/18.1.1/tools/clang/docs/DiagnosticsReference.html
+    if(compilerVersion >= 40000) {
+        PCB_CStrings_append_many(cstrs,
+            "-Werror=nonnull",
+            "-Werror=sentinel",
+            "-Werror=array-bounds",
+            "-Werror=invalid-noreturn",
+            "-Werror=incompatible-pointer-types",
+            "-Wassign-enum",
+            "-Warray-bounds-pointer-arithmetic",
+            "-Wbad-function-cast",
+            "-Wconversion",
+            "-Widiomatic-parentheses",
+            "-Winfinite-recursion",
+            "-Wmismatched-tags",
+            "-Wmissing-variable-declarations",
+            "-Wsign-compare",
+            "-Wshorten-64-to-32",
+            "-Wfloat-conversion",
+            "-Wstring-conversion",
+            "-Wthread-safety",
+            "-Wunused",
+            "-Wmissing-prototypes",
+            //IMPORTANT: This flag has different behavior from GCC, in
+            //that having a `default` case in a non-exhaustive switch-case
+            //will NOT trigger this warning!!
+            //This is, imo, a major bug, unfixed since v4.0.0.
+            "-Wswitch-enum",
+            "-Wswitch-default" //See gcc-specific diagnostics above
+        );
+    }
+    if(compilerVersion >= 100000) {
+        PCB_CStrings_append(cstrs, "-Wbool-operation");
+        PCB_CStrings_append(cstrs, "-Wformat-type-confusion");
+    }
+    if(compilerVersion >= 130000) {
+        PCB_CStrings_append(cstrs, "-Wcast-function-type");
+    }
+    if(compilerVersion >= 150000) {
+        PCB_CStrings_append(cstrs, "-Warray-parameter");
+    }
+    if(compilerVersion >= 190000) {
+        PCB_CStrings_append(cstrs, "-Wformat-signedness");
+    }
+    if(cpp) {
+        PCB_CStrings_append_many(
+            cstrs,
+            "-Wpessimizing-move", "-Wself-move",
+            "-Wsuggest-destructor-override", "-Wsuggest-override",
+            "-Wuninitialized-const-reference"
+        );
+    } else {
+        //placeholder for future C-only diagnostics
+    }
+}
+
+static void PCB__build_flags_diagnostics_default_msvc(
+    PCB_CStrings* cstrs, bool cpp, unsigned int compilerVersion
+) {
+    (void)cpp; (void)compilerVersion;
+    //https://learn.microsoft.com/en-us/cpp/build/reference/compiler-option-warning-level
+    PCB_CStrings_append_many(
+        cstrs,
         "/W4", "/w44062", "/w44388", "/w25219", "/w15247",
         "/w45263", "/w34191"
     );
-#endif //compiler-specific warnings
-    if(flags & PCB_BUILDOPTION_OPTIMIZE) {
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-        PCB_Vec_append(&context.optimizationFlags, "-O3");
-#elif PCB_COMPILER_MSVC
-        PCB_Vec_append(&context.optimizationFlags, "/O3");
-#endif
-    }
-    if(flags & PCB_BUILDOPTION_OPTIMIZE) {
-#if PCB_COMPILER_GCC || PCB_COMPILER_CLANG
-        PCB_Vec_append(&context.debugFlags, "-g");
-#elif PCB_COMPILER_MSVC
-        // PCB_Vec_append(&context.debugFlags, "/O3");
-#error "Setting up debug flags for MSVC is a pain, will do it later"
-#endif
-    }
-
 }
 
-int PCB_buildFromContext(PCB_BuildContext* context) {
-    PCB_assert(false && "Unfinished");
-    
+static void PCB__build_flags_diagnostics_default_tcc(
+    PCB_CStrings* cstrs, bool cpp, unsigned int compilerVersion
+) {
+    (void)cpp; (void)compilerVersion;
+    //Reported by TCC 0.9.28rc.
+    PCB_CStrings_append_many(
+        cstrs,
+        "-Wall", "-Wunsupported", "-Wimplicit-function-declaration",
+        "-Wdiscarded-qualifiers", "-Wwrite-strings"
+    );
+}
+
+void PCB_build_flags_diagnostics_default(
+    PCB_CStrings* cstrs,
+    PCB_Compiler_RT compiler,
+    bool cpp,
+    unsigned int compilerVersion,
+    bool strict_iso
+) {
+    PCB_CHECK_NULL(cstrs,);
+    PCB__logTrace("Adding default diagnostic flags");
+    //these are shared between GCC and Clang
+    if(compiler == PCB_COMPILER_RT_GCC || compiler == PCB_COMPILER_RT_CLANG) {
+        PCB_CStrings_append_many(
+            cstrs,
+            "-Wall", "-Wextra",
+            //NOTE: The meaning of this diagnostic is not the same.
+            //In Clang, it diagnoses implicit conversions to integer types.
+            //In GCC, however, it diagnoses reducing precision of double to float.
+            "-Werror=float-conversion",
+            "-Werror=uninitialized",
+            "-Wsign-conversion",
+            "-Wundef"
+        );
+        if(strict_iso) {
+            PCB_CStrings_append(cstrs, "-Wpedantic");
+            //We may later place warnings about version compatibility here.
+        }
+    }
+    switch(compiler) {
+      case PCB_COMPILER_RT_GCC:
+        PCB__build_flags_diagnostics_default_gcc(cstrs, cpp, compilerVersion);
+        break;
+      case PCB_COMPILER_RT_CLANG:
+        PCB__build_flags_diagnostics_default_clang(cstrs, cpp, compilerVersion);
+        break;
+      case PCB_COMPILER_RT_MSVC:
+        PCB__build_flags_diagnostics_default_msvc(cstrs, cpp, compilerVersion);
+        break;
+      case PCB_COMPILER_RT_TCC:
+        PCB__build_flags_diagnostics_default_tcc(cstrs, cpp, compilerVersion);
+        break;
+      case PCB_COMPILER_RT_UNKNOWN:
+        break;
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+PCB_FS_StringView PCB_build_preferred_obj_file_ext(PCB_Compiler_RT c) {
+    switch(c) {
+      case PCB_COMPILER_RT_UNKNOWN: //fallthrough
+      case PCB_COMPILER_RT_GCC:     //fallthrough
+      case PCB_COMPILER_RT_CLANG:   //fallthrough
+      case PCB_COMPILER_RT_TCC:
+          return PCB_CLITERAL(PCB_FS_StringView){PCB_FS_LIT("o"), 1};
+      case PCB_COMPILER_RT_MSVC:
+          return PCB_CLITERAL(PCB_FS_StringView){PCB_FS_LIT("obj"), 3};
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+}
+
+static void PCB__BuildContext_addDefaultWarnings(PCB_BuildContext* context) {
+    PCB_build_flags_diagnostics_default(
+        &context->diagnosticFlags,
+        context->compiler.kind,
+#ifdef __cplusplus
+        true,
+#else
+        false,
+#endif //TODO: move this to runtime
+        context->compiler.version,
+        !PCB_BuildContext_flags(context).gnu //TODO: MS extensions
+    );
+}
+
+static bool PCB__BuildContext_parseFlags_single(
+    PCB_BuildContext* context, PCB_CStringsView strs,
+    const char *const fmt,
+    const char *const hrn /* human-readable name (for diagnostics) */
+) {
+    PCB_Vec_enumerate(&strs, i, val, it, const char* const) {
+        const char* v = *it.val;
+        if(v == NULL) {
+            PCB_log(
+                PCB_LOGLEVEL_WARN, "%s #" PCB_SIZE_FMT " is NULL, skipping",
+                hrn, it.i
+            ); continue;
+        }
+        bool parse = true;
+        if(v[0] == '\033') { parse = false; ++v; }
+        if(fmt == NULL)    { parse = false; }
+        if(!parse) {
+            PCB_ShellCommand_append_arg(&context->commandBuffer, v);
+            PCB__logTrace("+ %s \"%s\"", hrn, v);
+            continue;
+        }
+#if PCB_COMPILER_GCC
+PCB_PushDiagnostics()
+PCB_IgnoreDiagnostic("-Wformat-nonliteral")
+#endif //temporarily disable GCC's "-Wformat-nonliteral" warning since it's fine here
+        char *flag = (char*)PCB_Arena_asprintf(context->arena, fmt, v);
+#if PCB_COMPILER_GCC
+PCB_PopDiagnostics()
+#endif //reenable the warning above
+        if(flag == NULL) return false;
+        PCB_ShellCommand_append_arg(&context->commandBuffer, flag);
+        PCB__logTrace("+ %s \"%s\"", hrn, flag);
+    }
+    return true;
+}
+
+static bool PCB__BuildContext_parseFlags_pairs(
+    PCB_BuildContext* context, PCB_CStringPairsView strs,
+    const char *const fmts[2],
+    const char *hrn /* human-readable name (for diagnostics)*/
+) {
+    PCB_Vec_enumerate(&strs, i, val, it, const PCB_CStringPair) {
+        PCB_CStringPair v = *it.val;
+        if(v.key == NULL) {
+            PCB_log(
+                PCB_LOGLEVEL_WARN, "%s #" PCB_SIZE_FMT "'s key is NULL, skipping",
+                hrn, it.i
+            ); continue;
+        }
+        char *flag = NULL;
+#if PCB_COMPILER_GCC
+PCB_PushDiagnostics()
+PCB_IgnoreDiagnostic("-Wformat-nonliteral")
+#endif //temporarily disable GCC's "-Wformat-nonliteral" warning since it's fine here
+        if(v.value == NULL) {
+            if(fmts[0] == NULL) {
+                PCB_ShellCommand_append_arg(&context->commandBuffer, v.key);
+                PCB__logTrace("+ %s \"%s\"", hrn, v.key);
+                continue;
+            }
+            flag = PCB_Arena_asprintf(context->arena, fmts[0], v.key);
+        } else {
+            flag = PCB_Arena_asprintf(context->arena, fmts[1], v.key, v.value);
+        }
+#if PCB_COMPILER_GCC
+PCB_PopDiagnostics()
+#endif //reenable the warning above
+        if(flag == NULL) return false;
+        PCB_ShellCommand_append_arg(&context->commandBuffer, flag);
+        PCB__logTrace("+ %s \"%s\"", hrn, flag);
+    } return true;
+}
+
+//this function is a mess...
+static bool PCB__BuildContext_init_sanitizers(
+    PCB_BuildContext *context, PCB_BuildOptions options
+) {
+    enum {
+        TSAN  = 0,
+        ASAN  = 1,
+        LSAN  = 2,
+        UBSAN = 3,
+        SAN_COUNT
+    };
+    bool available[SAN_COUNT] = PCB_ZEROED;
+    const PCB_Compiler_RT c = context->compiler.kind;
+    switch(c) {
+      case PCB_COMPILER_RT_UNKNOWN:
+        break;
+      case PCB_COMPILER_RT_GCC:
+#if !PCB_PLATFORM_WINDOWS
+        available[TSAN] = available[ASAN] = available[LSAN] = available[UBSAN] = true;
+#endif //MinGW lacks them
+        break;
+      case PCB_COMPILER_RT_CLANG:
+        available[TSAN] = available[ASAN] = available[LSAN] = available[UBSAN] = true;
+        break;
+      case PCB_COMPILER_RT_MSVC:
+        available[ASAN] = true;
+        break;
+      case PCB_COMPILER_RT_TCC:
+        break;
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+    PCB_static_assert(TSAN  == 0, "C++ lacks normal designated initializers");
+    PCB_static_assert(ASAN  == 1, "C++ lacks normal designated initializers");
+    PCB_static_assert(LSAN  == 2, "C++ lacks normal designated initializers");
+    PCB_static_assert(UBSAN == 3, "C++ lacks normal designated initializers");
+    bool requested[SAN_COUNT] = {
+        (options & PCB_BUILDOPTION_TSAN)  != 0,
+        (options & PCB_BUILDOPTION_ASAN)  != 0,
+        (options & PCB_BUILDOPTION_LSAN)  != 0,
+        (options & PCB_BUILDOPTION_UBSAN) != 0
+    };
+    if(requested[TSAN]) {
+        if(requested[ASAN]) {
+            PCB_log(PCB_LOGLEVEL_WARN, "Conflicting options: cannot use TSan with ASan, will use TSan.");
+            requested[ASAN] = false;
+        }
+        if(requested[LSAN]) {
+            PCB_log(PCB_LOGLEVEL_WARN, "Conflicting options: cannot use TSan with LSan, will use TSan.");
+            requested[LSAN] = false;
+        }
+    }
+    typedef struct {
+        const char *base, *hrn /*human-readable name (for diagnostics)*/;
+    } Flag;
+    static const Flag fls[SAN_COUNT] = {
+        { "thread",    "TSan"  },
+        { "address",   "ASan"  },
+        { "leak",      "LSan"  },
+        { "undefined", "UBSan" },
+    };
+    for(int san = 0; san < SAN_COUNT; san++) {
+        if(!requested[san]) continue;
+        if(!available[san]) {
+            PCB_log(PCB_LOGLEVEL_WARN, "%s is not available and will not be used", fls[san].hrn);
+            continue;
+        }
+        char *flag = NULL;
+        switch(c) {
+          case PCB_COMPILER_RT_GCC: //fallthrough
+          case PCB_COMPILER_RT_CLANG:
+            flag = PCB_Arena_asprintf(context->arena, "-fsanitize=%s", fls[san].base);
+            if(flag == NULL) return false;
+            PCB_CStrings_append(&context->debugFlags, flag);
+            PCB_CStrings_append(&context->otherLinkerFlags, flag);
+            break;
+          case PCB_COMPILER_RT_MSVC:
+            flag = PCB_Arena_asprintf(context->arena, "/fsanitize=%s", fls[san].base);
+            if(flag == NULL) return false;
+            PCB_CStrings_append(&context->debugFlags, flag);
+            break;
+          case PCB_COMPILER_RT_TCC:
+          case PCB_COMPILER_RT_UNKNOWN:
+          default:
+            PCB__BUG(
+                "A sanitizer was requested and is deemed available for a given "
+                "compiler, but no flag parsing has been implemented for it."
+            );
+          case PCB_COMPILER_RT_COUNT: PCB_Unreachable;
+        }
+    }
+    return true;
+}
+
+static bool PCB__BuildContext_addOptimizationOptions(
+    PCB_BuildContext *context, PCB_BuildOptions options
+) {
+    switch(context->compiler.kind) {
+      case PCB_COMPILER_RT_UNKNOWN: break;
+      case PCB_COMPILER_RT_GCC:   //fallthrough
+      case PCB_COMPILER_RT_CLANG:
+        PCB_CStrings_append(&context->optimizationFlags, "-O2");
+        if(options & PCB_BUILDOPTION_LOCAL_SYSTEM)
+           PCB_CStrings_append(&context->optimizationFlags, "-march=native");
+        break;
+      case PCB_COMPILER_RT_MSVC:
+        PCB_CStrings_append(&context->optimizationFlags, "/O2");
+#if PCB_ARCH_x64
+        if(!(options & PCB_BUILDOPTION_LOCAL_SYSTEM)) break;
+        if(PCB__cpuid.manufacturer_id[0] < 0x7) break; //Pentium D or older
+        if(PCB_cpuid_has_avx2(PCB__cpuid.extended_features[0])) {
+            PCB_CStrings_append(&context->optimizationFlags, "/arch:AVX2");
+            break;
+        }
+        if(PCB_cpuid_has_avx(PCB__cpuid.processor_info_and_features)) {
+            PCB_CStrings_append(&context->optimizationFlags, "/arch:AVX");
+            break;
+        }
+        if(PCB_cpuid_has_sse4_2(PCB__cpuid.processor_info_and_features)) {
+            PCB_CStrings_append(&context->optimizationFlags, "/arch:SSE4.2");
+            //Microsoft, in their INFINITE FUCKING wisdom, decided that
+            //"no, we won't have a feature test macro for SSE4.2, but
+            //we will for AVX".
+            //It is absolutely horrendous that a thirdparty has to
+            //create a whole new API just to deal with your lazy asses.
+            //Go to hell, Microsoft.
+            PCB_CStringPairs_append(
+                &context->preprocessorFlags.defines,
+                (PCB_CLITERAL(PCB_CStringPair){"PCB_HAS_SSE4_2", NULL})
+            );
+            break;
+        }
+#endif //architectures; TODO: architectures other than x64
+        break;
+      case PCB_COMPILER_RT_TCC: break;
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+    return true;
+}
+
+PCB_Status PCB_BuildContext_init(PCB_BuildContext* context, PCB_BuildOptions options) {
+    PCB_CHECK_SELF(context, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(context->arena == NULL) { //user may have provided their own
+        context->arena = PCB_Arena_init(1 << 21);
+        if(context->arena == NULL) return PCB_CERR_NOMEM;
+    } else {
+        PCB_Arena_ref(context->arena);
+    }
+    context->mark = PCB_Arena_mark(context->arena);
+    if(context->mark == NULL) return PCB_CERR_NOMEM;
+    if(context->target.platform == PCB_PLATFORM_RT_UNKNOWN)
+        context->target.platform = PCB_PLATFORM_RT_CURRENT;
+    if(context->target.arch == PCB_ARCH_RT_UNKNOWN)
+        context->target.arch = PCB_ARCH_RT_CURRENT;
+
+    if(options & PCB_BUILDOPTION_DEFAULT_PATHS) {
+        context->buildPath = "build/";
+        PCB_CStrings_append(&context->sources, "src/");
+        PCB_CStrings_append(&context->includes, "include/");
+    }
+    if(options & PCB_BUILDOPTION_DEFAULT_COMPILER) {
+        context->compiler.kind = PCB_COMPILER_RT_CURRENT;
+        context->compiler.version = PCB_COMPILER_VERSION;
+        context->compiler.path = PCB_COMPILER_PATH;
+        //TODO: this is a compile-time thing.
+#ifdef __cplusplus
+        context->standard = __cplusplus;
+#else
+        context->standard = __STDC_VERSION__;
+#endif //C++
+#if !defined(__STRICT_ANSI__) && defined(__GNUC__)
+        PCB_BuildContext_flags(context).gnu = true;
+#endif //pesky but useful GNU extensions
+    }
+    if(options & PCB_BUILDOPTION_DEFAULT_WARNINGS)
+        PCB__BuildContext_addDefaultWarnings(context);
+    if(options & PCB_BUILDOPTION_OPTIMIZE)
+        if(!PCB__BuildContext_addOptimizationOptions(context, options)) return PCB_CERR_NOMEM;
+    if(!(options & PCB_BUILDOPTION_NODEBUG)) { //enable debug info by default
+        switch(context->compiler.kind) {
+          case PCB_COMPILER_RT_UNKNOWN: break;
+          case PCB_COMPILER_RT_GCC:   //fallthrough
+          case PCB_COMPILER_RT_CLANG: //fallthrough
+          case PCB_COMPILER_RT_TCC:
+            PCB_CStrings_append(&context->debugFlags, "-g");
+            break;
+          case PCB_COMPILER_RT_MSVC:
+            PCB_CStrings_append(&context->debugFlags, "/Zi");
+            break;
+          case PCB_COMPILER_RT_COUNT:
+          default: PCB_Unreachable;
+        }
+    } else if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_DYNAMICLIB) {
+        //NOTE: Related "-fPIC" is added during the build itself for...reasons.
+        switch(context->compiler.kind) {
+          case PCB_COMPILER_RT_GCC: //fallthrough
+          case PCB_COMPILER_RT_CLANG:
+            PCB_CStrings_append(&context->otherCompilerFlags, "-fvisibility=hidden");
+            break;
+          case PCB_COMPILER_RT_UNKNOWN:
+          case PCB_COMPILER_RT_TCC:
+          case PCB_COMPILER_RT_MSVC:
+            break;
+          case PCB_COMPILER_RT_COUNT:
+          default: PCB_Unreachable;
+        }
+    }
+    if(!PCB__BuildContext_init_sanitizers(context, options)) return PCB_CERR_NOMEM;
+    return PCB_OK();
+}
+
+static bool PCB__BuildContext_logCommand(PCB_BuildContext* context) {
+    bool result = true;
+    PCB_String cmd = PCB_ZEROED;
+    PCB_Status st = PCB_ShellCommand_render(&context->commandBuffer, &cmd);
+    if(!PCB_ISOK(st)) PCB__return_defer(false);
+    if(PCB_String_isEmpty(&cmd)) PCB__return_defer(false);
+    PCB_log(PCB_LOGLEVEL_INFO, "Running command \"%s\"", cmd.data);
+defer:
+    PCB_String_destroy(&cmd);
+    return result;
+}
+
+PCB_BuildContext PCB_BuildContext_create(PCB_BuildOptions options) {
+    PCB_BuildContext context = PCB_ZEROED;
+    PCB_BuildContext_init(&context, options);
+    return context;
+}
+
+void PCB_BuildContext_reset(PCB_BuildContext* context) {
+    PCB_CHECK_SELF(context, );
+    context->compiler.kind = PCB_COMPILER_RT_UNKNOWN;
+    context->compiler.version = 0;
+    context->compiler.path = NULL;
+    context->buildPath = NULL;
+    context->outputPath = NULL;
+    PCB_Vec_reset(&context->sources);
+    PCB_Vec_reset(&context->includes);
+    PCB_Vec_reset(&context->libs);
+    PCB_Vec_reset(&context->staticLibs);
+    PCB_Vec_reset(&context->librarySearchPaths);
+    PCB_Vec_reset(&context->diagnosticFlags);
+    PCB_Vec_reset(&context->debugFlags);
+    PCB_Vec_reset(&context->optimizationFlags);
+    PCB_Vec_reset(&context->preprocessorFlags.defines);
+    PCB_Vec_reset(&context->preprocessorFlags.undefines);
+    PCB_Vec_reset(&context->otherCompilerFlags);
+    PCB_Vec_reset(&context->otherLinkerFlags);
+    PCB_String_reset(&context->currentSourcePath);
+    PCB_String_reset(&context->currentBuildPath);
+    PCB_ShellCommand_reset(&context->commandBuffer);
+    PCB_Vec_reset(&context->processes);
+    PCB_Vec_reset(&context->sourceFiles);
+    PCB_Vec_reset(&context->objectFiles);
+    context->standard = 0;
+    context->flags.all = 0;
+
+    PCB_Arena_restore_to(context->arena, context->mark);
+}
+
+void PCB_BuildContext_destroy(PCB_BuildContext* context) {
+    PCB_CHECK_SELF(context, );
+    //copy pasta lets goooooo
+    context->compiler.kind = PCB_COMPILER_RT_UNKNOWN;
+    context->compiler.version = 0;
+    context->compiler.path = NULL;
+    context->buildPath = NULL;
+    context->outputPath = NULL;
+    PCB_Vec_destroy(&context->sources);
+    PCB_Vec_destroy(&context->includes);
+    PCB_Vec_destroy(&context->libs);
+    PCB_Vec_destroy(&context->staticLibs);
+    PCB_Vec_destroy(&context->librarySearchPaths);
+    PCB_Vec_destroy(&context->diagnosticFlags);
+    PCB_Vec_destroy(&context->debugFlags);
+    PCB_Vec_destroy(&context->optimizationFlags);
+    PCB_Vec_destroy(&context->preprocessorFlags.defines);
+    PCB_Vec_destroy(&context->preprocessorFlags.undefines);
+    PCB_Vec_destroy(&context->otherCompilerFlags);
+    PCB_Vec_destroy(&context->otherLinkerFlags);
+    PCB_String_destroy(&context->currentSourcePath);
+    PCB_String_destroy(&context->currentBuildPath);
+    PCB_ShellCommand_destroy(&context->commandBuffer);
+    PCB_Vec_destroy(&context->processes);
+    PCB_Vec_destroy(&context->sourceFiles);
+    PCB_Vec_destroy(&context->objectFiles);
+    context->standard = 0;
+    context->flags.all = 0;
+
+    if(context->arena != NULL) PCB_Arena_restore(context->arena, context->mark);
+    PCB_Arena_unref(context->arena);
+    context->arena = NULL;
+}
+
+PCB_Status PCB_needsRebuild(const char *src, const char *out) {
+    const PCB_FS_char *src_, *out_;
+    PCB_Status result = PCB_CERR_NOMEM;
+    if((src_ = PCB_toNativePath(src)) == NULL) return result;
+    if((out_ = PCB_toNativePath(out)) == NULL) goto free_src;
+    result = PCB_needsRebuild_ne(src_, out_);
+    PCB_freeNativePath(out_);
+free_src:
+    PCB_freeNativePath(src_);
+    return result;
+}
+
+PCB_Status PCB_needsRebuild_ne(const PCB_FS_char *src, const PCB_FS_char *out) {
+    PCB_CHECK_NULL(src, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_NULL(out, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_File_Info info;
+    uint64_t tB = 0, tS = 0;
+    PCB_Status result = PCB_File_Info_get_ne(&info, out, true);
+    if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENORES) {
+        return PCB_OK(true); //`out` doesn't exist
+    } else if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Error getting info about " PCB_FS_Fmt, out);
+        return result;
+    }
+    tB = info.timestamps.modification;
+    result = PCB_File_Info_get_ne(&info, src, true);
+    if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENORES) {
+        PCB_log(
+            PCB_LOGLEVEL_ERROR,
+            "Cannot check if " PCB_FS_Fmt " needs a rebuild because it doesn't exist",
+            src
+        );
+        return result;
+    } else if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Error getting info about " PCB_FS_Fmt, src);
+        return result;
+    }
+    tS = info.timestamps.modification;
+    if(tB >= tS) return PCB_OK(false);
+    return PCB_OK(true);
+}
+
+static PCB_Status PCB__BuildContext_needsRebuild_single(
+    PCB_BuildContext *context,
+    const PCB_FS_char *src,
+    const PCB_FS_char *out,
+    uint64_t *nobjmt //modification time of the newest object file
+) {
+    //skip the "whether the source is newer than the cached object file" step
+    if(PCB_BuildContext_flags(context).alwaysBuild) return PCB_OK(true);
+    //TODO: replace this check with a more sophisticated version that tracks dependencies
+    //TODO: replace simple modification time checks with a function that scans
+    //dependencies of the given file once it's implemented
+    PCB_File_Info info;
+    uint64_t tB = 0, tS = 0;
+    PCB_Status result = PCB_File_Info_get_ne(&info, out, true);
+    if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENORES) {
+        return PCB_OK(true); //`out` doesn't exist
+    } else if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Error getting info about " PCB_FS_Fmt, out);
+        return result;
+    }
+    tB = info.timestamps.modification;
+    if(nobjmt != NULL) {
+        if(*nobjmt < tB) *nobjmt = tB;
+    }
+    result = PCB_File_Info_get_ne(&info, src, true);
+    if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENORES) {
+        PCB_log(
+            PCB_LOGLEVEL_ERROR,
+            "Cannot check if " PCB_FS_Fmt " needs a rebuild because it doesn't exist",
+            src
+        );
+        return result;
+    } else if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Error getting info about " PCB_FS_Fmt, src);
+        return result;
+    }
+    tS = info.timestamps.modification;
+    if(tB >= tS) return PCB_OK(false);
+    return PCB_OK(true);
+}
+
+static PCB_Status PCB__BuildContext_needsRebuild_single_char(
+    PCB_BuildContext *context, const char *src, const char *out, uint64_t *nobjmt
+) {
+    if(PCB_BuildContext_flags(context).alwaysBuild) return PCB_OK(true);
+    const PCB_FS_char *src_, *out_;
+    PCB_Status result = PCB_CERR_NOMEM;
+    if((src_ = PCB_toNativePath(src)) == NULL) return result;
+    if((out_ = PCB_toNativePath(out)) == NULL) goto free_src;
+    result = PCB__BuildContext_needsRebuild_single(context, src_, out_, nobjmt);
+    PCB_freeNativePath(out_);
+free_src:
+    PCB_freeNativePath(src_);
+    return result;
+}
+
+static void PCB__build_log(const PCB_FS_char *src, const PCB_FS_char *obj) {
+    PCB_log(PCB_LOGLEVEL_INFO, "Building " PCB_FS_Fmt " to " PCB_FS_Fmt "...", src, obj);
+}
+
+static PCB_Status PCB__build_file(
+    PCB_BuildContext *context,
+    const PCB_FS_char *src,
+    const PCB_FS_char *obj,
+    bool addToObjs,
+    uint64_t *nobjmt
+) {
+    PCB_Status result = PCB_OK();
+    PCB_Process process = PCB_Process_init();
+    PCB_ShellCommand *cmd = &context->commandBuffer;
+#if PCB_PLATFORM_WINDOWS
+    bool converted_native = false;
+#endif
+    PCB__logTrace("In: " PCB_FS_Fmt ", out: " PCB_FS_Fmt, src, obj);
+    //`needsRebuild` was already called on `src` and `obj`
+    if(!PCB_BuildContext_flags(context).buildImmediately) goto compile;
+
+    result = PCB__BuildContext_needsRebuild_single(context, src, obj, nobjmt);
+    if(!PCB_ISOK(result)) return result;
+    if(!result.code) goto afterCompile;
+compile:
+    result = PCB_OK();
+#if PCB_PLATFORM_WINDOWS
+    cmd->argv.data[cmd->argv.length - 2] = PCB_fromNativePath(obj);
+    cmd->argv.data[cmd->argv.length - 1] = PCB_fromNativePath(src);
+    converted_native = true;
+#else
+    cmd->argv.data[cmd->argv.length - 2] = obj;
+    cmd->argv.data[cmd->argv.length - 1] = src;
+#endif
+
+    PCB_BuildContext_flags(context).rebuiltAnything = true;
+
+    PCB__build_log(src, obj);
+#if defined(PCB_DEBUG_SELF) && PCB_DEBUG_SELF+0
+    if(!PCB__BuildContext_logCommand(context)) return PCB_CERR_NOMEM;
+#endif //PCB_DEBUG
+    result = PCB_ShellCommand_runBg(&context->commandBuffer, &process);
+    if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Failed to run %s", cmd->argv.data[0]);
+        goto defer;
+    }
+    switch(PCB_BuildContext_flags(context).parallel) {
+#ifdef PCB_BUILD_0_AS_PARALLEL
+      case 1: { //no parallel
+#else
+      case 0: { //no parallel
+#endif //PCB_BUILD_0_AS_PARALLEL
+        if(!PCB_Process_waitForExit(&process)) {
+            result = PCB_STATUS_NATIVE_SYSTEM_API();
+            PCB_Process_destroy(&process);
+            PCB_Status_log(result, "Error waiting for child process");
+            goto defer;
+        }
+        result = PCB_Process_getExitCode(&process); PCB_Process_destroy(&process);
+        if(!PCB_ISOK(result)) {
+            PCB_Status_log(result, "Failed to get exit code"); goto defer;
+        }
+        if(result.code == 0) break;
+        result = PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_COMPILATION_ERROR);
+        goto defer;
+      }
+      default: {
+        size_t parallel = PCB_BuildContext_flags(context).parallel;
+        int index;
+        PCB_Process *p;
+        if(context->processes.length < parallel) {
+            int res;
+            PCB_Vec_try_append(&context->processes, process, res);
+            if(res == PCB_VEC_OK) { process = PCB_Process_init(); break; }
+            else PCB__return_defer(PCB_CERR_NOMEM); //IOV is unrealistic
+        }
+        index = PCB_Processes_waitForAny(&context->processes);
+        if(index < 0) {
+            result = PCB_STATUS_NATIVE_SYSTEM_API();
+            PCB_Status_log(result, "Error waiting for child process");
+            goto defer;
+        }
+        p = &context->processes.data[index];
+        result = PCB_Process_getExitCode(p); PCB_Process_destroy(p);
+        if(!PCB_ISOK(result)) {
+            PCB_Status_log(result, "Failed to get exit code"); goto defer;
+        }
+        if(result.code != 0) {
+            result = PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_COMPILATION_ERROR);
+            goto defer;
+        }
+        *p = process;
+        process = PCB_Process_init();
+        break;
+      }
+    }
+afterCompile:
+    if(addToObjs) {
+        const char *obj_ = PCB_Arena_strdup(context->arena, cmd->argv.data[cmd->argv.length - 2]);
+        if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+        PCB_CStrings_append(&context->objectFiles, obj_);
+    }
+defer:
+    if(PCB_Process_isValid(&process)) {
+#if PCB_PLATFORM_POSIX
+        PCB_Process_waitForExit(&process);
+#endif //otherwise it's a kernel memory leak of a zombie process
+        PCB_Process_destroy(&process);
+    }
+#if PCB_PLATFORM_WINDOWS
+    if(converted_native) {
+        PCB_freePath(cmd->argv.data[cmd->argv.length - 1]);
+        PCB_freePath(cmd->argv.data[cmd->argv.length - 2]);
+    }
+#endif
+    cmd->argv.data[cmd->argv.length - 1] = NULL;
+    cmd->argv.data[cmd->argv.length - 2] = NULL;
+    return result;
+}
+
+typedef struct {
+    PCB_FS_Iterator it;
+    struct {
+        PCB_FS_String path;
+        size_t depth;
+    } obj;
+} PCB__BuildContext_Sourcemap_State;
+
+static PCB_Status PCB__BuildContext_Sourcemap_State_init(
+    PCB__BuildContext_Sourcemap_State *ss, const char *srcdir, const char *objdir
+) {
+    PCB_FS_String *obj = &ss->obj.path;
+    PCB_Status result;
+    bool ok;
+    {
+        const PCB_FS_char *nsrcdir = PCB_toNativePath(srcdir);
+        if(nsrcdir == NULL) return PCB_CERR_NOMEM;
+        result = PCB_FS_Iterator_init(
+            &ss->it, nsrcdir,
+            PCB_FS_ITERATOR_FLAG_FOLLOW_SYMLINKS,
+            0
+        );
+        PCB_freeNativePath(nsrcdir);
+    }
+    if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Could not open directory %s", srcdir);
+        return result;
+    }
+    {
+        const PCB_FS_char *nobjdir = PCB_toNativePath(objdir);
+        if(nobjdir == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+        ok = PCB_FS_String_append_cstr(&ss->obj.path, nobjdir);
+        PCB_freeNativePath(nobjdir);
+    }
+    if(!ok) PCB__return_defer(PCB_CERR_NOMEM);
+    if(!PCB_ISOK(result = PCB_FS_mkdir_if_not_exists_ne(obj->data))) {
+        PCB_Status_log(result, "Failed to create directory " PCB_FS_Fmt, obj->data);
+        goto defer;
+    }
+    if(!PCB_FS_String_setSuffix_char(obj, PCB_FS_DIR_DELIM))
+        PCB__return_defer(PCB_CERR_NOMEM);
+    ss->obj.depth = 1;
+    return PCB_OK();
+defer:
+    PCB_FS_String_destroy(obj);
+    PCB_FS_Iterator_destroy(&ss->it);
+    return result;
+}
+
+typedef enum {
+    PCB__BUILD_DIRENT_ACTION_REG,
+    PCB__BUILD_DIRENT_ACTION_SKIP,
+    PCB__BUILD_DIRENT_ACTION_DIR,
+} PCB__Build_Dirent_Action;
+
+static PCB_Status PCB__build_dirent_decide(const PCB_FS_Iterator *it, PCB_FS_String *obj) {
+    PCB_FileType ft = (PCB_FileType)(it->ent->info.type & PCB_FILETYPE_SYMLINK_IGN);
+    PCB_FS_StringView filename = PCB_FS_StringView_from_parts(it->ent->name, it->ent->namelength);
+    const PCB_FS_String *src = &it->current_filepath;
+    PCB_Status result;
+    switch(it->ent->info.type & PCB_FILETYPE_SYMLINK_IGN) {
+      case PCB_FILETYPE_REG: return PCB_OK(PCB__BUILD_DIRENT_ACTION_REG);
+      case PCB_FILETYPE_DIR:
+        if(it->stack.length == it->maxdepth) return PCB_OK(PCB__BUILD_DIRENT_ACTION_SKIP);
+        if(!PCB_FS_String_append_sv(obj, filename)) return PCB_CERR_NOMEM;
+        if(!PCB_FS_String_setSuffix_char(obj, PCB_FS_DIR_DELIM))
+            return PCB_CERR_NOMEM;
+        if(!PCB_ISOK(result = PCB_FS_mkdir_if_not_exists_ne(obj->data))) {
+            PCB_Status_log(result, "Failed to create directory " PCB_FS_Fmt, obj->data);
+            return result;
+        }
+        return PCB_OK(PCB__BUILD_DIRENT_ACTION_DIR);
+      case PCB_FILETYPE_STREAM: //fallthrough
+      case PCB_FILETYPE_CHAR: //fallthrough
+      case PCB_FILETYPE_BLK: {
+        const char *label = ft == PCB_FILETYPE_STREAM ? "stream file" : (
+            ft == PCB_FILETYPE_CHAR ? "character device" : "block device"
+        );
+        PCB_log(
+            PCB_LOGLEVEL_WARN,
+            "What? Why is there a %s (" PCB_FS_Fmt ") in the source "
+            "file directory? Skipping.",
+            label, src->data
+        );
+      } return PCB_OK(PCB__BUILD_DIRENT_ACTION_SKIP);
+      case PCB_FILETYPE_NONE:
+        PCB_log(
+            PCB_LOGLEVEL_WARN, "Skipping dangling/deleted symlink " PCB_FS_Fmt,
+            src->data
+        ); return PCB_OK(PCB__BUILD_DIRENT_ACTION_SKIP);
+      case PCB_FILETYPE_UNKNOWN:
+        PCB_log(PCB_LOGLEVEL_WARN, "dunno what is " PCB_FS_Fmt ", skipping", src->data);
+        return PCB_OK(PCB__BUILD_DIRENT_ACTION_SKIP);
+      case PCB_FILETYPE_ERROR:
+        PCB__BUG("Erroneous entry was reported as success by `PCB_FS_Iterator_next()`.");
+      default: PCB_Unreachable;
+    }
+}
+
+PCB_Enum(PCB__Language, uint_least32_t) {
+    PCB__LANG_NONE,
+    PCB__LANG_C,
+    PCB__LANG_CPP,
+    PCB__LANG_ASM,
+};
+
+static PCB_Status PCB__BuildContext_Sourcemap_State_advance(
+    PCB__BuildContext_Sourcemap_State *ss, const PCB_BuildContext *context
+) {
+    const PCB_FS_String *src = &ss->it.current_filepath;
+    PCB_FS_String *obj = &ss->obj.path;
+    const PCB_Compiler_RT c = context->compiler.kind;
+    const PCB_FS_StringView obj_ext = PCB_build_preferred_obj_file_ext(c);
+    bool skip = false;
+    while(true) {
+        PCB_Status result = PCB_FS_Iterator_next(&ss->it, skip);
+        PCB_FS_StringView sv;
+        PCB__Language lang;
+        if(!PCB_ISOK(result)) {
+            if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENOMEM)
+                return result;
+            PCB_Status_log(result, "Skipping " PCB_FS_Fmt, src->data);
+            skip = true; continue;
+        }
+        if(result.code == 0) break;
+        while(ss->obj.depth > ss->it.stack.length) {
+            PCB_FS_String_truncate_until_char(obj, PCB_FS_DIR_DELIM);
+            PCB_FS_String_pop(obj);
+            --ss->obj.depth;
+        }
+        PCB_FS_String_truncate_until_char(obj, PCB_FS_DIR_DELIM);
+        ss->obj.depth = ss->it.stack.length;
+        sv = PCB_FS_StringView_from_parts(ss->it.ent->name, ss->it.ent->namelength);
+        skip = false;
+        if(!PCB_ISOK(result = PCB__build_dirent_decide(&ss->it, obj))) return result;
+        switch((PCB__Build_Dirent_Action)result.code) {
+          case PCB__BUILD_DIRENT_ACTION_REG: break;
+          case PCB__BUILD_DIRENT_ACTION_SKIP: continue;
+          case PCB__BUILD_DIRENT_ACTION_DIR: ++ss->obj.depth; continue;
+          default: PCB_Unreachable;
+        }
+        if(PCB_FS_String_endsWith_cstr(src, PCB_FS_LIT(".c"))) lang = PCB__LANG_C;
+        else if(PCB_FS_String_endsWith_cstr(src, PCB_FS_LIT(".cpp"))) lang = PCB__LANG_CPP;
+        else if(PCB_FS_String_endsWith_cstr(src, PCB_FS_LIT(".s"))) lang = PCB__LANG_ASM;
+        else continue;
+
+        if(!PCB_FS_String_append_sv(obj, sv)) return PCB_CERR_NOMEM;
+        PCB_FS_String_truncate_until_char(obj, '.');
+        if(!PCB_FS_String_append_sv(obj, obj_ext)) return PCB_CERR_NOMEM;
+        return PCB_OK(lang);
+    }
+    return PCB_OK(PCB__LANG_NONE);
+}
+
+static void PCB__BuildContext_Sourcemap_State_destroy(
+    PCB__BuildContext_Sourcemap_State *ss
+) {
+    PCB_FS_String_destroy(&ss->obj.path);
+    PCB_FS_Iterator_destroy(&ss->it);
+    ss->obj.depth = 0;
+}
+
+static PCB_Status PCB__build_directory(
+    PCB_BuildContext *context, const char *srcdir, const char *objdir, uint64_t *nobjmt
+) {
+    PCB__BuildContext_Sourcemap_State ss = PCB_ZEROED;
+    const PCB_FS_String *src = &ss.it.current_filepath, *obj = &ss.obj.path;
+    PCB_Status result = PCB__BuildContext_Sourcemap_State_init(&ss, srcdir, objdir);
+    if(!PCB_ISOK(result)) return result;
+
+    while(true) {
+        result = PCB__BuildContext_Sourcemap_State_advance(&ss, context);
+        if(!PCB_ISOK(result)) goto defer;
+        //TODO: Such system is unsustainable. Make the user provide a compiler
+        //per language. That way we can support languages other than C/C++.
+        switch((PCB__Language)result.code) {
+          case PCB__LANG_NONE: PCB__return_defer(PCB_OK());
+          case PCB__LANG_C: {
+#ifdef __cplusplus
+            if(PCB_BuildContext_flags(context).ccInCpp)
+                context->commandBuffer.argv.data[0] = PCB_COMPILER_PATH_ALT;
+#endif //C++?
+            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt)))
+                goto defer;
+#ifdef __cplusplus
+                if(PCB_BuildContext_flags(context).ccInCpp)
+                    context->commandBuffer.data[0] = context->compiler.path;
+#endif //C++?
+          } break;
+          case PCB__LANG_CPP: {
+#ifndef __cplusplus
+            if(PCB_BuildContext_flags(context).ccInCpp) {
+                context->commandBuffer.argv.data[0] = PCB_COMPILER_PATH_ALT;
+            } else {
+                PCB_log(
+                    PCB_LOGLEVEL_WARN, "C++ source file " PCB_FS_Fmt " in a C-only "
+                    "build, skipping", src->data
+                ); continue;
+            }
+#endif //!C++?
+            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt)))
+                goto defer;
+#ifndef __cplusplus
+            if(PCB_BuildContext_flags(context).ccInCpp)
+                context->commandBuffer.argv.data[0] = context->compiler.path;
+#endif //!C++?
+          } break;
+          case PCB__LANG_ASM:
+            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt)))
+                goto defer;
+            break;
+          default: PCB_Unreachable;
+        }
+    }
+    result = PCB_OK();
+defer:
+    PCB__BuildContext_Sourcemap_State_destroy(&ss);
+    return result;
+}
+
+static PCB_Status PCB__BuildContext_gatherSources_dir(
+    PCB_BuildContext *context, const char *srcdir, const char *objdir, uint64_t *nobjmt
+) {
+    PCB__BuildContext_Sourcemap_State ss = PCB_ZEROED;
+    const PCB_FS_String *src = &ss.it.current_filepath, *obj = &ss.obj.path;
+    PCB_CStrings *srcs = &context->sourceFiles,
+                 *objs = &context->objectFiles;
+    PCB_Status result = PCB__BuildContext_Sourcemap_State_init(&ss, srcdir, objdir);
+    if(!PCB_ISOK(result)) return result;
+
+    while(true) {
+        const char *src_, *obj_, *src__, *obj__;
+        result = PCB__BuildContext_Sourcemap_State_advance(&ss, context);
+        if(!PCB_ISOK(result)) goto defer;
+        if(result.code == PCB__LANG_NONE) break;
+        obj__ = PCB_fromNativePath(obj->data);
+        PCB_assert(obj__ != NULL);
+        obj_ = PCB_Arena_strdup(context->arena, obj__);
+        PCB_freePath(obj__);
+        if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+        if(!PCB_BuildContext_flags(context).deferModChecks) {
+            result = PCB__BuildContext_needsRebuild_single(
+                context, src->data, obj->data, nobjmt
+            );
+            if(!PCB_ISOK(result)) goto defer;
+            if(!result.code) {
+                PCB_CStrings_append(objs, obj_);
+                continue; //only add object file, needed for linking
+            }
+        }
+        src__ = PCB_fromNativePath(src->data);
+        PCB_assert(src__ != NULL);
+        src_ = PCB_Arena_strdup(context->arena, src__);
+        PCB_freePath(src__);
+        if(src_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+        PCB_CStrings_append(srcs, src_);
+        if(objs->length < srcs->length) PCB_CStrings_append(objs, obj_);
+        else {
+            //srcs: [ "b.c" ]
+            //objs: [ "a.o", "c.o" ] -> [ "b.o", "c.o", "a.o" ]
+            //We lose the original order, but who cares
+            const char *old = objs->data[srcs->length - 1];
+            objs->data[srcs->length - 1] = obj_;
+            PCB_CStrings_append(objs, old);
+        }
+    }
+    result = PCB_OK();
+defer:
+    PCB__BuildContext_Sourcemap_State_destroy(&ss);
+    return result;
+}
+
+static PCB_Status PCB__BuildContext_isSingleFile(PCB_BuildContext *context) {
+    PCB_CHECK_SELF(context, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(context->sources.length > 1 || context->sources.length == 0) return PCB_OK(false);
+    PCB_File_Info info;
+    const char *src = context->sources.data[0];
+    PCB_Status result = PCB_File_Info_get(&info, src, true);
+    if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Failed to get info about file %s", src);
+        return result;
+    }
+    switch(info.type & PCB_FILETYPE_SYMLINK_IGN) {
+      case PCB_FILETYPE_REG: return PCB_OK(true);
+      case PCB_FILETYPE_DIR: return PCB_OK(false);
+      case PCB_FILETYPE_NONE:
+        PCB_log(PCB_LOGLEVEL_ERROR, "Specified source (%s) doesn't exist", src);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+      case PCB_FILETYPE_STREAM: //fallthrough
+      case PCB_FILETYPE_CHAR: //fallthrough
+      case PCB_FILETYPE_BLK:
+        PCB_log(PCB_LOGLEVEL_ERROR, "Invalid type of %s for building", src);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+      case PCB_FILETYPE_UNKNOWN:
+        PCB_log(PCB_LOGLEVEL_ERROR, "Can't determine what is %s", src);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL); //should be something else
+      case PCB_FILETYPE_ERROR:
+        PCB__BUG("PCB_File_Info returned success with info.type set to ERROR");
+      case PCB_FILETYPE_SYMLINK:
+      default: PCB_Unreachable;
+    }
+}
+
+static void PCB__BuildContext_logutd(PCB_BuildContext* context, const char *out) {
+    if(PCB_BuildContext_flags(context).noutd) return;
+    if(out == NULL) out = "Target";
+    PCB_log(PCB_LOGLEVEL_INFO, "%s is up-to-date.", out);
+}
+
+static bool PCB__BuildContext_logCommandTemplate(PCB_BuildContext *context) {
+    bool result = true;
+    PCB_String cmd = PCB_ZEROED;
+    PCB_Status st = PCB_ShellCommand_render(&context->commandBuffer, &cmd);
+    if(!PCB_ISOK(st)) PCB__return_defer(false);
+    if(PCB_String_isEmpty(&cmd)) PCB__return_defer(false);
+    PCB_log(
+        PCB_LOGLEVEL_INFO,
+        "Command template used: \"%s <output path> <source path>\"",
+        cmd.data
+    );
+defer:
+    PCB_String_destroy(&cmd);
+    return result;
+}
+
+static PCB_Status PCB__BuildContext_parseCompilerFlags(PCB_BuildContext *context) {
+    const PCB_Compiler_RT c = context->compiler.kind;
+    PCB_ShellCommand *cmd = &context->commandBuffer;
+    if(context->compiler.path == NULL) {
+        PCB_log(
+            PCB_LOGLEVEL_INFO,
+            "No compiler path specified, will default to \""
+            PCB_COMPILER_PATH "\""
+        );
+        context->compiler.path = PCB_COMPILER_PATH;
+    }
+
+    /*
+     * The order of arguments passed to the compiler is as follows:
+     * <compiler path> <standard> <warnings> <debug flags>
+     * <optimization flags> <preprocessor flags> <includes>
+     * <other flags> (whatever else...)
+     */
+
+    //1. Compiler path
+#if PCB_PLATFORM_WINDOWS
+    if(c == PCB_COMPILER_RT_MSVC) {
+        PCB_Status st = PCB__setup_baked_msvc_environment(context, false);
+        if(!PCB_ISOK(st)) {
+            PCB_Status_log(st, "Failed to setup baked MSVC environment");
+            return st;
+        }
+    }
+#endif
+    PCB_ShellCommand_append_arg(cmd, context->compiler.path);
+    //1½: MSVC scheiße
+    if(context->compiler.kind == PCB_COMPILER_RT_MSVC) {
+        //These options are forced upon everyone for their own sanity.
+        PCB_ShellCommand_append_args(
+            cmd,
+            "/nologo", //nobody cares, shut up and don't be noisy
+            "/EHsc",   //EHa only makes the code nonportable
+            "/utf-8"   //there is absolutely no reason to use anything other than Unicode
+            //"/options:strict" //TODO: only in VS2022 17.0
+        );
+        //EHsc is used for compatibility with other compilers as EHa is not portable
+        //TODO: flag for enabling EHa over EHsc when using MSVC
+    }
+    //2. The specified language standard
+    {
+        const char *std = PCB_build_flag_standard(
+            context->standard,
+            context->arena,
+            context->compiler.kind,
+//TODO: move this to runtime
+#ifdef __cplusplus
+            true,
+#else
+            false,
+#endif
+            PCB_BuildContext_flags(context).gnu
+        );
+        if(std == NULL) return PCB_CERR_NOMEM;
+        else if(*std != '\0') //empty string
+            PCB_ShellCommand_append_arg(cmd, std);
+        //MSVC does NOT set "__cplusplus" unless "/Zc:__cplusplus" is added for...reasons.
+        if(context->compiler.kind == PCB_COMPILER_RT_MSVC)
+            PCB_ShellCommand_append_arg(cmd, "/Zc:__cplusplus");
+
+    }
+    //3. Warning flags
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->diagnosticFlags, PCB_CStringsView),
+        NULL, "Warning flag"
+    )) return PCB_CERR_NOMEM;
+    //4. Debug flags
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->debugFlags, PCB_CStringsView),
+        NULL, "Debug flag"
+    )) return PCB_CERR_NOMEM;
+    //5. Optimization flags
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->optimizationFlags, PCB_CStringsView),
+        NULL, "Optimization flag"
+    )) return PCB_CERR_NOMEM;
+    //6. Preprocessor flags
+    PCB_static_assert(PCB_COMPILER_RT_COUNT == 5,);
+    static const char *const FMTS_DEFINE[5][2] = {
+        { NULL, "%s%s" },
+        { "-D%s", "-D%s=%s" }, { "-D%s", "-D%s=%s" },
+        { "/D%s", "/D%s=%s" }, { "-D%s", "-D%s=%s" },
+    };
+    if(!PCB__BuildContext_parseFlags_pairs(
+        context, PCB_View_Vec_A_T(&context->preprocessorFlags.defines, PCB_CStringPairsView),
+        FMTS_DEFINE[c], "Preprocessor define flag"
+    )) return PCB_CERR_NOMEM;
+    static const char *const FMTS_UNDEFINE[5] = {NULL, "-U%s", "-U%s", "/U%s", "-U%s"};
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->preprocessorFlags.undefines, PCB_CStringsView),
+        FMTS_UNDEFINE[c], "Preprocessor undefine flag"
+    )) return PCB_CERR_NOMEM;
+    //7. Include directories
+    static const char *const FMTS_INCLUDE[5] = {NULL, "-I%s", "-I%s", "/I%s", "-I%s"};
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->includes, PCB_CStringsView),
+        FMTS_INCLUDE[c], "Include directory flag"
+    )) return PCB_CERR_NOMEM;
+
+    //8. Other flags
+    if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_DYNAMICLIB) {
+        switch(context->compiler.kind) {
+          case PCB_COMPILER_RT_UNKNOWN: break;
+          case PCB_COMPILER_RT_GCC:
+          case PCB_COMPILER_RT_CLANG:
+            PCB_ShellCommand_append_arg(cmd, "-fPIC");
+            break;
+          case PCB_COMPILER_RT_MSVC: break; //DLLs don't use PIC
+          case PCB_COMPILER_RT_TCC:
+            PCB_log( //TODO: Not necessarily true on Windows
+                PCB_LOGLEVEL_WARN,
+                "TCC doesn't support position-independent code"
+            ); break;
+          case PCB_COMPILER_RT_COUNT:
+          default: PCB_Unreachable;
+        }
+    }
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->otherCompilerFlags, PCB_CStringsView),
+        NULL, "Other compiler flag"
+    )) return PCB_CERR_NOMEM;
+    return PCB_OK();
+}
+
+static PCB_Status PCB__BuildContext_parseArchiverFlags(
+    PCB_BuildContext* context, const char *out
+) {
+    const PCB_Compiler_RT c = context->compiler.kind;
+    switch(c) {
+      case PCB_COMPILER_RT_GCC:   //fallthrough
+      case PCB_COMPILER_RT_CLANG: //fallthrough
+      case PCB_COMPILER_RT_TCC:   //Assume GCC-like environment
+        PCB_ShellCommand_append_args(&context->commandBuffer, "ar", "rcs");
+        break;
+      case PCB_COMPILER_RT_MSVC:
+        PCB_ShellCommand_append_args(&context->commandBuffer, "lib", "/nologo");
+        break;
+      case PCB_COMPILER_RT_UNKNOWN: break;
+      case PCB_COMPILER_RT_COUNT:
+      default: PCB_Unreachable;
+    }
+    if(c == PCB_COMPILER_RT_MSVC) {
+        char *out_ = PCB_Arena_asprintf(context->arena, "/out:%s", out);
+        if(out_ == NULL) return PCB_CERR_NOMEM;
+        PCB_ShellCommand_append_arg(&context->commandBuffer, out_);
+    } else {
+        PCB_ShellCommand_append_arg(&context->commandBuffer, out);
+    }
+    PCB_ShellCommand_append_n_args(
+        &context->commandBuffer,
+        context->objectFiles.data, context->objectFiles.length
+    );
+    return PCB_OK();
+}
+
+static PCB_Status PCB__BuildContext_parseLinkerFlags(
+    PCB_BuildContext *context, const char *out
+) {
+    const PCB_Compiler_RT c = context->compiler.kind;
+    PCB_ShellCommand *cmd = &context->commandBuffer;
+    PCB_Status result = PCB__BuildContext_isSingleFile(context);
+    if(!PCB_ISOK(result)) return result;
+    //1. Dependent on whether we are building just 1 file or more. If not,
+    //the executable to run would be added here prior to calling this function.
+
+    //Linking 1 file in MSVC doesn't require separately invoking the linker,
+    //but requires specifying that subsequent flags are linker flags.
+    if(result.code && c == PCB_COMPILER_RT_MSVC)
+        PCB_ShellCommand_append_arg(cmd, "/link");
+    if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_DYNAMICLIB) {
+        switch(c) {
+          case PCB_COMPILER_RT_UNKNOWN: break;
+          case PCB_COMPILER_RT_GCC: //fallthrough
+          case PCB_COMPILER_RT_CLANG: //fallthrough
+            //so as not to add the same flag twice,
+            //unnecessary but otherwise looks weird
+            if(!result.code) PCB_ShellCommand_append_arg(cmd, "-fPIC");
+            //fallthrough
+          case PCB_COMPILER_RT_TCC:
+            PCB_ShellCommand_append_arg(cmd, "-shared");
+            break;
+          case PCB_COMPILER_RT_MSVC:
+            PCB_ShellCommand_append_arg(cmd, "/DLL");
+            break;
+          case PCB_COMPILER_RT_COUNT:
+          default: PCB_Unreachable;
+        }
+    }
+    PCB_static_assert(PCB_COMPILER_RT_COUNT == 5,);
+     //2. Object files, if any
+    PCB_ShellCommand_append_n_args(
+        cmd,
+        context->objectFiles.data, context->objectFiles.length
+    );
+    //3. Library search paths
+    static const char *const FMTS_LIBSEARCHPATHS[5] = {
+        NULL, "-L%s", "-L%s", "/LIBPATH:\"%s\"", "-L%s"
+    };
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->librarySearchPaths, PCB_CStringsView),
+        FMTS_LIBSEARCHPATHS[c], "Library search path"
+    )) return PCB_CERR_NOMEM;
+
+    static const char* const FMTS_LIBS[5] = {
+        NULL, "-l%s", "-l%s", "%s.lib", "-l%s"
+    };
+    const bool defstatic = PCB_BuildContext_flags(context).linkStaticallyByDefault;
+    //4. Static libraries
+    if(context->staticLibs.length > 0) {
+        const char *flag = PCB_build_flag_default_to_static_linking(c);
+        if(*flag != '\0') PCB_ShellCommand_append_arg(cmd, flag);
+        if(!PCB__BuildContext_parseFlags_single(
+            context, PCB_View_Vec_A_T(&context->staticLibs, PCB_CStringsView),
+            FMTS_LIBS[c], "Static library"
+        )) return PCB_CERR_NOMEM;
+        if(context->libs.length == 0 && !defstatic) {
+            PCB_ShellCommand_append_arg(
+                cmd,
+                PCB_build_flag_default_to_dynamic_linking(c)
+            );
+        }
+    }
+
+    //5. Dynamic libraries
+    if(context->libs.length > 0) {
+        if(context->staticLibs.length > 0) { //override the above
+            const char *flag = PCB_build_flag_default_to_dynamic_linking(c);
+            if(*flag != '\0') PCB_ShellCommand_append_arg(cmd, flag);
+        }
+        if(!PCB__BuildContext_parseFlags_single(
+            context, PCB_View_Vec_A_T(&context->libs, PCB_CStringsView),
+            FMTS_LIBS[c], "Library"
+        )) return PCB_CERR_NOMEM;
+        if(defstatic) {
+            const char *flag = PCB_build_flag_default_to_static_linking(c);
+            if(*flag != '\0') PCB_ShellCommand_append_arg(cmd, flag);
+        }
+    }
+    //5½: Edge case
+    if(context->libs.length == 0 && context->staticLibs.length == 0 && defstatic) {
+        const char *flag = PCB_build_flag_default_to_static_linking(c);
+        if(*flag != '\0') PCB_ShellCommand_append_arg(cmd, flag);
+    }
+
+    //6. Other flags
+    if(!PCB__BuildContext_parseFlags_single(
+        context, PCB_View_Vec_A_T(&context->otherLinkerFlags, PCB_CStringsView),
+        NULL, "Other linker flag"
+    )) return PCB_CERR_NOMEM;
+    //7.Flag to specify "output name", but only if output path is specified
+    if(out != NULL) {
+        switch(context->compiler.kind) {
+          case PCB_COMPILER_RT_GCC: //fallthrough
+          case PCB_COMPILER_RT_CLANG: //fallthrough
+          case PCB_COMPILER_RT_TCC:
+            PCB_ShellCommand_append_args(
+                cmd,
+                "-o", out
+            ); break;
+          case PCB_COMPILER_RT_MSVC: {
+            const char *outpath = PCB_Arena_asprintf(
+                context->arena, "/out:%s", out
+            ); if(outpath == NULL) return PCB_CERR_NOMEM;
+            PCB_ShellCommand_append_arg(cmd, outpath);
+          } break;
+          case PCB_COMPILER_RT_UNKNOWN:
+            PCB_log(
+                PCB_LOGLEVEL_WARN,
+                "Cannot add a flag to specify the output path, skipping"
+            ); break;
+          case PCB_COMPILER_RT_COUNT:
+          default: PCB_Unreachable;
+        }
+    }
+    return PCB_OK();
+}
+
+static PCB_Status PCB__build_fromContext_single_compile(
+    PCB_BuildContext *context, const char *src, const char *obj
+) {
+    PCB_Status result;
+    PCB_ShellCommand *cmd = &context->commandBuffer;
+    const PCB_Compiler_RT c = context->compiler.kind;
+    const char *flag;
+
+    flag = PCB_build_flag_cwl(c);
+    if(*flag != '\0') PCB_ShellCommand_append_arg(cmd, flag);
+
+    flag = PCB_build_flag_output(c);
+    if(*flag != '\0') PCB_ShellCommand_append_arg(cmd, flag);
+
+    PCB_ShellCommand_append_args(&context->commandBuffer, obj, src);
+    if(!PCB__BuildContext_logCommand(context)) return PCB_CERR_NOMEM;
+    result = PCB_ShellCommand_runAndWait(&context->commandBuffer);
+    if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Failed to run %s", cmd->argv.data[0]);
+        return result;
+    }
+    if(result.code != 0) {
+        PCB_log(
+            PCB_LOGLEVEL_ERROR,
+            "Encountered an error during compilation, aborting build."
+        );
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_COMPILATION_ERROR);
+    }
+    PCB_ShellCommand_reset(&context->commandBuffer);
+    PCB_CStrings_append(&context->objectFiles, obj);
+    return PCB_OK();
+}
+
+static PCB_Status PCB__build_fromContext_single(PCB_BuildContext *context) {
+    PCB_Status result;
+    PCB_ShellCommand *cmd = &context->commandBuffer;
+    const PCB_BuildType bt = PCB_BuildContext_flags(context).buildType;
+    PCB__logTrace("Building a single file...");
+    //parallel building doesn't make sense for a single file
+#ifdef PCB_BUILD_0_AS_PARALLEL
+    PCB_BuildContext_flags(context).parallel = 1;
+#else
+    PCB_BuildContext_flags(context).parallel = 0;
+#endif
+
+    if(context->outputPath == NULL) {
+        PCB_log(PCB_LOGLEVEL_ERROR, "%s", PCB_BUILD_RESULT_NO_NAME_1SRC_STR);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_NO_NAME_1SRC);
+    }
+    //may be for whatever reason set to `true` prior to here
+    PCB_BuildContext_flags(context).rebuiltAnything = false;
+    const char *src = context->sources.data[0], *obj = NULL, *out = context->outputPath;
+    if(PCB_BuildContext_flags(context).cwl || bt == PCB_BUILDTYPE_STATICLIB) {
+        if(context->buildPath == NULL) {
+            PCB_log(PCB_LOGLEVEL_ERROR, "%s for single file build", PCB_BUILD_RESULT_NO_BUILD_PATH_STR);
+            return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_NO_BUILD_PATH);
+        }
+        const PCB_Compiler_RT c = context->compiler.kind;
+        PCB_StringView base = PCB_FS_Basename(PCB_StringView_from_cstr(src));
+        PCB_StringView dot  = PCB_StringView_rsubcstr(base, ".");
+        if(!PCB_String_isEmpty(&dot)) base.length = (size_t)(dot.data - base.data);
+        char *obj_ = PCB_Arena_asprintf(
+            context->arena,
+            "%s%c" PCB_SV_Fmt "." PCB_FS_Fmt,
+            context->buildPath, PCB_FS_DIR_DELIM, PCB_SV_Arg(base),
+            PCB_build_preferred_obj_file_ext(c).data
+        );
+        if(obj_ == NULL) return PCB_CERR_NOMEM;
+        obj = obj_;
+        if(PCB_BuildContext_flags(context).cwl) out = obj_;
+    }
+    if(!PCB_BuildContext_flags(context).cwl) {
+        if(!PCB_BuildType_formatName(bt, context->target.platform, &out, context->arena))
+            return PCB_CERR_NOMEM;
+    }
+
+    result = PCB__BuildContext_needsRebuild_single_char(context, src, out, NULL);
+    if(!PCB_ISOK(result)) return result;
+    if(!result.code) { PCB__BuildContext_logutd(context, out); return PCB_OK(); }
+
+    result = PCB__BuildContext_parseCompilerFlags(context);
+    if(!PCB_ISOK(result)) return result;
+    if(PCB_BuildContext_flags(context).cwl || bt == PCB_BUILDTYPE_STATICLIB) {
+        result = PCB__build_fromContext_single_compile(context, src, obj);
+        if(!PCB_ISOK(result)) return result;
+        if(PCB_BuildContext_flags(context).cwl) return PCB_OK();
+
+        result = PCB__BuildContext_parseArchiverFlags(context, out);
+        if(!PCB_ISOK(result)) return result;
+    } else {
+        PCB_ShellCommand_append_arg(&context->commandBuffer, src);
+        result = PCB__BuildContext_parseLinkerFlags(context, out);
+        if(!PCB_ISOK(result)) return result;
+    }
+
+    if(!PCB__BuildContext_logCommand(context)) return PCB_CERR_NOMEM;
+    result = PCB_ShellCommand_runAndWait(&context->commandBuffer);
+    if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Failed to run %s", cmd->argv.data[0]);
+        return result;
+    }
+    if(result.code != 0) {
+        const char *step = bt == PCB_BUILDTYPE_STATICLIB ? "archival" : "compilation";
+        PCB_log(PCB_LOGLEVEL_ERROR, "Encountered an error during %s, aborting build.", step);
+        result.domain = PCB_STATUS_DOMAIN_PCB_BUILD;
+        result.code = bt == PCB_BUILDTYPE_STATICLIB
+            ? PCB_BUILD_RESULT_ARCHIVAL_ERROR
+            : PCB_BUILD_RESULT_COMPILATION_ERROR;
+        return result;
+    }
+    PCB_BuildContext_flags(context).rebuiltAnything = true;
+    if(bt == PCB_BUILDTYPE_STATICLIB) {
+        PCB_log(PCB_LOGLEVEL_INFO, "Removing temporary %s", obj);
+        PCB_FS_rm(obj);
+    }
+    return PCB_OK();
+}
+
+static PCB_Status PCB__BuildContext_compile(PCB_BuildContext *context) {
+    PCB_Status result = PCB_OK(0);
+    const char *flag;
+    //Setting up the compile command
+    //1-8. Here.
+    if(!PCB_ISOK(result = PCB__BuildContext_parseCompilerFlags(context)))
+        goto defer;
+    //9. Flag to specify "compile only"
+    flag = PCB_build_flag_cwl(context->compiler.kind);
+    if(*flag != '\0') PCB_ShellCommand_append_arg(&context->commandBuffer, flag);
+
+    //10. Flag to specify "output name"
+    flag = PCB_build_flag_output(context->compiler.kind);
+    if(*flag != '\0') PCB_ShellCommand_append_arg(&context->commandBuffer, flag);
+
+    /*
+     * NOTE: the only thing that changes
+     * between building files is "source path" and "output path",
+     * i.e. args[args.length - 1] and args[args.length - 2],
+     * so changing the command is rather easy.
+     */
+    //11.Source path, will be replaced when building a file
+    PCB_ShellCommand_append_arg(&context->commandBuffer, NULL);
+    //12. Output path, will be replaced when building a file
+    PCB_ShellCommand_append_arg(&context->commandBuffer, NULL);
+
+    //modification timestamp of the newest object file
+    uint64_t nobjmt = 0;
+    uint64_t outmt = 0;
+    if(context->outputPath != NULL) do {
+        PCB_File_Info info;
+        result = PCB_File_Info_get(&info, context->outputPath, true);
+        if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENORES)
+            break;
+        if(!PCB_ISOK(result)) {
+            PCB_Status_log(result, "Failed to get info about %s", context->outputPath);
+            goto defer;
+        }
+        outmt = info.timestamps.modification;
+    } while(0);
+    //TODO: This needs to be moved to another function,
+    //like `PCB__BuildContext_iterateSources`.
+    if(context->sources.length == 1) {
+        if(PCB_BuildContext_flags(context).buildImmediately) {
+            //NOTE: Always logged since we don't know whether anything needs
+            //to be rebuilt. Leaving the comment below as future reference.
+            //DONE (was a todo): this should only be logged if something is not up-to-date.
+            //Current implementation relies on `rebuiltAnything` flag, but this is
+            //a posteriori. We need to know that a priori by gathering sources and
+            //removing those that don't need to be rebuilt.
+            if(!PCB__BuildContext_logCommandTemplate(context))
+                PCB__return_defer(PCB_CERR_NOMEM);
+            result = PCB__build_directory(
+                context, context->sources.data[0], context->buildPath, &nobjmt
+            );
+            if(!PCB_ISOK(result)) goto defer;
+            if(nobjmt > outmt) result = PCB_OK(1);
+            goto built;
+        }
+        if(context->sourceFiles.length > 0) {
+            PCB_log(
+                PCB_LOGLEVEL_ERROR,
+                "sourceFiles field must be empty prior to calling %s."
+                "You've either forgot to reset or have added your"
+                "own source files here. The latter is not allowed - use"
+                "sources instead.",
+                __func__
+            );
+            result.domain = PCB_STATUS_DOMAIN_PCB_BUILD;
+            result.code = PCB_BUILD_RESULT_ILLEGAL_USER_STATE;
+            goto defer;
+        }
+        result = PCB__BuildContext_gatherSources_dir(
+            context, context->sources.data[0], context->buildPath, &nobjmt
+        );
+        if(!PCB_ISOK(result)) goto defer;
+        if(PCB_BuildContext_flags(context).deferModChecks) {
+            PCB_TODO("Builds with deferred modification checks");
+        }
+        if(context->sourceFiles.length == 0) return PCB_OK(outmt == 0);
+        const size_t L = context->sourceFiles.length;
+        if(L > 0 && !PCB__BuildContext_logCommandTemplate(context))
+            PCB__return_defer(PCB_CERR_NOMEM);
+        for(size_t i = 0; i < L; i++) {
+            const char *src = context->sourceFiles.data[i];
+            const char *obj = context->objectFiles.data[i];
+            const PCB_FS_char *src_ = PCB_toNativePath(src);
+            const PCB_FS_char *obj_ = PCB_toNativePath(obj);
+            PCB_assert(src_ != NULL);
+            PCB_assert(obj_ != NULL);
+            result = PCB__build_file(context, src_, obj_, false, NULL);
+            PCB_freeNativePath(src_); PCB_freeNativePath(obj_);
+            if(!PCB_ISOK(result)) goto defer;
+        }
+        result = PCB_OK(1);
+    } else if(context->sources.length == 0) {
+        return PCB_OK(0);
+    } else {
+        /* builds with multiple sources
+         * are treated differently: each source directory's
+         * structure is mirrored in a subdirectory of the build
+         * directory of the same name as the source directory
+         */
+        PCB_TODO("PCB_build_fromContext/multiple sources");
+        for(size_t i = 0; i < context->sources.length; i++) {
+            size_t bL = context->currentBuildPath.length;
+            if(!PCB_String_append_cstr(
+                &context->currentBuildPath, context->sources.data[i]
+            )) PCB__return_defer(PCB_CERR_NOMEM);
+            if(!PCB_String_setSuffix_char(
+                &context->currentBuildPath, '/'
+            )) PCB__return_defer(PCB_CERR_NOMEM);
+            result = PCB__build_directory(
+                context, context->sources.data[i],
+                context->currentBuildPath.data, &nobjmt
+            );
+            if(!PCB_ISOK(result)) goto error;
+            context->currentBuildPath.data[
+                context->currentBuildPath.length = bL
+            ] = '\0';
+            continue;
+
+        error:
+            context->currentBuildPath.data[
+                context->currentBuildPath.length = bL
+            ] = '\0';
+            goto defer;
+        }
+    }
+built:
+    //TODO: replace with `PCB_Processes_waitForAll/Range`
+    PCB_Vec_forEach_it(&context->processes, it, PCB_Process) {
+        if(!PCB_Process_isValid(it)) continue;
+        if(!PCB_Process_waitForExit(it)) {
+            result = PCB_STATUS_NATIVE_SYSTEM_API();
+            PCB_Status_log(result, "Waiting for child process to exit failed");
+            continue;
+        }
+        if(!PCB_ISOK(result)) continue;
+        PCB_Status st = PCB_Process_getExitCode(it);
+        if(!PCB_ISOK(st)) { result = st; continue; }
+        if(st.code == 0) continue;
+        result.domain = PCB_STATUS_DOMAIN_PCB_BUILD;
+        result.code = PCB_BUILD_RESULT_COMPILATION_ERROR;
+    }
+defer:
+    return result;
+}
+
+PCB_Status PCB_build_fromContext(PCB_BuildContext* context) {
+    PCB_CHECK_SELF(context, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(context->sources.length == 0) {
+        PCB_log(PCB_LOGLEVEL_ERROR, "%s", PCB_BUILD_RESULT_NO_SRC_STR);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_NO_SRC);
+    }
+    PCB_Status result = PCB__BuildContext_isSingleFile(context);
+    if(!PCB_ISOK(result)) return result;
+    else if(result.code) return PCB__build_fromContext_single(context);
+    if(context->buildPath == NULL) {
+        PCB_log(PCB_LOGLEVEL_ERROR, "%s", PCB_BUILD_RESULT_NO_BUILD_PATH_STR);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_NO_BUILD_PATH);
+    }
+    if(PCB_BuildContext_flags(context).deferModChecks) {
+        PCB_log(PCB_LOGLEVEL_ERROR, "Deferring modification checks is not implemented");
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+    }
+
+    //may be for whatever reason set to `true` prior to here
+    PCB_BuildContext_flags(context).rebuiltAnything = false;
+    const char *out = context->outputPath;
+    if(!PCB_BuildType_formatName(
+        PCB_BuildContext_flags(context).buildType,
+        context->target.platform,
+        &out,
+        context->arena
+    )) return PCB_CERR_NOMEM;
+    //This bizzare looking code is for saving `PCB_BuildContext_flags(context).parallel`
+    //and replacing it with the number of cores if it's 1 to be able to refer to
+    //it in other functions without an additional variable.
+    //Yes, it's stupid.
+    uint8_t parallel = PCB_BuildContext_flags(context).parallel;
+#ifdef PCB_BUILD_0_AS_PARALLEL
+#define PCB__PARALLELIZE_VAL 0
+#else
+#define PCB__PARALLELIZE_VAL 1
+#endif
+    if(PCB_BuildContext_flags(context).parallel == PCB__PARALLELIZE_VAL) {
+        //TODO: there are CPUs with more than 255 cores
+        size_t cores = PCB_getNumberOfCores();
+        if(cores > UINT8_MAX) cores = UINT8_MAX;
+        PCB_BuildContext_flags(context).parallel = (uint8_t)cores;
+        parallel = PCB__PARALLELIZE_VAL;
+    }
+#undef PCB__PARALLELIZE_VAL
+    PCB_Vec_try_reserve(&context->processes, PCB_BuildContext_flags(context).parallel, result.code);
+    switch(result.code) {
+      case PCB_VEC_OK: break;
+      case PCB_VEC_OOM: return PCB_CERR_NOMEM;
+      case PCB_VEC_IOV: return PCB_CERR_NOMEM;
+      default: PCB_Unreachable;
+    }
+
+    result = PCB_FS_mkdir_if_not_exists(context->buildPath);
+    if(!PCB_ISOK(result)) return result;
+
+    if(!PCB_BuildContext_flags(context).lwc) {
+        result = PCB__BuildContext_compile(context);
+        if(!PCB_ISOK(result)) {
+            PCB_log(
+                PCB_LOGLEVEL_ERROR,
+                "Encountered an error during compilation, aborting build."
+            );
+            return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_COMPILATION_ERROR);
+        }
+        //If there wasn't anything rebuilt, or the target is newer than all object files
+        if(!result.code) {
+            PCB__BuildContext_logutd(context, out);
+            return PCB_OK();
+        }
+        if(PCB_BuildContext_flags(context).cwl) return PCB_OK();
+    }
+
+    if(context->objectFiles.length == 0) {
+        result.domain = PCB_STATUS_DOMAIN_PCB_BUILD;
+        if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_STATICLIB) {
+            PCB_log(PCB_LOGLEVEL_ERROR, "No object files to archive, aborting build.");
+            result.code = PCB_BUILD_RESULT_NO_OBJ_TO_ARCHIVE;
+        } else {
+            PCB_log(PCB_LOGLEVEL_ERROR, "No object files to link, aborting build.");
+            result.code = PCB_BUILD_RESULT_NO_OBJ_TO_LINK;
+        }
+        return result;
+    }
+
+    PCB_BuildContext_flags(context).parallel = parallel;
+    //Setting up the link command
+    PCB_ShellCommand_reset(&context->commandBuffer);
+
+    if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_STATICLIB) {
+        result = PCB__BuildContext_parseArchiverFlags(context, out);
+        if(!PCB_ISOK(result)) return result;
+        PCB_log(PCB_LOGLEVEL_INFO, "Attempting to archive...");
+    } else {
+        //1. Compiler path
+        PCB_ShellCommand_append_arg(&context->commandBuffer, context->compiler.path);
+        //2-6. Here.
+        result = PCB__BuildContext_parseLinkerFlags(context, out);
+        if(!PCB_ISOK(result)) return result;
+        PCB_log(PCB_LOGLEVEL_INFO, "Attempting to link...");
+    }
+    if(!PCB__BuildContext_logCommand(context)) PCB__return_defer(PCB_CERR_NOMEM);
+    result = PCB_ShellCommand_runAndWait(&context->commandBuffer);
+    if(!PCB_ISOK(result)) {
+        PCB_Status_log(result, "Failed to run %s", context->commandBuffer.argv.data[0]);
+        goto defer;
+    }
+    if(result.code != 0) {
+        result.domain = PCB_STATUS_DOMAIN_PCB_BUILD;
+        if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_STATICLIB) {
+            PCB_log(PCB_LOGLEVEL_ERROR, "Encountered an error during archival.");
+            result.code = PCB_BUILD_RESULT_ARCHIVAL_ERROR;
+        } else {
+            PCB_log(PCB_LOGLEVEL_ERROR, "Encountered an error during linking.");
+            result.code = PCB_BUILD_RESULT_LINKING_ERROR;
+        }
+        goto defer;
+    }
+    if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_STATICLIB)
+        PCB_log(PCB_LOGLEVEL_INFO, "Archived successfully.");
+    else
+        PCB_log(PCB_LOGLEVEL_INFO, "Linked successfully.");
+    PCB_BuildContext_flags(context).rebuiltAnything = true;
+    result = PCB_OK();
+defer:
+    return result;
+}
+
+void PCB_rebuild_shit(int argc, char** argv, const char* src) {
+    if(argc == 0) {
+        PCB_log(PCB_LOGLEVEL_ERROR, "%s/Invalid argc (%d)", __func__, argc);
+        return;
+    }
+    PCB_CHECK_NULL(argv,);
+    PCB_CHECK_NULL(src,);
+    PCB__logDebug("Rebuilding myself (maybe)...");
+    PCB_BuildContext context = PCB_ZEROED;
+    PCB_Status status;
+    const char *out = argv[0];
+    char *oldpath = NULL;
+    if(!PCB_ISOK(status = PCB_BuildContext_init(
+        &context, PCB_BUILDOPTION_DEFAULT_COMPILER | PCB_BUILDOPTION_DEFAULT_WARNINGS
+    ))) {
+        PCB_Status_log(status, "Failed to initialize a build context for rebuilding itself");
+        return;
+    }
+    PCB_BuildContext_flags(&context).noutd = true;
+#if defined(__MINGW32__)
+    if(PCB_Windows_running_under_WINE()) {
+        PCB_log(
+            PCB_LOGLEVEL_ERROR,
+            "Cannot rebuild myself: running under WINE while compiled with MinGW"
+        );
+        goto defer;
+    }
+#endif
+
+    PCB_CStrings_append(&context.sources, src);
+
+#if defined(PCB_DEBUG_SELF) || defined(PCB_DEBUG)
+    {
+        PCB_CStringPair macro;
+        int res;
+#if defined(PCB_DEBUG_SELF) && PCB_DEBUG_SELF+0 != 0 //checking for 0 if one wants to override the CLI argument
+        macro.key "PCB_DEBUG_SELF";
+        macro.value = NULL;
+        PCB_Vec_try_append(&context.preprocessorFlags.defines, macro, res);
+        if(res != PCB_VEC_OK) goto defer;
+#endif //subsequent rebuilds will retain the request for debugging the library
+
+#ifdef PCB_DEBUG
+        macro.key = "PCB_DEBUG";
+#if PCB_DEBUG+0 > 1
+        macro.value = PCB_STRINGIFY(PCB_DEBUG);
+#else
+        macro.value = NULL;
+#endif //PCB_DEBUG > 1?
+        PCB_Vec_try_append(&context.preprocessorFlags.defines, macro, res);
+        if(res != PCB_VEC_OK) goto defer;
+#endif //subsequent rebuilds will retain the request for debug logging
+    }
+#endif
+
+    PCB_CStrings_append_many(&context.includes, ".", "include/");
+
+#ifdef PCB_LIB_PATH
+    PCB_CStrings_append(&context.includes, PCB_LIB_PATH "");
+#endif //PCB_LIB_PATH
+
+#if PCB_PLATFORM_WINDOWS
+    if(context.compiler.kind == PCB_COMPILER_RT_MSVC) {
+        if(!PCB_ISOK(PCB__setup_baked_msvc_environment(&context, true))) {
+            PCB_log(PCB_LOGLEVEL_FATAL, "Failed to rebuild itself: out of memory");
+            goto defer;
+        }
+    }
+#endif //may force a rebuild
+
+    if(!PCB_BuildType_formatName(
+        PCB_BuildContext_flags(&context).buildType,
+        context.target.platform,
+        &out, context.arena
+    )) goto defer;
+    oldpath = PCB_Arena_asprintf(context.arena, "%s.old", out);
+    if(oldpath == NULL) goto defer;
+    status = PCB__BuildContext_needsRebuild_single_char(&context, src, out, NULL);
+    if(!PCB_ISOK(status)) goto defer_path;
+    if(!status.code) {
+        PCB__logTrace("No need to rebuild myself.");
+        goto defer_path;
+    }
+    //to not check for a need to rebuild again
+    PCB_BuildContext_flags(&context).alwaysBuild = true;
+#if PCB_PLATFORM_WINDOWS
+    if(!MoveFileExA(out, oldpath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
+        status = PCB_STATUS_NATIVE_SYSTEM_API();
+        PCB_Status_log(status, "Failed to move %s to %s", out, oldpath);
+        goto defer_path;
+    }
+#endif
+    context.outputPath = out;
+    status = PCB_build_fromContext(&context);
+    if(!PCB_ISOK(status)) {
+#if PCB_PLATFORM_WINDOWS
+        if(!MoveFileA(oldpath, out)) {
+            status = PCB_STATUS_NATIVE_SYSTEM_API();
+            PCB_Status_log(status, "Failed to move %s back to %s", oldpath, out);
+        }
+#endif
+        PCB_log(PCB_LOGLEVEL_FATAL, "Failed to rebuild itself.");
+        exit(2);
+    }
+    PCB__logDebug("Rebuilt myself successfully.");
+    {
+        PCB_ShellCommand cmd = PCB_ZEROED;
+        PCB_ShellCommand_append_arg(&cmd, out);
+        PCB_ShellCommand_append_n_args(&cmd, (const char* const*)(argv + 1), (size_t)(argc - 1));
+        status = PCB_ShellCommand_runAndWait(&cmd);
+        PCB_BuildContext_destroy(&context);
+        if(!PCB_ISOK(status)) {
+            PCB_Status_log(status, "Failed to run %s", cmd.argv.data[0]);
+            PCB_ShellCommand_destroy(&cmd);
+            goto defer_path;
+        }
+        exit(status.code != 0);
+    }
+defer_path:
+    PCB_temp_free(oldpath);
+defer:
+    PCB_BuildContext_destroy(&context);
 }
 #endif //PCB_IMPLEMENTATION_BUILD
 
@@ -13589,7 +16047,6 @@ int PCB_buildFromContext(PCB_BuildContext* context) {
 #endif //PCB_LOCAL_STRIP_INLINE
 
 //Appendix 1: Extended documentation of certain functions
-
 
 
 
