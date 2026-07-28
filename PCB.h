@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 0
+#define PCB_VERSION_PATCH 1
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6977,31 +6977,25 @@ PCBAPI const char* PCBCALL PCB_build_flag_cwl(PCB_Compiler_RT c) PCB_Nonnull_Ret
  */
 PCBAPI const char* PCBCALL PCB_build_flag_output(PCB_Compiler_RT c) PCB_Nonnull_Return PCB_ConstFn;
 /**
- * @brief Returns a pair of flags that specify "input files are C files" based on `c`,
- * with the first as `key` and second as `value`.
- * If `c` is unknown, both flags are empty strings.
- *
- * NOTE: Some compilers have this as a single flag, notably MSVC. In that case
- * the 2nd flag is an empty string.
+ * @brief Returns a flag that specifies "input files are C files" based on `c`,
+ * If `c` is unknown, the flag is an empty string.
  *
  * NOTE: MSVC does not support building a subset of inputs as one language and
  * another subset as another language - all inputs must be of the same language.
  */
-PCBAPI PCB_CStringPair PCBCALL PCB_build_flag_treat_inputs_as_c(PCB_Compiler_RT c) PCB_ConstFn;
-/**
- * @brief Returns a pair of flags that specify "input files are C++ files" based on `c`,
- * with the first as `key` and second as `value`.
- * If `c` is unknown, both flags are empty strings.
- *
- * NOTE: Some compilers have this as a single flag, notably MSVC. In that case
- * the 2nd flag is an empty string.
- *
- * NOTE: MSVC does not support building a subset of inputs as one language and
- * another subset as another language - all inputs must be of the same language.
- */
-PCBAPI PCB_CStringPair PCBCALL PCB_build_flag_treat_inputs_as_cpp(
+PCBAPI const char* PCBCALL PCB_build_flag_treat_inputs_as_c(
     PCB_Compiler_RT c
-) PCB_ConstFn;
+) PCB_Nonnull_Return PCB_ConstFn;
+/**
+ * @brief Returns a flag that specifies "input files are C++ files" based on `c`,
+ * If `c` is unknown, the flag is an empty string.
+ *
+ * NOTE: MSVC does not support building a subset of inputs as one language and
+ * another subset as another language - all inputs must be of the same language.
+ */
+PCBAPI const char* PCBCALL PCB_build_flag_treat_inputs_as_cpp(
+    PCB_Compiler_RT c
+) PCB_Nonnull_Return PCB_ConstFn;
 /**
  * @brief Returns a flag that specifies "subsequent libraries should
  * be linked statically".
@@ -13980,39 +13974,39 @@ const char* PCB_build_flag_output(PCB_Compiler_RT c) {
     }
 }
 
-PCB_CStringPair PCB_build_flag_treat_inputs_as_c(PCB_Compiler_RT c) {
+const char* PCB_build_flag_treat_inputs_as_c(PCB_Compiler_RT c) {
     switch(c) {
       case PCB_COMPILER_RT_GCC: //fallthrough
       case PCB_COMPILER_RT_CLANG: //fallthrough
       case PCB_COMPILER_RT_TCC:
-        return PCB_CLITERAL(PCB_CStringPair){"-x", "c"};
+        return "-xc";
       case PCB_COMPILER_RT_MSVC:
-        return PCB_CLITERAL(PCB_CStringPair){"/TC", ""};
+        return "/TC";
       case PCB_COMPILER_RT_UNKNOWN:
         PCB_log(
             PCB_LOGLEVEL_WARN,
             "Unknown compiler; cannot determine a flag to treat inputs as C"
         );
-        return PCB_CLITERAL(PCB_CStringPair){"", ""};
+        return "";
       case PCB_COMPILER_RT_COUNT:
       default: PCB_Unreachable;
     }
 }
 
-PCB_CStringPair PCB_build_flag_treat_inputs_as_cpp(PCB_Compiler_RT c) {
+const char* PCB_build_flag_treat_inputs_as_cpp(PCB_Compiler_RT c) {
     switch(c) {
       case PCB_COMPILER_RT_GCC: //fallthrough
       case PCB_COMPILER_RT_CLANG: //fallthrough
       case PCB_COMPILER_RT_TCC:
-        return PCB_CLITERAL(PCB_CStringPair){"-x", "c++"};
+        return "-xc++";
       case PCB_COMPILER_RT_MSVC:
-        return PCB_CLITERAL(PCB_CStringPair){"/TP", ""};
+        return "/TP";
       case PCB_COMPILER_RT_UNKNOWN:
         PCB_log(
             PCB_LOGLEVEL_WARN,
             "Unknown compiler; cannot determine a flag to treat inputs as C++"
         );
-        return PCB_CLITERAL(PCB_CStringPair){"", ""};
+        return "";
       case PCB_COMPILER_RT_COUNT:
       default: PCB_Unreachable;
     }

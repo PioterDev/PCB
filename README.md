@@ -109,11 +109,10 @@ int main(int argc, char *argv[]) {
     );
     PCB_CStrings_append(&context.sources, "PCB.h");
     PCB_CStrings_append(&context.includes, ".");
-    //Some compilers need 2 separate flags, some need just one.
-    PCB_CStringPair fp = PCB_build_flag_treat_inputs_as_c(context.compiler.kind);
-    //If the compiler is unrecognized by PCB, both are empty strings.
-    if(*fp.key)   PCB_CStrings_append(&context.otherCompilerFlags, fp.key);
-    if(*fp.value) PCB_CStrings_append(&context.otherCompilerFlags, fp.value);
+
+    const char *flag = PCB_build_flag_treat_inputs_as_c(context.compiler.kind);
+    //If the compiler is unrecognized by PCB, `flag` is an empty string.
+    if(*flag) PCB_CStrings_append(&context.otherCompilerFlags, flag);
     PCB_CStringPair impl_macro = {"PCB_IMPLEMENTATION", NULL};
     PCB_CStringPairs_append(&context.preprocessorFlags.defines, impl_macro);
 #if PCB_PLATFORM_WINDOWS
