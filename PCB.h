@@ -1340,6 +1340,12 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //PCB_strnlen
 //TODO: strpbrk
 
+#ifndef PCB_wmemcmp
+#ifdef PCB_HAS_WCHAR_H
+#define PCB_wmemcmp wmemcmp
+#endif //PCB_HAS_WCHAR_H
+#endif //PCB_wmemcmp
+
 #ifndef PCB_wcscmp
 #ifdef PCB_HAS_WCHAR_H
 #define PCB_wcscmp wcscmp
@@ -7227,6 +7233,10 @@ PCBAPI size_t PCBCALL PCB_strlen(const char *s) PCB_Nonnull_Arg(1) PCB_PureFn;
 PCBAPI size_t PCBCALL PCB_strnlen(const char *s, size_t n) PCB_Nonnull_Arg(1) PCB_PureFn;
 #endif //PCB_strnlen
 
+#ifndef PCB_wmemcmp
+PCBAPI int PCBCALL PCB_wmemcmp(const wchar_t *s1, const wchar_t *s2, size_t n) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
+#endif //PCB_wmemcmp
+
 #ifndef PCB_wcscmp
 PCBAPI int PCBCALL PCB_wcscmp(const wchar_t *s1, const wchar_t *s2) PCB_Nonnull_Arg(1, 2) PCB_PureFn;
 #endif //PCB_wcscmp
@@ -7240,7 +7250,7 @@ PCBAPI int PCBCALL PCB_wcslen(const wchar_t *s) PCB_Nonnull_Arg(1) PCB_PureFn;
 #endif //PCB_wcslen
 
 #ifndef PCB_wcsnlen
-PCBAPI int PCBCALL PCB_wcsnlen(const wchar_t *s, size_t n) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI size_t PCBCALL PCB_wcsnlen(const wchar_t *s, size_t n) PCB_Nonnull_Arg(1) PCB_PureFn;
 #endif //PCB_wcsnlen
 
 #ifndef PCB_isspace
@@ -7481,9 +7491,9 @@ PCB_InitFn(PCB__cpuid_get) {
 int errno_stub = 11;
 #endif //PCB_HAS_ERRNO_H
 #ifndef PCB_strcmp
-int PCB_strcmp(const char* s1, const char* s2) {
-    const unsigned char* x1 = (const unsigned char*)s1;
-    const unsigned char* x2 = (const unsigned char*)s2;
+int PCB_strcmp(const char *s1, const char *s2) {
+    const unsigned char *x1 = (const unsigned char*)s1;
+    const unsigned char *x2 = (const unsigned char*)s2;
     while(*x1 && *x1 == *x2) { ++x1; ++x2; }
     return (*x1 > *x2) - (*x1 < *x2);
 }
@@ -7491,9 +7501,9 @@ int PCB_strcmp(const char* s1, const char* s2) {
 #endif //PCB_strcmp
 
 #ifndef PCB_strncmp
-int PCB_strncmp(const char* s1, const char* s2, size_t n) {
-    const unsigned char* x1 = (const unsigned char*)s1;
-    const unsigned char* x2 = (const unsigned char*)s2;
+int PCB_strncmp(const char *s1, const char *s2, size_t n) {
+    const unsigned char *x1 = (const unsigned char*)s1;
+    const unsigned char *x2 = (const unsigned char*)s2;
     while(n > 0 && *x1 && *x1 == *x2) { ++x1; ++x2; --n; }
     return n == 0 ? 0 : ((*x1 > *x2) - (*x1 < *x2));
 }
@@ -7504,7 +7514,7 @@ int PCB_strncmp(const char* s1, const char* s2, size_t n) {
 static unsigned char PCB__tolower(unsigned char ch) { return (ch >= 'A' && ch <= 'Z') ? ch + 'a' - 'A' : ch; }
 
 //https://stackoverflow.com/questions/7299119/source-code-for-strncasecmp-function
-int PCB_strncasecmp(const char* s1, const char* s2, size_t n) {
+int PCB_strncasecmp(const char *s1, const char *s2, size_t n) {
     if(n == 0) return 0;
     const unsigned char *x1 = (const unsigned char*)s1;
     const unsigned char *x2 = (const unsigned char*)s2;
@@ -7516,16 +7526,16 @@ int PCB_strncasecmp(const char* s1, const char* s2, size_t n) {
 #endif //PCB_strncasecmp
 
 #ifndef PCB_strlen
-size_t PCB_strlen(const char* s) {
-    const char* cursor = s; while(*cursor++);
+size_t PCB_strlen(const char *s) {
+    const char *cursor = s; while(*cursor++);
     return (size_t)(cursor - s);
 }
 #define PCB_strlen PCB_strlen
 #endif //PCB_strlen
 
 #ifndef PCB_strnlen
-size_t PCB_strnlen(const char* s, size_t n) {
-    const char* cursor = s;
+size_t PCB_strnlen(const char *s, size_t n) {
+    const char *cursor = s;
     while(n > 0 && *cursor) { ++cursor; --n; }
     return (size_t)(cursor - s);
 }
@@ -7534,8 +7544,8 @@ size_t PCB_strnlen(const char* s, size_t n) {
 
 #ifndef PCB_memcpy
 void* PCB_memcpy(void* PCB_restrict dest, const void* PCB_restrict src, size_t n) {
-    char* d = (char*)dest;
-    const char* s = (const char*)src;
+    char *d = (char*)dest;
+    const char *s = (const char*)src;
     while(n > 0) *d++ = *s++, --n;
     return dest;
 }
@@ -7544,8 +7554,8 @@ void* PCB_memcpy(void* PCB_restrict dest, const void* PCB_restrict src, size_t n
 
 #ifndef PCB_memmove
 void* PCB_memmove(void* dest, const void* src, size_t n) {
-    char* d = (char*)dest;
-    const char* s = (const char*)src;
+    char *d = (char*)dest;
+    const char *s = (const char*)src;
     if(s < d && d < s + n) { //overlap check?
         s += n; d += n;
         while(n-- > 0) *--d = *--s;
@@ -7558,7 +7568,7 @@ void* PCB_memmove(void* dest, const void* src, size_t n) {
 
 #ifndef PCB_memset
 void* PCB_memset(void* s, int v, size_t n) {
-    char* p = (char*)s;
+    char *p = (char*)s;
     while(n-- > 0) *p++ = (char)v;
     return s;
 }
@@ -7567,13 +7577,21 @@ void* PCB_memset(void* s, int v, size_t n) {
 
 #ifndef PCB_memcmp
 int PCB_memcmp(const void* p1, const void* p2, size_t n) {
-    const unsigned char* x1 = (const unsigned char*)p1;
-    const unsigned char* x2 = (const unsigned char*)p2;
+    const unsigned char *x1 = (const unsigned char*)p1;
+    const unsigned char *x2 = (const unsigned char*)p2;
     while(*x1 == *x2 && n > 0) { ++x1; ++x2; --n; }
     return (*x1 > *x2) - (*x1 < *x2);
 }
 #define PCB_memcmp PCB_memcmp
 #endif //PCB_memcmp
+
+#ifndef PCB_wmemcmp
+int PCB_wmemcmp(const wchar_t *s1, const wchar_t *s2, size_t n) {
+    while(*s1 == *s2 && n > 0) { ++s1; ++s2; --n; }
+    return (*s1 > *s2) - (*s1 < *s2);
+}
+#define PCB_wmemcmp PCB_wmemcmp
+#endif //PCB_wmemcmp
 
 #ifndef PCB_wcscmp
 int PCB_wcscmp(const wchar_t *s1, const wchar_t *s2) {
@@ -7592,12 +7610,21 @@ int PCB_wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n) {
 #endif //PCB_wcsncmp
 
 #ifndef PCB_wcslen
-size_t PCB_wcslen(const wchar_t* s) {
-    const wchar_t* cursor = s; while(*cursor) ++cursor;
+size_t PCB_wcslen(const wchar_t *s) {
+    const wchar_t *cursor = s; while(*cursor) ++cursor;
     return (size_t)(cursor - s);
 }
 #define PCB_wcslen PCB_wcslen
 #endif //PCB_wcslen
+
+#ifndef PCB_wcsnlen
+size_t PCB_wcsnlen(const wchar_t *s, size_t n) {
+    const wchar_t *cursor = s;
+    while(n > 0 && *cursor) { ++cursor; --n; }
+    return (size_t)(cursor - s);
+}
+#define PCB_wcsnlen PCB_wcsnlen
+#endif //PCB_wcsnlen
 
 #ifndef PCB_isspace
 int PCB_isspace(int ch) {
