@@ -14242,7 +14242,10 @@ static void PCB__build_flags_diagnostics_default_msvc(
     PCB_CStrings_append_many(
         cstrs,
         "/W4", "/w44062", "/w44388", "/w25219", "/w15247",
-        "/w45263", "/w34191"
+        "/w45263", "/w34191",
+        "/we4047", //Differing level of indirection
+        "/we4700", //Uninitialized variable used
+        "/we4701" //*Potentially* uninitialized variable used
     );
 }
 
