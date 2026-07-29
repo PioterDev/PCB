@@ -679,7 +679,7 @@
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_Nodiscard [[nodiscard]]
 #elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
-#define PCB_Nodiscard __attribute__((warn_unused_result))
+#define PCB_Nodiscard __attribute__((__warn_unused_result__))
 #else
 #define PCB_Nodiscard
 #endif //(C++17+ || C23+) || (GCC >= 3.4.6 || Clang >= 4)
@@ -691,7 +691,7 @@
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_NodiscardReason(reason) [[nodiscard(reason)]]
 #elif PCB_COMPILER_GCC >= 30406 || PCB_COMPILER_CLANG >= 40000
-#define PCB_NodiscardReason(reason) __attribute__((warn_unused_result))
+#define PCB_NodiscardReason(reason) __attribute__((__warn_unused_result__))
 #else
 #define PCB_NodiscardReason(reason)
 #endif //(C++17+ || C23+) || (GCC >= 3.4.6 || Clang >= 4)
@@ -702,7 +702,7 @@
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_Deprecated [[deprecated]]
 #elif PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG >= 30100
-#define PCB_Deprecated __attribute__((deprecated))
+#define PCB_Deprecated __attribute__((__deprecated__))
 #elif PCB_COMPILER_MSVC
 #define PCB_Deprecated __declspec(deprecated)
 #else
@@ -716,7 +716,7 @@
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_DeprecatedReason(reason) [[deprecated(reason)]]
 #elif PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG >= 30100
-#define PCB_DeprecatedReason(reason) __attribute__((deprecated(reason)))
+#define PCB_DeprecatedReason(reason) __attribute__((__deprecated__(reason)))
 #elif PCB_COMPILER_MSVC
 #define PCB_DeprecatedReason(reason) __declspec(deprecated(reason))
 #else
@@ -746,7 +746,7 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 #define PCB_Unused [[maybe_unused]]
 #elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG >= 40000 || \
       PCB_COMPILER_TCC
-#define PCB_Unused __attribute__((unused))
+#define PCB_Unused __attribute__((__unused__))
 #else
 #define PCB_Unused
 #endif //(C++17+ || C23+) || compilers
@@ -757,7 +757,7 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 #ifndef PCB_ForceInline
 #if PCB_COMPILER_GCC >= 30101 || PCB_COMPILER_CLANG || \
     PCB_COMPILER_TCC
-#define PCB_ForceInline inline __attribute__((always_inline))
+#define PCB_ForceInline inline __attribute__((__always_inline__))
 #elif PCB_COMPILER_MSVC
 #define PCB_ForceInline __forceinline
 #else
@@ -851,7 +851,7 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
  */
 #ifndef PCB_Nonnull_Arg
 #if PCB_COMPILER_GCC >= 30306 || PCB_COMPILER_CLANG >= 40000
-#define PCB_Nonnull_Arg(...) __attribute__((nonnull(__VA_ARGS__)))
+#define PCB_Nonnull_Arg(...) __attribute__((__nonnull__(__VA_ARGS__)))
 #ifndef PCB_HAS_NONNULL_ARG
 #define PCB_HAS_NONNULL_ARG
 #endif //PCB_HAS_NONNULL_ARG
@@ -862,7 +862,7 @@ PCB_EmitWarning("PCB_Noreturn does not mark function as one that doesn't return"
 
 #ifndef PCB_Nonnull_Return
 #if PCB_COMPILER_GCC >= 40904 || PCB_COMPILER_CLANG >= 40000
-#define PCB_Nonnull_Return __attribute__((returns_nonnull))
+#define PCB_Nonnull_Return __attribute__((__returns_nonnull__))
 #else
 #define PCB_Nonnull_Return
 #endif //compilers
@@ -906,7 +906,7 @@ static void f(void)
 #endif
 #elif PCB_COMPILER_GCC >= 29503 || PCB_COMPILER_CLANG || \
       PCB_COMPILER_TCC
-#define PCB_BeforeMain(f) static __attribute__((constructor)) void f(void)
+#define PCB_BeforeMain(f) static __attribute__((__constructor__)) void f(void)
 #else
 #define PCB_BeforeMain(f) \
 PCB_EmitWarning("This function will not run before main because the compiler used does not support it") \
@@ -974,7 +974,7 @@ static void f(void)
 #ifndef PCB_Printf_Format
 #if PCB_COMPILER_GCC || PCB_COMPILER_CLANG || \
     PCB_COMPILER_TCC
-#define PCB_Printf_Format(fmtIndex, rest) __attribute__((format(printf, fmtIndex, rest)))
+#define PCB_Printf_Format(fmtIndex, rest) __attribute__((__format__(printf, fmtIndex, rest)))
 #else
 #define PCB_Printf_Format(fmtIndex, rest)
 #endif //compilers (TCC recognizes, but ignores this attribute)
@@ -984,7 +984,7 @@ static void f(void)
 #ifdef PCB_WANT_CLEANUP
 #if PCB_COMPILER_GCC || PCB_COMPILER_CLANG || \
     PCB_COMPILER_TCC
-#define PCB_Cleanup(f) __attribute__((cleanup(f)))
+#define PCB_Cleanup(f) __attribute__((__cleanup__(f)))
 #else
 #error "Cleanup attribute is unavailable with the current compiler or the compiler is not supported."
 #define PCB_Cleanup(f)
@@ -2833,7 +2833,7 @@ for(                                                                \
 #endif //DLL-related options
 #else
 #ifdef PCB_BUILD_DYN
-#define PCBAPI __attribute__((visibility("default")))
+#define PCBAPI __attribute__((__visibility__("default")))
 #endif //override visibility on non-Windows platforms
 #endif //platform
 #endif //PCBAPI
