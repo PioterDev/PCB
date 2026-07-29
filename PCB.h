@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 2
+#define PCB_VERSION_PATCH 3
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -7062,13 +7062,30 @@ PCBAPI PCB_FS_StringView PCBCALL PCB_build_preferred_obj_file_ext(PCB_Compiler_R
 /**
  * @brief Initializes the passed `context`.
  *
- * @param flags PCB_BuildOptions OR'ed together
+ * @param options PCB_BuildOptions OR'ed together
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CENOMEM: Insufficient memory.
+ * @sa PCB_BuildContext_configure
+ */
+PCBAPI PCB_Status PCBCALL PCB_BuildContext_init(
+    PCB_BuildContext *context,
+    PCB_BuildOptions options
+) PCB_Nonnull_Arg(1);
+/**
+ * @brief Configure the passed `context`.
+ * `context` is assumed to be initialized via `PCB_BuildContext_init`.
+ *
+ * If `context->target`'s fields indicate "unknown", the architecture & platform
+ * fields are set to `PCB_ARCH_RT_CURRENT` & `PCB_PLATFORM_RT_CURRENT` respectively.
+ *
  * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
  * On error, the returned status can hold the following domain-code pairs:
  * - Common domain:
  *   - PCB_CENOMEM: Insufficient memory.
  */
-PCBAPI PCB_Status PCBCALL PCB_BuildContext_init(
+PCBAPI PCB_Status PCBCALL PCB_BuildContext_configure(
     PCB_BuildContext *context,
     PCB_BuildOptions options
 ) PCB_Nonnull_Arg(1);
@@ -14535,6 +14552,13 @@ PCB_Status PCB_BuildContext_init(PCB_BuildContext* context, PCB_BuildOptions opt
     }
     context->mark = PCB_Arena_mark(context->arena);
     if(context->mark == NULL) return PCB_CERR_NOMEM;
+    return PCB_BuildContext_configure(context, options);
+}
+
+PCB_Status PCB_BuildContext_configure(
+    PCB_BuildContext *context, PCB_BuildOptions options
+) {
+    PCB_CHECK_SELF(context, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
     if(context->target.platform == PCB_PLATFORM_RT_UNKNOWN)
         context->target.platform = PCB_PLATFORM_RT_CURRENT;
     if(context->target.arch == PCB_ARCH_RT_UNKNOWN)
