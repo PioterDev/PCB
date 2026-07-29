@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 3
+#define PCB_VERSION_PATCH 4
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -7079,6 +7079,11 @@ PCBAPI PCB_Status PCBCALL PCB_BuildContext_init(
  *
  * If `context->target`'s fields indicate "unknown", the architecture & platform
  * fields are set to `PCB_ARCH_RT_CURRENT` & `PCB_PLATFORM_RT_CURRENT` respectively.
+ *
+ * If the build type is set to `PCB_BUILDTYPE_DYNAMICLIB` prior to calling
+ * this function, a compilation flag is added to only export symbols
+ * marked as "public" (in ELF terminology, with default visibility,
+ * __declspec(dllexport) on Windows).
  *
  * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
  * On error, the returned status can hold the following domain-code pairs:
@@ -14601,7 +14606,8 @@ PCB_Status PCB_BuildContext_configure(
           case PCB_COMPILER_RT_COUNT:
           default: PCB_Unreachable;
         }
-    } else if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_DYNAMICLIB) {
+    }
+    if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_DYNAMICLIB) {
         //NOTE: Related "-fPIC" is added during the build itself for...reasons.
         switch(context->compiler.kind) {
           case PCB_COMPILER_RT_GCC: //fallthrough
