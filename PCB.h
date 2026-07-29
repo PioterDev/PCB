@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 5
+#define PCB_VERSION_PATCH 6
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3126,7 +3126,7 @@ typedef struct {
  */
 #define PCB_Q(status) do {                              \
     PCB_Status PCB_MANGLE(s) = (status);                \
-    if(!PCB_ISOK(PCB_MANGLE(s)) return PCB_MANGLE(s);   \
+    if(!PCB_ISOK(PCB_MANGLE(s))) return PCB_MANGLE(s);   \
 } while(0)
 #endif //PCB_Q
 #ifndef PCB_QD
@@ -3136,7 +3136,7 @@ typedef struct {
  */
 #define PCB_QD(result, status, label) do {  \
     result = (status);                      \
-    if(!PCB_ISOK(PCB_MANGLE(s)) goto label; \
+    if(!PCB_ISOK(PCB_MANGLE(s))) goto label;\
 } while(0)
 #endif //PCB_QD
 #ifndef PCB_STATUS
