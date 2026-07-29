@@ -99,6 +99,8 @@ int main(int argc, char *argv[]) {
     }
 
     PCB_BuildContext context = PCB_ZEROED; //always zero-initialize!
+    PCB_BuildContext_flags(&context).buildType = static_lib
+        ? PCB_BUILDTYPE_STATICLIB : PCB_BUILDTYPE_DYNAMICLIB;
     PCB_BuildContext_init(
         &context,
         PCB_BUILDOPTION_DEFAULT_COMPILER | //uses compiler used when compiling the library
@@ -125,8 +127,6 @@ int main(int argc, char *argv[]) {
         PCB_CStringPairs_append(&context.preprocessorFlags.defines, build_dyn_macro);
     }
 #endif //This isn't required outside of Windows
-    PCB_BuildContext_flags(&context).buildType = static_lib
-        ? PCB_BUILDTYPE_STATICLIB : PCB_BUILDTYPE_DYNAMICLIB;
     PCB_BuildContext_flags(&context).alwaysBuild = force_rebuild;
     context.outputPath = "PCB";
     PCB_Status result = PCB_build_fromContext(&context);

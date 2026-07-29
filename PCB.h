@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 4
+#define PCB_VERSION_PATCH 5
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -14092,7 +14092,7 @@ char* PCB_build_flag_standard(
             PCB_LOGLEVEL_WARN,
             "Unknown language standard integer value: %ld",
             standard
-        ); return "";
+        ); return PCB_Arena_strdup(arena, "");
     }
     const size_t MAX_STD_STR_LEN = 24;
     char *flag = (char*)PCB_Arena_alloc(arena, MAX_STD_STR_LEN);
@@ -15121,7 +15121,7 @@ static PCB_Status PCB__build_directory(
                 goto defer;
 #ifdef __cplusplus
                 if(PCB_BuildContext_flags(context).ccInCpp)
-                    context->commandBuffer.data[0] = context->compiler.path;
+                    context->commandBuffer.argv.data[0] = context->compiler.path;
 #endif //C++?
           } break;
           case PCB__LANG_CPP: {
@@ -15662,6 +15662,10 @@ static PCB_Status PCB__build_fromContext_single(PCB_BuildContext *context) {
 static PCB_Status PCB__BuildContext_compile(PCB_BuildContext *context) {
     PCB_Status result = PCB_OK(0);
     const char *flag;
+    //modification timestamp of the newest object file
+    uint64_t nobjmt = 0;
+    uint64_t outmt = 0;
+
     //Setting up the compile command
     //1-8. Here.
     if(!PCB_ISOK(result = PCB__BuildContext_parseCompilerFlags(context)))
@@ -15685,9 +15689,6 @@ static PCB_Status PCB__BuildContext_compile(PCB_BuildContext *context) {
     //12. Output path, will be replaced when building a file
     PCB_ShellCommand_append_arg(&context->commandBuffer, NULL);
 
-    //modification timestamp of the newest object file
-    uint64_t nobjmt = 0;
-    uint64_t outmt = 0;
     if(context->outputPath != NULL) do {
         PCB_File_Info info;
         result = PCB_File_Info_get(&info, context->outputPath, true);
