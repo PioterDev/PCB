@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 2
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -14621,6 +14621,8 @@ void PCB_BuildContext_reset(PCB_BuildContext* context) {
     context->compiler.path = NULL;
     context->buildPath = NULL;
     context->outputPath = NULL;
+    context->target.arch = PCB_ARCH_RT_UNKNOWN;
+    context->target.platform = PCB_PLATFORM_RT_UNKNOWN;
     PCB_Vec_reset(&context->sources);
     PCB_Vec_reset(&context->includes);
     PCB_Vec_reset(&context->libs);
@@ -14636,6 +14638,8 @@ void PCB_BuildContext_reset(PCB_BuildContext* context) {
     PCB_String_reset(&context->currentSourcePath);
     PCB_String_reset(&context->currentBuildPath);
     PCB_ShellCommand_reset(&context->commandBuffer);
+    PCB_Vec_forEach_it(&context->processes, process, PCB_Process)
+        PCB_Process_destroy(process);
     PCB_Vec_reset(&context->processes);
     PCB_Vec_reset(&context->sourceFiles);
     PCB_Vec_reset(&context->objectFiles);
@@ -14653,6 +14657,8 @@ void PCB_BuildContext_destroy(PCB_BuildContext* context) {
     context->compiler.path = NULL;
     context->buildPath = NULL;
     context->outputPath = NULL;
+    context->target.arch = PCB_ARCH_RT_UNKNOWN;
+    context->target.platform = PCB_PLATFORM_RT_UNKNOWN;
     PCB_Vec_destroy(&context->sources);
     PCB_Vec_destroy(&context->includes);
     PCB_Vec_destroy(&context->libs);
@@ -14668,6 +14674,8 @@ void PCB_BuildContext_destroy(PCB_BuildContext* context) {
     PCB_String_destroy(&context->currentSourcePath);
     PCB_String_destroy(&context->currentBuildPath);
     PCB_ShellCommand_destroy(&context->commandBuffer);
+    PCB_Vec_forEach_it(&context->processes, process, PCB_Process)
+        PCB_Process_destroy(process);
     PCB_Vec_destroy(&context->processes);
     PCB_Vec_destroy(&context->sourceFiles);
     PCB_Vec_destroy(&context->objectFiles);
