@@ -5150,6 +5150,7 @@ PCBAPI PCB_ssize_t PCBCALL PCB_String_append_cstr_v(
 /**
  * @brief Appends `c` to `str` `howManyTimes` times.
  * `c == '\0'` is treated as a no-op.
+ * `howManyTimes == 0` is allowed: `str` will be null-terminated after the call.
  * @return whether the operation succeeded: can fail on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_append_chars(
