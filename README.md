@@ -36,7 +36,6 @@ WinAPI (Windows only), libc (optional) and a C99/C++11 compiler.
 
 ### Work In Progress
 - logic for building C/C++ projects
-- subprocess management (currently breaks with Unicode on Windows, of course it does)
 - polymorphic allocators
 - concurrent pool allocator
 - logging on Windows

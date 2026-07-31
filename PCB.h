@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 7
+#define PCB_VERSION_PATCH 8
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3739,7 +3739,9 @@ typedef PCB_WStrings PCB_FS_Strings;
 typedef PCB_WCStrings PCB_FS_CStrings;
 typedef PCB_WCStringsView PCB_FS_CStringsView;
 
-#define PCB_FS_LIT(lit) L"" L##lit L""
+#define PCB__FS_LIT(lit) L"" L##lit L""
+#define PCB_FS_LIT(lit) PCB__FS_LIT(lit)
+#define PCB_FS_SV_LIT(lit) PCB_WSV_LIT(lit)
 #define PCB_FS_Fmt "%ls"
 #define PCB_FS_SV_Fmt "%.*ls"
 #define PCB_FS_strlen PCB_wcslen
@@ -3774,6 +3776,7 @@ typedef PCB_WCStringsView PCB_FS_CStringsView;
 #define PCB_FS_String_pop_many PCB_WString_pop_many
 #define PCB_FS_StringView_from_cstr PCB_WStringView_from_cstr
 #define PCB_FS_StringView_from_parts PCB_WStringView_from_parts
+#define PCB_FS_StringView_findCharFrom_n PCB_WStringView_findCharFrom_n
 #else
 typedef char PCB_FS_char;
 typedef PCB_String PCB_FS_String;
@@ -3783,7 +3786,9 @@ typedef PCB_Strings PCB_FS_Strings;
 typedef PCB_CStrings PCB_FS_CStrings;
 typedef PCB_CStringsView PCB_FS_CStringsView;
 
-#define PCB_FS_LIT(lit) "" lit ""
+#define PCB__FS_LIT(lit) "" lit ""
+#define PCB_FS_LIT(lit) PCB__FS_LIT(lit)
+#define PCB_FS_SV_LIT(lit) PCB_SV_LIT(lit)
 #define PCB_FS_Fmt "%s"
 #define PCB_FS_SV_Fmt "%.*s"
 #define PCB_FS_strlen PCB_strlen
@@ -3818,12 +3823,13 @@ typedef PCB_CStringsView PCB_FS_CStringsView;
 #define PCB_FS_String_pop_many PCB_String_pop_many
 #define PCB_FS_StringView_from_cstr PCB_StringView_from_cstr
 #define PCB_FS_StringView_from_parts PCB_StringView_from_parts
+#define PCB_FS_StringView_findCharFrom_n PCB_StringView_findCharFrom_n
 #endif //Microsoft made a brilliant decision to bet everything on UCS-2.
        //Then came codepoints outside of BMP...
        //@sa https://www.moria.us/articles/wchar-is-a-historical-accident/
 
 typedef struct {
-    PCB_CStrings argv;
+    PCB_FS_CStrings argv;
     /**
      * Environment for the child process.
      *
@@ -3848,6 +3854,16 @@ typedef struct {
      *   variable after this one, it will be skipped.
      */
     PCB_FS_CStringsView env;
+    /**
+     * Arena in which arguments converted from char into PCB_FS_char types
+     * are stored, if that's necessary (it is not outside of Windows).
+     * On first use, if NULL, a new arena is created with default size;
+     *               otherwise its reference count is incremented.
+     */
+    PCB_Arena* arena;
+    //Snapshot of `arena`'s state on first use. Will be restored on destroy.
+    //Do not set it yourself.
+    PCB_Arena_Mark* _mark;
 } PCB_ShellCommand;
 
 //NOTE: Zero-initialization of this structure is non-portable.
@@ -4359,7 +4375,7 @@ typedef struct {
     //Initial state of `arena` is saved here. Do not set it yourself.
     PCB_Arena_Mark* mark;
     //Internal buffer used for accumulating source file paths for compilation.
-    PCB_CStrings sourceFiles;
+    PCB_FS_CStrings sourceFiles;
     /*
      * Mapping of `sourceFiles` to corresponding build paths.
      * You can add your own object files here, as long as you do so
@@ -4367,7 +4383,7 @@ typedef struct {
      * If you manage the build process manually, you must ensure that the mapping
      * remains correct during the entire compilation step.
      */
-    PCB_CStrings objectFiles;
+    PCB_FS_CStrings objectFiles;
     /*
      * The language standard used to compile source files.
      * Defaults to the standard used to build this file.
@@ -6009,6 +6025,8 @@ PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint(PCB_WStringView sv, si
 PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint_unchecked(PCB_WStringView sv, size_t index) PCB_PureFn;
 PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_cstr(const wchar_t* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
 PCB_maybe_inline PCB_WStringView PCBCALL PCB_WStringView_from_parts(const wchar_t* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI PCB_WStringView PCBCALL PCB_WStringView_findCharFrom_n_basic(PCB_WStringView sv, PCB_WStringView accept, size_t n);
+PCBAPI PCB_WStringView PCBCALL PCB_WStringView_findCharFrom_n(PCB_WStringView sv, PCB_WStringView accept, size_t n);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U8String_destroy(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U8String_reserve(PCB_U8String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
@@ -6050,6 +6068,8 @@ PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint(PCB_U8StringView sv, 
 PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint_unchecked(PCB_U8StringView sv, size_t index) PCB_PureFn;
 PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_cstr(const PCB_char8* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
 PCB_maybe_inline PCB_U8StringView PCBCALL PCB_U8StringView_from_parts(const PCB_char8* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI PCB_U8StringView PCBCALL PCB_U8StringView_findCharFrom_n_basic(PCB_U8StringView sv, PCB_U8StringView accept, size_t n);
+PCBAPI PCB_U8StringView PCBCALL PCB_U8StringView_findCharFrom_n(PCB_U8StringView sv, PCB_U8StringView accept, size_t n);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U16String_destroy(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U16String_reserve(PCB_U16String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
@@ -6118,6 +6138,8 @@ PCBAPI PCB_Codepoint PCBCALL PCB_U16StringView_GetCodepoint_unchecked(
 ) PCB_PureFn;
 PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_cstr(const PCB_char16* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
 PCB_maybe_inline PCB_U16StringView PCBCALL PCB_U16StringView_from_parts(const PCB_char16* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI PCB_U16StringView PCBCALL PCB_U16StringView_findCharFrom_n_basic(PCB_U16StringView sv, PCB_U16StringView accept, size_t n);
+PCBAPI PCB_U16StringView PCBCALL PCB_U16StringView_findCharFrom_n(PCB_U16StringView sv, PCB_U16StringView accept, size_t n);
 //----------------------------------------------------------------------------
 PCBAPI void    PCBCALL PCB_U32String_destroy(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI bool    PCBCALL PCB_U32String_reserve(PCB_U32String* PCB_restrict str, const size_t howMany) PCB_Nonnull_Arg(1);
@@ -6158,6 +6180,8 @@ PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint(PCB_U32StringView sv
 PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint_unchecked(PCB_U32StringView sv, size_t index) PCB_PureFn;
 PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_cstr(const PCB_char32* PCB_restrict str) PCB_Nonnull_Arg(1) PCB_PureFn;
 PCB_maybe_inline PCB_U32StringView PCBCALL PCB_U32StringView_from_parts(const PCB_char32* PCB_restrict ptr, size_t length) PCB_Nonnull_Arg(1) PCB_PureFn;
+PCBAPI PCB_U32StringView PCBCALL PCB_U32StringView_findCharFrom_n_basic(PCB_U32StringView sv, PCB_U32StringView accept, size_t n);
+PCBAPI PCB_U32StringView PCBCALL PCB_U32StringView_findCharFrom_n(PCB_U32StringView sv, PCB_U32StringView accept, size_t n);
 //----------------------------------------------------------------------------
 
 /**
@@ -6254,14 +6278,24 @@ PCBAPI int PCBCALL PCB_CStrings_append_multiple(PCB_CStrings *cstrs, const char 
 
 PCBAPI int PCBCALL PCB_CStringPairs_append(PCB_CStringPairs *pairs, PCB_CStringPair pair) PCB_Nonnull_Arg(1);
 
+PCBAPI int PCBCALL PCB_FS_CStrings_append(PCB_FS_CStrings *cstrs, const PCB_FS_char* cstr) PCB_Nonnull_Arg(1);
 
 /**
  * @brief Appends `arg`, which may be NULL, to `cmd`.
+ * `arg` is converted to native filesystem encoding if necessary.
  * @return see `PCB_VEC_OK`.
  */
 PCBAPI int PCBCALL PCB_ShellCommand_append_arg(
     PCB_ShellCommand *cmd,
     const char *arg
+) PCB_Nonnull_Arg(1);
+/**
+ * @brief Appends `arg`, which may be NULL, to `cmd`.
+ * @return see `PCB_VEC_OK`.
+ */
+PCBAPI int PCBCALL PCB_ShellCommand_append_arg_ne(
+    PCB_ShellCommand *cmd,
+    const PCB_FS_char *arg
 ) PCB_Nonnull_Arg(1);
 /**
  * @brief Append a variable number of arguments to `cmd`. Each argument
@@ -6280,6 +6314,14 @@ PCBAPI int PCBCALL PCB_ShellCommand_append_args_variadic(
     PCB_ShellCommand *cmd,
     ...
 ) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
+/**
+ * @brief Same as `PCB_ShellCommand_append_args_variadic`, except argument is
+ * of type `const PCB_FS_char*` instead of `const char*`.
+ */
+PCBAPI int PCBCALL PCB_ShellCommand_append_args_ne_variadic(
+    PCB_ShellCommand *cmd,
+    ...
+) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 
 /**
  * @brief Append a variable number of arguments to `cmd`.
@@ -6292,9 +6334,15 @@ PCBAPI int PCBCALL PCB_ShellCommand_append_args_variadic(
     const char *const PCB_MANGLE(args)[] = { __VA_ARGS__ }; \
     PCB_ShellCommand_append_n_args(cmd, PCB_MANGLE(args), PCB_ARRAY_LEN(PCB_MANGLE(args))); \
 })
+#define PCB_ShellCommand_append_args_ne(cmd, ...) __extension__ ({ \
+    const PCB_FS_char *const PCB_MANGLE(args)[] = { __VA_ARGS__ }; \
+    PCB_ShellCommand_append_n_args_ne(cmd, PCB_MANGLE(args), PCB_ARRAY_LEN(PCB_MANGLE(args))); \
+})
 #else
 #define PCB_ShellCommand_append_args(cmd, ...) \
     PCB_ShellCommand_append_args_variadic(cmd, __VA_ARGS__, NULL)
+#define PCB_ShellCommand_append_args_ne(cmd, ...) \
+    PCB_ShellCommand_append_args_ne_variadic(cmd, __VA_ARGS__, NULL)
 #endif //PCB_HAS_STMT_EXPR
 
 /**
@@ -6305,6 +6353,11 @@ PCBAPI int PCBCALL PCB_ShellCommand_append_args_variadic(
 PCBAPI int PCBCALL PCB_ShellCommand_append_n_args(
     PCB_ShellCommand *cmd,
     const char *const *args,
+    size_t n
+) PCB_Nonnull_Arg(1, 2);
+PCBAPI int PCBCALL PCB_ShellCommand_append_n_args_ne(
+    PCB_ShellCommand *cmd,
+    const PCB_FS_char *const *args,
     size_t n
 ) PCB_Nonnull_Arg(1, 2);
 PCBAPI void PCBCALL PCB_ShellCommand_reset(PCB_ShellCommand *cmd) PCB_Nonnull_Arg(1);
@@ -6494,7 +6547,7 @@ PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command)
  */
 PCBAPI PCB_Status PCBCALL PCB_ShellCommand_render(
     const PCB_ShellCommand *command,
-    PCB_String *buf
+    PCB_FS_String *buf
 ) PCB_Nonnull_Arg(1);
 
 
@@ -6862,6 +6915,7 @@ PCBAPI char* PCBCALL PCB_Arena_vasprintf(
  * @brief Duplicates `str` in `arena`.
  * @return pointer to the duplicated string or NULL if `str == NULL` or if
  * allocation failed.
+ * @sa PCB_Arena_alloc
  */
 PCBAPI char* PCBCALL PCB_Arena_strdup(
     PCB_Arena* arena,
@@ -6871,12 +6925,40 @@ PCBAPI char* PCBCALL PCB_Arena_strdup(
  * @brief Duplicates `str` in `arena`, copying at most `n` bytes.
  * @return pointer to the duplicated string or NULL if `str == NULL` or if
  * allocation failed.
+ * @sa PCB_Arena_alloc
  */
 PCBAPI char* PCBCALL PCB_Arena_strndup(
     PCB_Arena* arena,
     const char* str,
     size_t n
 ) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Duplicates `wstr` in `arena`.
+ * @return pointer to the duplicated string or NULL if allocation failed.
+ * @sa PCB_Arena_alloc
+ */
+PCBAPI wchar_t* PCBCALL PCB_Arena_wcsdup(
+    PCB_Arena* arena,
+    const wchar_t *wstr
+) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Duplicates `wstr` in `arena`, copying at most `n` characters.
+ * @return pointer to the duplicated string or NULL if allocation failed.
+ * @sa PCB_Arena_alloc
+ */
+PCBAPI wchar_t* PCBCALL PCB_Arena_wcsndup(
+    PCB_Arena* arena,
+    const wchar_t *wstr,
+    size_t n
+) PCB_Nonnull_Arg(1, 2);
+//For `strdup`ing a `PCB_FS_char*` string.
+#if PCB_PLATFORM_WINDOWS
+#define PCB_Arena_FS_strdup PCB_Arena_wcsdup
+#define PCB_Arena_FS_strndup PCB_Arena_wcsndup
+#else
+#define PCB_Arena_FS_strdup PCB_Arena_strdup
+#define PCB_Arena_FS_strndup PCB_Arena_strndup
+#endif
 
 /**
  * @brief Get a reference to the temporary storage.
@@ -11527,27 +11609,34 @@ PCB_Strings PCB_StringView_split_whitespace_copy(PCB_StringView sv) {
     return strs;
 }
 
-PCB_StringView PCB_StringView_findCharFrom_n_basic(
-    PCB_StringView sv, PCB_StringView accept, size_t n
-) {
-    PCB_CHECK(n == 0, PCB_ZEROED_T(PCB_StringView));
-    if(PCB_String_isEmpty(&sv))     return PCB_ZEROED_T(PCB_StringView);
-    if(PCB_String_isEmpty(&accept)) return PCB_ZEROED_T(PCB_StringView);
-    PCB_StringView cur = sv;
-    while(true) {
-        for(size_t i = 0; i < accept.length; i++) {
-            if(*cur.data == accept.data[i]) {
-                n--; break;
-            }
-        }
-        if(n == 0) break;
-        else {
-            cur.data++; cur.length--;
-            if(cur.length == 0) return PCB_ZEROED_T(PCB_StringView);
-        }
-    }
-    return cur;
+#define PCB__SV_findCharFrom_n_basic(svType) \
+svType svType##_findCharFrom_n_basic( \
+    svType sv, svType accept, size_t n \
+) { \
+    PCB_CHECK(n == 0, PCB_ZEROED_T(svType)); \
+    if(PCB_String_isEmpty(&sv))     return PCB_ZEROED_T(svType); \
+    if(PCB_String_isEmpty(&accept)) return PCB_ZEROED_T(svType); \
+    svType cur = sv; \
+    while(true) { \
+        for(size_t i = 0; i < accept.length; i++) { \
+            if(*cur.data == accept.data[i]) { \
+                n--; break; \
+            } \
+        } \
+        if(n == 0) break; \
+        else { \
+            cur.data++; cur.length--; \
+            if(cur.length == 0) return PCB_ZEROED_T(svType); \
+        } \
+    } \
+    return cur; \
 }
+PCB__SV_findCharFrom_n_basic(PCB_StringView)    //PCB_StringView_findCharFrom_n_basic()
+PCB__SV_findCharFrom_n_basic(PCB_WStringView)   //PCB_WStringView_findCharFrom_n_basic()
+PCB__SV_findCharFrom_n_basic(PCB_U8StringView)  //PCB_U8StringView_findCharFrom_n_basic()
+PCB__SV_findCharFrom_n_basic(PCB_U16StringView) //PCB_U16StringView_findCharFrom_n_basic()
+PCB__SV_findCharFrom_n_basic(PCB_U32StringView) //PCB_U32StringView_findCharFrom_n_basic()
+#undef PCB__SV_findCharFrom_n_basic
 
 PCB_StringView PCB_StringView_findCharFrom_n(
     PCB_StringView sv, PCB_StringView accept, size_t n
@@ -11560,6 +11649,22 @@ PCB_StringView PCB_StringView_findCharFrom_n(
 #endif //PCB__HAS_VECTOR_SV
     return PCB_StringView_findCharFrom_n_basic(sv, accept, n);
 }
+
+PCB_WStringView PCB_WStringView_findCharFrom_n(
+    PCB_WStringView sv, PCB_WStringView accept, size_t n
+) { return PCB_WStringView_findCharFrom_n_basic(sv, accept, n); }
+
+PCB_U8StringView PCB_U8StringView_findCharFrom_n(
+    PCB_U8StringView sv, PCB_U8StringView accept, size_t n
+) { return PCB_U8StringView_findCharFrom_n_basic(sv, accept, n); }
+
+PCB_U16StringView PCB_U16StringView_findCharFrom_n(
+    PCB_U16StringView sv, PCB_U16StringView accept, size_t n
+) { return PCB_U16StringView_findCharFrom_n_basic(sv, accept, n); }
+
+PCB_U32StringView PCB_U32StringView_findCharFrom_n(
+    PCB_U32StringView sv, PCB_U32StringView accept, size_t n
+) { return PCB_U32StringView_findCharFrom_n_basic(sv, accept, n); }
 
 PCB_StringView PCB_StringView_findCharNotFrom_n_basic(
     PCB_StringView sv, PCB_StringView reject, size_t n
@@ -11894,13 +11999,20 @@ PCB_char16* PCB_StoreUTF16Codepoint(PCB_char16* buf, uint32_t codepoint) {
 #undef PCB__strlen_PCB_char16
 #undef PCB__strlen_PCB_char32
 
-static int PCB__CStrings_reserve(PCB_CStrings *cstrs, size_t n) {
-    int res; PCB_Vec_try_reserve(cstrs, n, res); return res;
-}
+static int PCB__CStrings_reserve(PCB_CStrings *cstrs, size_t n) { int res; PCB_Vec_try_reserve(cstrs, n, res); return res; }
+static int PCB__FS_CStrings_reserve(PCB_FS_CStrings *cstrs, size_t n) { int res; PCB_Vec_try_reserve(cstrs, n, res); return res; }
 
 int PCB_CStrings_append(PCB_CStrings *cstrs, const char* cstr) {
     PCB_CHECK_NULL(cstrs, -1);
     int res = PCB__CStrings_reserve(cstrs, 1);
+    if(res != PCB_VEC_OK) return res;
+    PCB_Vec_do_append_unchecked(cstrs, cstr);
+    return res;
+}
+
+int PCB_FS_CStrings_append(PCB_FS_CStrings *cstrs, const PCB_FS_char* cstr) {
+    PCB_CHECK_NULL(cstrs, -1);
+    int res = PCB__FS_CStrings_reserve(cstrs, 1);
     if(res != PCB_VEC_OK) return res;
     PCB_Vec_do_append_unchecked(cstrs, cstr);
     return res;
@@ -12346,7 +12458,62 @@ PCB_PopDiagnostics()
 
 //Section 3.5: Platform-independent (sort of) process functions.
 #ifdef PCB_IMPLEMENTATION_PROCESS
+#if PCB_PLATFORM_WINDOWS
+static const PCB_FS_char* PCB__ShellCommand_arg2FS(
+    PCB_ShellCommand *cmd, const char *arg
+) {
+    if(cmd->_mark == NULL) { //First use of `cmd->arena` - initialize lazily.
+        if(cmd->arena == NULL) {
+            cmd->arena = PCB_Arena_init((size_t)1 << 16);
+            if(cmd->arena == NULL) return NULL;
+        } else {
+            PCB_Arena_ref(cmd->arena);
+        }
+        cmd->_mark = PCB_Arena_mark(cmd->arena);
+        if(cmd->_mark == NULL) {
+            PCB_Arena_unref(cmd->arena);
+            return NULL;
+        }
+    }
+    size_t wlen = 1; //'\0'
+    PCB_Codepoint cp;
+    PCB_StringView arg_sv = PCB_StringView_from_cstr(arg), sv = arg_sv;
+    for(; sv.length > 0; sv.data += cp.length, sv.length -= cp.length) {
+        cp = PCB_StringView_GetCodepoint_unchecked(sv, 0);
+        if(cp.code < 0) cp.code = 0xFFFD;
+        wlen += PCB_GetUTF16Length_unchecked((uint32_t)cp.code);
+    }
+    wchar_t *buf = (wchar_t*)PCB_Arena_alloc(cmd->arena, wlen*sizeof(*buf));
+    if(buf == NULL) return NULL;
+    sv = arg_sv;
+    wchar_t *cursor = buf;
+    for(; sv.length > 0; sv.data += cp.length, sv.length -= cp.length) {
+        cp = PCB_StringView_GetCodepoint_unchecked(sv, 0);
+        if(cp.code < 0) cp.code = 0xFFFD;
+        cursor = (wchar_t*)PCB_StoreUTF16Codepoint((PCB_char16*)cursor, (uint32_t)cp.code);
+    }
+    *cursor = '\0';
+    return buf;
+}
+#endif //not needed outside of Windows
+
 int PCB_ShellCommand_append_arg(PCB_ShellCommand *cmd, const char *arg) {
+    PCB_CHECK_NULL(cmd, -1);
+    int res;
+#if PCB_PLATFORM_WINDOWS
+    const wchar_t *warg = NULL;
+    if(arg == NULL) goto append;
+    warg = PCB__ShellCommand_arg2FS(cmd, arg);
+    if(warg == NULL) return PCB_VEC_OOM;
+append:
+    PCB_Vec_try_append(&cmd->argv, warg, res);
+#else
+    PCB_Vec_try_append(&cmd->argv, arg, res);
+#endif
+    return res;
+}
+
+int PCB_ShellCommand_append_arg_ne(PCB_ShellCommand *cmd, const PCB_FS_char *arg) {
     PCB_CHECK_NULL(cmd, -1);
     int res; PCB_Vec_try_append(&cmd->argv, arg, res); return res;
 }
@@ -12358,8 +12525,22 @@ int PCB_ShellCommand_append_args_variadic(PCB_ShellCommand *cmd, ...) {
     size_t nargs_start = cmd->argv.length;
     va_start(args, cmd);
     PCB_VA_forEach_until(args, const char*, NULL, arg) {
-        PCB_Vec_try_append(&cmd->argv, arg, res);
-        if(res != PCB_VEC_OK) {
+        if((res = PCB_ShellCommand_append_arg(cmd, arg)) != PCB_VEC_OK) {
+            cmd->argv.length = nargs_start;
+            return res;
+        }
+    }
+    return PCB_VEC_OK;
+}
+
+int PCB_ShellCommand_append_args_ne_variadic(PCB_ShellCommand *cmd, ...) {
+    PCB_CHECK_NULL(cmd, -1);
+    va_list args;
+    int res;
+    size_t nargs_start = cmd->argv.length;
+    va_start(args, cmd);
+    PCB_VA_forEach_until(args, const PCB_FS_char*, NULL, arg) {
+        if((res = PCB_ShellCommand_append_arg_ne(cmd, arg)) != PCB_VEC_OK) {
             cmd->argv.length = nargs_start;
             return res;
         }
@@ -12372,6 +12553,22 @@ int PCB_ShellCommand_append_n_args(
 ) {
     PCB_CHECK_NULL(cmd,  -1);
     PCB_CHECK_NULL(args, -1);
+    int res = -1;
+#if PCB_PLATFORM_WINDOWS
+    for(size_t i = 0; i < n; i++)
+        if((res = PCB_ShellCommand_append_arg(cmd, args[i])) != PCB_VEC_OK)
+            return res;
+#else
+    PCB_Vec_try_append_multiple(&cmd->argv, args, n, res);
+#endif
+    return res;
+}
+
+int PCB_ShellCommand_append_n_args_ne(
+    PCB_ShellCommand *cmd, const PCB_FS_char *const *args, size_t n
+) {
+    PCB_CHECK_NULL(cmd,  -1);
+    PCB_CHECK_NULL(args, -1);
     int res; PCB_Vec_try_append_multiple(&cmd->argv, args, n, res); return res;
 }
 
@@ -12379,12 +12576,20 @@ void PCB_ShellCommand_reset(PCB_ShellCommand *cmd) {
     PCB_CHECK_NULL(cmd,);
     PCB_Vec_reset(&cmd->argv);
     cmd->env = PCB_ZEROED_T(PCB_FS_CStringsView);
+    if(cmd->arena != NULL && cmd->_mark != NULL)
+        PCB_Arena_restore_to(cmd->arena, cmd->_mark);
 }
 
 void PCB_ShellCommand_destroy(PCB_ShellCommand *cmd) {
     if(cmd == NULL) return;
     PCB_Vec_destroy(&cmd->argv);
     cmd->env = PCB_ZEROED_T(PCB_FS_CStringsView);
+    if(cmd->_mark != NULL) {
+        PCB_Arena_restore(cmd->arena, cmd->_mark);
+        PCB_Arena_unref(cmd->arena);
+        cmd->_mark = NULL;
+    }
+    cmd->arena = NULL;
 }
 
 PCB_Process PCB_Process_self(void) {
@@ -12844,24 +13049,38 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
     if(cmd->argv.data == NULL || cmd->argv.length < 1)
         return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
 #if PCB_PLATFORM_WINDOWS
-    STARTUPINFO startupinfo   = PCB_ZEROED; startupinfo.cb = sizeof(startupinfo);
+    STARTUPINFOW startupinfo  = PCB_ZEROED; startupinfo.cb = sizeof(startupinfo);
     PROCESS_INFORMATION pInfo = PCB_ZEROED;
 
-    PCB_String cmdline = PCB_ZEROED;
+    PCB_WString cmdline = PCB_ZEROED, environment_block = PCB_ZEROED;
     PCB_Status st = PCB_ShellCommand_render(cmd, &cmdline);
     if(!PCB_ISOK(st)) {
-        PCB_String_destroy(&cmdline);
+        PCB_WString_destroy(&cmdline);
         return st;
     }
     if(PCB_String_isEmpty(&cmdline)) {
-        PCB_String_destroy(&cmdline);
+        PCB_WString_destroy(&cmdline);
         return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
     }
+    if(!PCB__ShellCommand_setup_env(&environment_block, cmd->env)) {
+        PCB_WString_destroy(&cmdline);
+        return PCB_CERR_NOMEM;
+    }
 
-    BOOL success = CreateProcessA(
-        NULL, cmdline.data, NULL, NULL, true, 0, NULL, NULL, &startupinfo, &pInfo
+    BOOL success = CreateProcessW(
+        NULL, //Application name
+        cmdline.data,
+        NULL, //Process security attributes
+        NULL, //Thread security attributes
+        true, //Inherit handles
+        CREATE_UNICODE_ENVIRONMENT, //Process creation flags
+        environment_block.data,
+        NULL, //Child's initial working directory
+        &startupinfo,
+        &pInfo
     );
-    PCB_String_destroy(&cmdline);
+    PCB_WString_destroy(&cmdline);
+    PCB_WString_destroy(&environment_block);
     if(!success) return PCB_STATUS_NATIVE_SYSTEM_API();
     CloseHandle(pInfo.hThread);
     p->handle = pInfo.hProcess;
@@ -12972,17 +13191,21 @@ PCB_Status PCB_ShellCommand_runAndWait(PCB_ShellCommand *cmd) {
 }
 
 PCB_Status PCB_ShellCommand_render(
-    const PCB_ShellCommand *command, PCB_String *buf
+    const PCB_ShellCommand *command, PCB_FS_String *buf
 ) {
     PCB_CHECK_SELF(command, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
     PCB_CHECK_SELF(buf, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    //other whitespace characters are nonsensical inside a shell command...right?
+    const PCB_FS_StringView WSP = PCB_FS_SV_LIT(PCB_FS_LIT(" \t\v"));
+    const PCB_FS_StringView ESCAPE = PCB_FS_SV_LIT(PCB_FS_LIT("\"\'"));
+
     PCB_Status result = PCB_CERR_NOMEM;
     size_t start_len = buf->length;
-    PCB_CStringsView cv = PCB_View_Vec_A(&command->argv);
+    PCB_FS_CStringsView cv = PCB_View_Vec_A(&command->argv);
     if(PCB_Vec_isEmpty(&cv)) return PCB_OK();
     //a heuristic prediction to minimize reallocs
-    if(!PCB_String_reserve(buf, 8 * cv.length)) goto error;
-    PCB_Vec_enumerate(&cv, i, v, it, const char* const) {
+    if(!PCB_FS_String_reserve(buf, 8 * cv.length)) goto error;
+    PCB_Vec_enumerate(&cv, i, v, it, const PCB_FS_char* const) {
         if(*it.v == NULL) {
             //allow multiple NULLs at the end of `command` everywhere for portability
             for(size_t j = it.i+1; j < cv.length; j++) {
@@ -12992,32 +13215,35 @@ PCB_Status PCB_ShellCommand_render(
             }
             break;
         }
-        PCB_StringView arg = PCB_StringView_from_cstr(*it.v);
-        //other whitespace characters are nonsensical inside a shell command...right?
-        PCB_StringView sv = PCB_StringView_findCharFrom_cstr(arg, " \t\v");
+        PCB_FS_StringView arg = PCB_FS_StringView_from_cstr(*it.v);
+        PCB_FS_StringView sv = PCB_FS_StringView_findCharFrom_n(arg, WSP, 1);
         bool needs_quotes = !PCB_String_isEmpty(&sv);
         if(needs_quotes)
-            if(!PCB_String_append_chars(buf, '"', 1)) goto error;
+            if(!PCB_FS_String_append_chars(buf, '"', 1)) goto error;
         while(arg.length > 0) {
-            sv = PCB_StringView_findCharFrom_cstr(arg, "\"\'");
+            sv = PCB_FS_StringView_findCharFrom_n(arg, ESCAPE, 1);
             if(PCB_String_isEmpty(&sv)) {
-                if(!PCB_String_append_sv(buf, arg)) goto error;
+                if(!PCB_FS_String_append_sv(buf, arg)) goto error;
                 break;
             }
-            ptrdiff_t l = sv.data - arg.data;
-            if(!PCB_String_appendf(buf, "%.*s\\%c", (int)l, arg.data, *sv.data)) goto error;
-            arg.data   += (size_t)l + 1;
-            arg.length -= (size_t)l + 1;
+            size_t l = (size_t)(sv.data - arg.data);
+            PCB_FS_StringView all_before_escaped_char = {arg.data, l};
+            if(!PCB_FS_String_append_sv(buf, all_before_escaped_char)) goto error;
+            if(!PCB_FS_String_append_chars(buf, '\\', 1)) goto error;
+            sv.length = 1;
+            if(!PCB_FS_String_append_sv(buf, sv)) goto error;
+            arg.data   += l + 1;
+            arg.length -= l + 1;
         }
         if(needs_quotes)
-            if(!PCB_String_append_chars(buf, '"', 1)) goto error;
+            if(!PCB_FS_String_append_chars(buf, '"', 1)) goto error;
 
-        if(!PCB_String_append_chars(buf, ' ', 1)) goto error;
+        if(!PCB_FS_String_append_chars(buf, ' ', 1)) goto error;
     }
-    PCB_String_pop(buf); //remove trailing ' '
+    PCB_FS_String_pop(buf); //remove trailing ' '
     return PCB_OK();
 error:
-    PCB_String_resize(buf, start_len);
+    PCB_FS_String_resize(buf, start_len);
     return result;
 }
 #endif //PCB_IMPLEMENTATION_PROCESS
@@ -13749,19 +13975,40 @@ char* PCB_Arena_strdup(PCB_Arena* arena, const char* str) {
     PCB_CHECK_SELF(arena, NULL);
     PCB_CHECK_NULL(str, NULL);
     size_t len = PCB_strlen(str) + 1; // '\0'
-    char* text = (char*)PCB_Arena_alloc(arena, len);
+    char* text = (char*)PCB_Arena_alloc(arena, len*sizeof(*text));
     if(text == NULL) return NULL;
-    PCB_memcpy(text, str, len);
+    PCB_memcpy(text, str, len*sizeof(*text));
     return text;
 }
 
 char* PCB_Arena_strndup(PCB_Arena* arena, const char* str, size_t n) {
     PCB_CHECK_SELF(arena, NULL);
     PCB_CHECK_NULL(str, NULL);
-    size_t len = PCB_strnlen(str, n); //           '\0'
-    char* text = (char*)PCB_Arena_alloc(arena, len + 1);
+    size_t len = PCB_strnlen(str, n); //            '\0'
+    char* text = (char*)PCB_Arena_alloc(arena, (len + 1)*sizeof(*text));
     if(text == NULL) return NULL;
-    PCB_memcpy(text, str, len);
+    PCB_memcpy(text, str, len*sizeof(*text));
+    text[len] = '\0'; //`str` may not end with '\0'
+    return text;
+}
+
+wchar_t* PCBCALL PCB_Arena_wcsdup(PCB_Arena* arena, const wchar_t *str) {
+    PCB_CHECK_SELF(arena, NULL);
+    PCB_CHECK_NULL(str, NULL);
+    size_t len = PCB_wcslen(str) + 1; // '\0'
+    wchar_t *text = (wchar_t*)PCB_Arena_alloc(arena, len*sizeof(*text));
+    if(text == NULL) return NULL;
+    PCB_memcpy(text, str, len*sizeof(*text));
+    return text;
+}
+
+wchar_t* PCB_Arena_wcsndup(PCB_Arena* arena, const wchar_t *str, size_t n) {
+    PCB_CHECK_SELF(arena, NULL);
+    PCB_CHECK_NULL(str, NULL);
+    size_t len = PCB_wcsnlen(str, n); //                  '\0'
+    wchar_t *text = (wchar_t*)PCB_Arena_alloc(arena, (len + 1)*sizeof(*text));
+    if(text == NULL) return NULL;
+    PCB_memcpy(text, str, len*sizeof(*text));
     text[len] = '\0'; //`str` may not end with '\0'
     return text;
 }
@@ -14953,15 +15200,15 @@ PCB_Status PCB_BuildContext_configure(
     return PCB_OK();
 }
 
-static bool PCB__BuildContext_logCommand(PCB_BuildContext* context) {
+static bool PCB__BuildContext_logCommand(PCB_BuildContext *context) {
     bool result = true;
-    PCB_String cmd = PCB_ZEROED;
+    PCB_FS_String cmd = PCB_ZEROED;
     PCB_Status st = PCB_ShellCommand_render(&context->commandBuffer, &cmd);
     if(!PCB_ISOK(st)) PCB__return_defer(false);
     if(PCB_String_isEmpty(&cmd)) PCB__return_defer(false);
-    PCB_log(PCB_LOGLEVEL_INFO, "Running command \"%s\"", cmd.data);
+    PCB_log(PCB_LOGLEVEL_INFO, "Running command \"" PCB_FS_Fmt "\"", cmd.data);
 defer:
-    PCB_String_destroy(&cmd);
+    PCB_FS_String_destroy(&cmd);
     return result;
 }
 
@@ -15156,9 +15403,6 @@ static PCB_Status PCB__build_file(
     PCB_Status result = PCB_OK();
     PCB_Process process = PCB_Process_init();
     PCB_ShellCommand *cmd = &context->commandBuffer;
-#if PCB_PLATFORM_WINDOWS
-    bool converted_native = false;
-#endif
     PCB__logTrace("In: " PCB_FS_Fmt ", out: " PCB_FS_Fmt, src, obj);
     //`needsRebuild` was already called on `src` and `obj`
     if(!PCB_BuildContext_flags(context).buildImmediately) goto compile;
@@ -15168,14 +15412,8 @@ static PCB_Status PCB__build_file(
     if(!result.code) goto afterCompile;
 compile:
     result = PCB_OK();
-#if PCB_PLATFORM_WINDOWS
-    cmd->argv.data[cmd->argv.length - 2] = PCB_fromNativePath(obj);
-    cmd->argv.data[cmd->argv.length - 1] = PCB_fromNativePath(src);
-    converted_native = true;
-#else
     cmd->argv.data[cmd->argv.length - 2] = obj;
     cmd->argv.data[cmd->argv.length - 1] = src;
-#endif
 
     PCB_BuildContext_flags(context).rebuiltAnything = true;
 
@@ -15185,7 +15423,7 @@ compile:
 #endif //PCB_DEBUG
     result = PCB_ShellCommand_runBg(&context->commandBuffer, &process);
     if(!PCB_ISOK(result)) {
-        PCB_Status_log(result, "Failed to run %s", cmd->argv.data[0]);
+        PCB_Status_log(result, "Failed to run " PCB_FS_Fmt, cmd->argv.data[0]);
         goto defer;
     }
     switch(PCB_BuildContext_flags(context).parallel) {
@@ -15240,9 +15478,9 @@ compile:
     }
 afterCompile:
     if(addToObjs) {
-        const char *obj_ = PCB_Arena_strdup(context->arena, cmd->argv.data[cmd->argv.length - 2]);
+        const PCB_FS_char *obj_ = PCB_Arena_FS_strdup(context->arena, cmd->argv.data[cmd->argv.length - 2]);
         if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
-        PCB_CStrings_append(&context->objectFiles, obj_);
+        PCB_FS_CStrings_append(&context->objectFiles, obj_);
     }
 defer:
     if(PCB_Process_isValid(&process)) {
@@ -15251,12 +15489,6 @@ defer:
 #endif //otherwise it's a kernel memory leak of a zombie process
         PCB_Process_destroy(&process);
     }
-#if PCB_PLATFORM_WINDOWS
-    if(converted_native) {
-        PCB_freePath(cmd->argv.data[cmd->argv.length - 1]);
-        PCB_freePath(cmd->argv.data[cmd->argv.length - 2]);
-    }
-#endif
     cmd->argv.data[cmd->argv.length - 1] = NULL;
     cmd->argv.data[cmd->argv.length - 2] = NULL;
     return result;
@@ -15429,8 +15661,13 @@ static PCB_Status PCB__build_directory(
 ) {
     PCB__BuildContext_Sourcemap_State ss = PCB_ZEROED;
     const PCB_FS_String *src = &ss.it.current_filepath, *obj = &ss.obj.path;
+    const PCB_FS_char *compiler_path = PCB_toNativePath(context->compiler.path);
+    if(compiler_path == NULL) return PCB_CERR_NOMEM;
     PCB_Status result = PCB__BuildContext_Sourcemap_State_init(&ss, srcdir, objdir);
-    if(!PCB_ISOK(result)) return result;
+    if(!PCB_ISOK(result)) {
+        PCB_freeNativePath(compiler_path);
+        return result;
+    }
 
     while(true) {
         result = PCB__BuildContext_Sourcemap_State_advance(&ss, context);
@@ -15442,19 +15679,19 @@ static PCB_Status PCB__build_directory(
           case PCB__LANG_C: {
 #ifdef __cplusplus
             if(PCB_BuildContext_flags(context).ccInCpp)
-                context->commandBuffer.argv.data[0] = PCB_COMPILER_PATH_ALT;
+                context->commandBuffer.argv.data[0] = PCB_FS_LIT(PCB_COMPILER_PATH_ALT);
 #endif //C++?
             if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt)))
                 goto defer;
 #ifdef __cplusplus
                 if(PCB_BuildContext_flags(context).ccInCpp)
-                    context->commandBuffer.argv.data[0] = context->compiler.path;
+                    context->commandBuffer.argv.data[0] = compiler_path;
 #endif //C++?
           } break;
           case PCB__LANG_CPP: {
 #ifndef __cplusplus
             if(PCB_BuildContext_flags(context).ccInCpp) {
-                context->commandBuffer.argv.data[0] = PCB_COMPILER_PATH_ALT;
+                context->commandBuffer.argv.data[0] = PCB_FS_LIT(PCB_COMPILER_PATH_ALT);
             } else {
                 PCB_log(
                     PCB_LOGLEVEL_WARN, "C++ source file " PCB_FS_Fmt " in a C-only "
@@ -15466,7 +15703,7 @@ static PCB_Status PCB__build_directory(
                 goto defer;
 #ifndef __cplusplus
             if(PCB_BuildContext_flags(context).ccInCpp)
-                context->commandBuffer.argv.data[0] = context->compiler.path;
+                context->commandBuffer.argv.data[0] = compiler_path;
 #endif //!C++?
           } break;
           case PCB__LANG_ASM:
@@ -15479,6 +15716,7 @@ static PCB_Status PCB__build_directory(
     result = PCB_OK();
 defer:
     PCB__BuildContext_Sourcemap_State_destroy(&ss);
+    PCB_freeNativePath(compiler_path);
     return result;
 }
 
@@ -15487,20 +15725,17 @@ static PCB_Status PCB__BuildContext_gatherSources_dir(
 ) {
     PCB__BuildContext_Sourcemap_State ss = PCB_ZEROED;
     const PCB_FS_String *src = &ss.it.current_filepath, *obj = &ss.obj.path;
-    PCB_CStrings *srcs = &context->sourceFiles,
-                 *objs = &context->objectFiles;
+    PCB_FS_CStrings *srcs = &context->sourceFiles,
+                    *objs = &context->objectFiles;
     PCB_Status result = PCB__BuildContext_Sourcemap_State_init(&ss, srcdir, objdir);
     if(!PCB_ISOK(result)) return result;
 
     while(true) {
-        const char *src_, *obj_, *src__, *obj__;
+        const PCB_FS_char *src_, *obj_;
         result = PCB__BuildContext_Sourcemap_State_advance(&ss, context);
         if(!PCB_ISOK(result)) goto defer;
         if(result.code == PCB__LANG_NONE) break;
-        obj__ = PCB_fromNativePath(obj->data);
-        PCB_assert(obj__ != NULL);
-        obj_ = PCB_Arena_strdup(context->arena, obj__);
-        PCB_freePath(obj__);
+        obj_ = PCB_Arena_FS_strdup(context->arena, obj->data);
         if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
         if(!PCB_BuildContext_flags(context).deferModChecks) {
             result = PCB__BuildContext_needsRebuild_single(
@@ -15508,24 +15743,21 @@ static PCB_Status PCB__BuildContext_gatherSources_dir(
             );
             if(!PCB_ISOK(result)) goto defer;
             if(!result.code) {
-                PCB_CStrings_append(objs, obj_);
+                PCB_FS_CStrings_append(objs, obj_);
                 continue; //only add object file, needed for linking
             }
         }
-        src__ = PCB_fromNativePath(src->data);
-        PCB_assert(src__ != NULL);
-        src_ = PCB_Arena_strdup(context->arena, src__);
-        PCB_freePath(src__);
+        src_ = PCB_Arena_FS_strdup(context->arena, src->data);
         if(src_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
-        PCB_CStrings_append(srcs, src_);
-        if(objs->length < srcs->length) PCB_CStrings_append(objs, obj_);
+        PCB_FS_CStrings_append(srcs, src_);
+        if(objs->length < srcs->length) PCB_FS_CStrings_append(objs, obj_);
         else {
             //srcs: [ "b.c" ]
             //objs: [ "a.o", "c.o" ] -> [ "b.o", "c.o", "a.o" ]
             //We lose the original order, but who cares
-            const char *old = objs->data[srcs->length - 1];
+            const PCB_FS_char *old = objs->data[srcs->length - 1];
             objs->data[srcs->length - 1] = obj_;
-            PCB_CStrings_append(objs, old);
+            PCB_FS_CStrings_append(objs, old);
         }
     }
     result = PCB_OK();
@@ -15573,17 +15805,17 @@ static void PCB__BuildContext_logutd(PCB_BuildContext* context, const char *out)
 
 static bool PCB__BuildContext_logCommandTemplate(PCB_BuildContext *context) {
     bool result = true;
-    PCB_String cmd = PCB_ZEROED;
+    PCB_FS_String cmd = PCB_ZEROED;
     PCB_Status st = PCB_ShellCommand_render(&context->commandBuffer, &cmd);
     if(!PCB_ISOK(st)) PCB__return_defer(false);
     if(PCB_String_isEmpty(&cmd)) PCB__return_defer(false);
     PCB_log(
         PCB_LOGLEVEL_INFO,
-        "Command template used: \"%s <output path> <source path>\"",
+        "Command template used: \"" PCB_FS_Fmt " <output path> <source path>\"",
         cmd.data
     );
 defer:
-    PCB_String_destroy(&cmd);
+    PCB_FS_String_destroy(&cmd);
     return result;
 }
 
@@ -15739,7 +15971,7 @@ static PCB_Status PCB__BuildContext_parseArchiverFlags(
     } else {
         PCB_ShellCommand_append_arg(&context->commandBuffer, out);
     }
-    PCB_ShellCommand_append_n_args(
+    PCB_ShellCommand_append_n_args_ne(
         &context->commandBuffer,
         context->objectFiles.data, context->objectFiles.length
     );
@@ -15781,7 +16013,7 @@ static PCB_Status PCB__BuildContext_parseLinkerFlags(
     }
     PCB_static_assert(PCB_COMPILER_RT_COUNT == 5,);
      //2. Object files, if any
-    PCB_ShellCommand_append_n_args(
+    PCB_ShellCommand_append_n_args_ne(
         cmd,
         context->objectFiles.data, context->objectFiles.length
     );
@@ -15869,7 +16101,7 @@ static PCB_Status PCB__BuildContext_parseLinkerFlags(
 }
 
 static PCB_Status PCB__build_fromContext_single_compile(
-    PCB_BuildContext *context, const char *src, const char *obj
+    PCB_BuildContext *context, const PCB_FS_char *src, const PCB_FS_char *obj
 ) {
     PCB_Status result;
     PCB_ShellCommand *cmd = &context->commandBuffer;
@@ -15882,11 +16114,11 @@ static PCB_Status PCB__build_fromContext_single_compile(
     flag = PCB_build_flag_output(c);
     if(*flag != '\0') PCB_ShellCommand_append_arg(cmd, flag);
 
-    PCB_ShellCommand_append_args(&context->commandBuffer, obj, src);
+    PCB_ShellCommand_append_args_ne(&context->commandBuffer, obj, src);
     if(!PCB__BuildContext_logCommand(context)) return PCB_CERR_NOMEM;
     result = PCB_ShellCommand_runAndWait(&context->commandBuffer);
     if(!PCB_ISOK(result)) {
-        PCB_Status_log(result, "Failed to run %s", cmd->argv.data[0]);
+        PCB_Status_log(result, "Failed to run " PCB_FS_Fmt, cmd->argv.data[0]);
         return result;
     }
     if(result.code != 0) {
@@ -15897,7 +16129,7 @@ static PCB_Status PCB__build_fromContext_single_compile(
         return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_COMPILATION_ERROR);
     }
     PCB_ShellCommand_reset(&context->commandBuffer);
-    PCB_CStrings_append(&context->objectFiles, obj);
+    PCB_FS_CStrings_append(&context->objectFiles, obj);
     return PCB_OK();
 }
 
@@ -15943,31 +16175,41 @@ static PCB_Status PCB__build_fromContext_single(PCB_BuildContext *context) {
         if(!PCB_BuildType_formatName(bt, context->target.platform, &out, context->arena))
             return PCB_CERR_NOMEM;
     }
+    const PCB_FS_char *fsrc, *fobj = NULL, *fout;
+    if((fsrc = PCB_toNativePath(src)) == NULL) return PCB_CERR_NOMEM;
+    if((fout = PCB_toNativePath(out)) == NULL)
+        PCB__defer_l(PCB_CERR_NOMEM, defer_src);
+    if(PCB_BuildContext_flags(context).cwl) {
+        fobj = fout;
+    } else if(bt == PCB_BUILDTYPE_STATICLIB) {
+        if((fobj = PCB_toNativePath(obj)) == NULL)
+            PCB__defer_l(PCB_CERR_NOMEM, defer_out);
+    }
 
-    result = PCB__BuildContext_needsRebuild_single_char(context, src, out, NULL);
-    if(!PCB_ISOK(result)) return result;
-    if(!result.code) { PCB__BuildContext_logutd(context, out); return PCB_OK(); }
+    result = PCB__BuildContext_needsRebuild_single(context, fsrc, fout, NULL);
+    if(!PCB_ISOK(result)) goto defer;
+    if(!result.code) { PCB__BuildContext_logutd(context, out); goto defer; }
 
     result = PCB__BuildContext_parseCompilerFlags(context);
-    if(!PCB_ISOK(result)) return result;
+    if(!PCB_ISOK(result)) goto defer;
     if(PCB_BuildContext_flags(context).cwl || bt == PCB_BUILDTYPE_STATICLIB) {
-        result = PCB__build_fromContext_single_compile(context, src, obj);
-        if(!PCB_ISOK(result)) return result;
-        if(PCB_BuildContext_flags(context).cwl) return PCB_OK();
+        result = PCB__build_fromContext_single_compile(context, fsrc, fobj);
+        if(!PCB_ISOK(result)) goto defer;
+        if(PCB_BuildContext_flags(context).cwl) PCB__return_defer(PCB_OK());
 
         result = PCB__BuildContext_parseArchiverFlags(context, out);
-        if(!PCB_ISOK(result)) return result;
+        if(!PCB_ISOK(result)) goto defer;
     } else {
         PCB_ShellCommand_append_arg(&context->commandBuffer, src);
         result = PCB__BuildContext_parseLinkerFlags(context, out);
-        if(!PCB_ISOK(result)) return result;
+        if(!PCB_ISOK(result)) goto defer;
     }
 
-    if(!PCB__BuildContext_logCommand(context)) return PCB_CERR_NOMEM;
+    if(!PCB__BuildContext_logCommand(context)) PCB__return_defer(PCB_CERR_NOMEM);
     result = PCB_ShellCommand_runAndWait(&context->commandBuffer);
     if(!PCB_ISOK(result)) {
-        PCB_Status_log(result, "Failed to run %s", cmd->argv.data[0]);
-        return result;
+        PCB_Status_log(result, "Failed to run " PCB_FS_Fmt, cmd->argv.data[0]);
+        goto defer;
     }
     if(result.code != 0) {
         const char *step = bt == PCB_BUILDTYPE_STATICLIB ? "archival" : "compilation";
@@ -15976,14 +16218,18 @@ static PCB_Status PCB__build_fromContext_single(PCB_BuildContext *context) {
         result.code = bt == PCB_BUILDTYPE_STATICLIB
             ? PCB_BUILD_RESULT_ARCHIVAL_ERROR
             : PCB_BUILD_RESULT_COMPILATION_ERROR;
-        return result;
+        goto defer;
     }
     PCB_BuildContext_flags(context).rebuiltAnything = true;
     if(bt == PCB_BUILDTYPE_STATICLIB) {
-        PCB_log(PCB_LOGLEVEL_INFO, "Removing temporary %s", obj);
-        PCB_FS_rm(obj);
+        PCB_log(PCB_LOGLEVEL_INFO, "Removing temporary " PCB_FS_Fmt, fobj);
+        PCB_FS_rm_ne(fobj);
     }
-    return PCB_OK();
+defer:
+    if(bt == PCB_BUILDTYPE_STATICLIB) PCB_freeNativePath(fobj);
+defer_out: PCB_freeNativePath(fout);
+defer_src: PCB_freeNativePath(fsrc);
+    return result;
 }
 
 static PCB_Status PCB__BuildContext_compile(PCB_BuildContext *context) {
@@ -16071,14 +16317,9 @@ static PCB_Status PCB__BuildContext_compile(PCB_BuildContext *context) {
         if(L > 0 && !PCB__BuildContext_logCommandTemplate(context))
             PCB__return_defer(PCB_CERR_NOMEM);
         for(size_t i = 0; i < L; i++) {
-            const char *src = context->sourceFiles.data[i];
-            const char *obj = context->objectFiles.data[i];
-            const PCB_FS_char *src_ = PCB_toNativePath(src);
-            const PCB_FS_char *obj_ = PCB_toNativePath(obj);
-            PCB_assert(src_ != NULL);
-            PCB_assert(obj_ != NULL);
-            result = PCB__build_file(context, src_, obj_, false, NULL);
-            PCB_freeNativePath(src_); PCB_freeNativePath(obj_);
+            const PCB_FS_char *src = context->sourceFiles.data[i];
+            const PCB_FS_char *obj = context->objectFiles.data[i];
+            result = PCB__build_file(context, src, obj, false, NULL);
             if(!PCB_ISOK(result)) goto defer;
         }
         result = PCB_OK(1);
@@ -16240,7 +16481,7 @@ PCB_Status PCB_build_fromContext(PCB_BuildContext* context) {
     if(!PCB__BuildContext_logCommand(context)) PCB__return_defer(PCB_CERR_NOMEM);
     result = PCB_ShellCommand_runAndWait(&context->commandBuffer);
     if(!PCB_ISOK(result)) {
-        PCB_Status_log(result, "Failed to run %s", context->commandBuffer.argv.data[0]);
+        PCB_Status_log(result, "Failed to run " PCB_FS_Fmt, context->commandBuffer.argv.data[0]);
         goto defer;
     }
     if(result.code != 0) {
@@ -16376,7 +16617,7 @@ void PCB_rebuild_shit(int argc, char** argv, const char* src) {
         status = PCB_ShellCommand_runAndWait(&cmd);
         PCB_BuildContext_destroy(&context);
         if(!PCB_ISOK(status)) {
-            PCB_Status_log(status, "Failed to run %s", cmd.argv.data[0]);
+            PCB_Status_log(status, "Failed to run " PCB_FS_Fmt, cmd.argv.data[0]);
             PCB_ShellCommand_destroy(&cmd);
             goto defer_path;
         }
