@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 6
+#define PCB_VERSION_PATCH 7
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6216,7 +6216,7 @@ static PCB_ForceInline PCB_char32* PCB_StoreUTF32Codepoint(
 PCBAPI int PCBCALL PCB_CStrings_append(PCB_CStrings *cstrs, const char* cstr) PCB_Nonnull_Arg(1);
 PCBAPI int PCBCALL PCB_CStrings_append_variadic(PCB_CStrings *cstrs, ...) PCB_Nonnull_Arg(1) PCB_Sentinel_Null;
 PCBAPI int PCBCALL PCB_CStrings_append_multiple(PCB_CStrings *cstrs, const char *const *data, size_t n) PCB_Nonnull_Arg(1, 2);
-#ifdef PCB_HAS_STMT_EXPR
+#if PCB_HAS_STMT_EXPR
 #define PCB_CStrings_append_many(cstrs, ...) __extension__ ({ \
     const char *const PCB_MANGLE(args)[] = { __VA_ARGS__ }; \
     PCB_CStrings_append_multiple(cstrs, PCB_MANGLE(args), PCB_ARRAY_LEN(PCB_MANGLE(args))); \
@@ -6261,7 +6261,7 @@ PCBAPI int PCBCALL PCB_ShellCommand_append_args_variadic(
  * whenever possible.
  * @sa PCB_ShellCommand_append_args_variadic
  */
-#ifdef PCB_HAS_STMT_EXPR
+#if PCB_HAS_STMT_EXPR
 #define PCB_ShellCommand_append_args(cmd, ...) __extension__ ({ \
     const char *const PCB_MANGLE(args)[] = { __VA_ARGS__ }; \
     PCB_ShellCommand_append_n_args(cmd, PCB_MANGLE(args), PCB_ARRAY_LEN(PCB_MANGLE(args))); \
