@@ -3737,6 +3737,7 @@ typedef PCB_WStringView PCB_FS_StringView;
 typedef PCB_WStringSlice PCB_FS_StringSlice;
 typedef PCB_WStrings PCB_FS_Strings;
 typedef PCB_WCStrings PCB_FS_CStrings;
+typedef PCB_WCStringsView PCB_FS_CStringsView;
 
 #define PCB_FS_LIT(lit) L"" L##lit L""
 #define PCB_FS_Fmt "%ls"
@@ -3780,6 +3781,7 @@ typedef PCB_StringView PCB_FS_StringView;
 typedef PCB_StringSlice PCB_FS_StringSlice;
 typedef PCB_Strings PCB_FS_Strings;
 typedef PCB_CStrings PCB_FS_CStrings;
+typedef PCB_CStringsView PCB_FS_CStringsView;
 
 #define PCB_FS_LIT(lit) "" lit ""
 #define PCB_FS_Fmt "%s"
@@ -3822,6 +3824,30 @@ typedef PCB_CStrings PCB_FS_CStrings;
 
 typedef struct {
     PCB_CStrings argv;
+    /**
+     * Environment for the child process.
+     *
+     * If the list is empty, the parent's environment is used.
+     *
+     * If the last entry is NULL, the environment of the child process is
+     * fully replaced with variables from this array.
+     * This is the only thread and async-signal safe method of spawning a child
+     * process under a POSIX system.
+     *
+     * If the last entry is not NULL, the environment of the child
+     * process is a delta between the parent's environment and these variables.
+     *
+     * Each variable is processed in order, according to the following rules:
+     * - If in the form "name=value", the value of the environment variable
+     *   `name` is replaced with `value`. If `name` doesn't exist, it is added
+     *   to the child's environment.
+     * - If in the form "name" (without '='), the environment variable
+     *   "name" is removed from the child's environment. If `name` doesn't
+     *   exist, it is ignored.
+     * - If NULL, processing stops. Note that if there is any non-NULL
+     *   variable after this one, it will be skipped.
+     */
+    PCB_FS_CStringsView env;
 } PCB_ShellCommand;
 
 //NOTE: Zero-initialization of this structure is non-portable.
@@ -6394,6 +6420,49 @@ PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes) PCB_Nonnul
  * - WinAPI domain (Windows): See CreateProcessA.
  * The returned status can also hold any value returned by `PCB_ShellCommand_render`.
  * On error, `*process` is initialized to invalid fields (see `PCB_Process_init`).
+ *
+ * @thread-safety
+ * (Windows) Thread safe under all sane implementations.
+ * It is not specified by the WinAPI documentation whether
+ * GetEnvironmentStringsW is thread safe. However, all implementations seem
+ * to internally use a lock, so in practice it, as well as this function,
+ * are thread safe.
+ *
+ * (POSIX) Oh boy...here we go.
+ * There are 5 possible scenarios of arguments provided in `command`:
+ * <1> `command->argv.data[0]` contains a '/';
+ * <2> `command->argv.data[0]` does not contain a '/';
+ * <3> `command->env` is empty;
+ * <4> `command->env.data[<last index>]` is NULL;
+ * <5> `command->env.data[<last index>]` is not NULL.
+ * Only a combination of <1> and <4> guarantees thread & signal safety without
+ * external coordination.
+ *
+ * This is because <2> performs a PATH lookup, <3> uses `environ` as the child's
+ * environment, while <5> mixes `command->env` with the parent's environment.
+ * If this function was called while another thread was concurrently modifying
+ * the process' environment, the fork(2)ed child process may inherit the
+ * environment in a broken state.
+ * The exact result heavily depends on the libc used. For example, musl makes
+ * no consideration of multithreading with its `(((g|s)et)|put)env`
+ * implementation, while glibc internally uses locks & atomics to safely
+ * update `environ`.
+ *
+ * If `!(<1> && <4>)`, the function makes a best-effort attempt for minimizing
+ * potential issues when used in a multithreaded context:
+ * - no external function is called, except strlen, strncmp & memcpy
+ *   (& confstr under glibc, which is de-facto async signal safe);
+ * - no memory is allocated in the fork(2)ed child;
+ * - no locks are used;
+ * - stdio is not used;
+ * - all parsing is done manually.
+ * Therefore in practice, if the environment is not unsafely modified at
+ * fork time, this API MAY be considered "safe in practice", though not in the
+ * strict POSIX definition of "async signal safety".
+ *
+ * If `!(<1> && <4>)`, it is the caller's responsibility to ensure environment
+ * isn't modified with concurrent calls to this function. Sorry about that,
+ * POSIX is just broken in that regard.
  */
 PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runBg(
     PCB_ShellCommand *command,
@@ -6408,6 +6477,7 @@ PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runBg(
  * - POSIX domain (POSIX): See waitpid(2).
  * - WinAPI domain (Windows): See WaitForSingleObject.
  * The returned status can also hold any value returned by `PCB_ShellCommand_runBg`.
+ * @sa PCB_ShellCommand_runBg (STRONGLY recommended)
  */
 PCBAPI PCB_Status PCBCALL PCB_ShellCommand_runAndWait(PCB_ShellCommand* command) PCB_Nonnull_Arg(1);
 /**
@@ -12308,11 +12378,13 @@ int PCB_ShellCommand_append_n_args(
 void PCB_ShellCommand_reset(PCB_ShellCommand *cmd) {
     PCB_CHECK_NULL(cmd,);
     PCB_Vec_reset(&cmd->argv);
+    cmd->env = PCB_ZEROED_T(PCB_FS_CStringsView);
 }
 
 void PCB_ShellCommand_destroy(PCB_ShellCommand *cmd) {
     if(cmd == NULL) return;
     PCB_Vec_destroy(&cmd->argv);
+    cmd->env = PCB_ZEROED_T(PCB_FS_CStringsView);
 }
 
 PCB_Process PCB_Process_self(void) {
@@ -12557,6 +12629,213 @@ int PCB_Processes_waitForAll(PCB_Processes* processes) {
     return PCB_Processes_waitForRange(processes, 0, processes->length);
 }
 
+#if PCB_PLATFORM_WINDOWS
+static bool PCB__envnamecmp(const wchar_t *var, const wchar_t *target, size_t targetlen) {
+    const wchar_t *v = var;
+    while(*v != '=') {++v;}
+    if((size_t)(v - var) != targetlen) return false;
+    return _wcsnicmp(var, target, targetlen) == 0;
+}
+
+static bool PCB__ShellCommand_setup_var(PCB_WString *env, const wchar_t *var) {
+    const wchar_t *varcur = var, *cursor = env->data;
+    for(; *varcur && *varcur != '='; ++varcur) {}
+    if(*varcur == '\0') { //no '=', remove this variable
+        const size_t varnamelen = (size_t)(varcur - var);
+        while(*cursor) {
+            size_t l = PCB_wcslen(cursor) + 1;
+            if(!PCB__envnamecmp(cursor, var, varnamelen)) {
+                cursor += l;
+            } else {
+                PCB_WString_remove_range(env, (size_t)(cursor - env->data), l);
+                break;
+            }
+        } //to-be-removed variables that are not found are simply ignored
+    } else { //'=', add or replace this variable
+        const size_t varnamelen = (size_t)(varcur - var);
+        PCB_WStringView varsv = {var, varnamelen + PCB_wcslen(varcur) + 1};
+        while(true) {
+            size_t l = PCB_wcslen(cursor) + 1;
+            if(!PCB__envnamecmp(cursor, var, varnamelen)) {
+                cursor += l;
+                if(*cursor) continue;
+                return PCB_WString_append_sv(env, varsv); //`var` not found, add it
+            }
+            return PCB_WString_replace_range(env, (size_t)(cursor - env->data), l, varsv);
+        }
+    }
+    return true;
+}
+
+PCB_Unused //Will use when command's argv starts using `FS_char`s (required for CreateProcessW).
+static bool PCB__ShellCommand_setup_env(PCB_WString *buf, PCB_FS_CStringsView vars) {
+    if(vars.length == 0) return true;
+    if(vars.data[vars.length-1] == NULL) {
+        //Adds a '\0' at the end, even if `buf` is empty.
+        //This ensures that if `vars` only contains NULLs, `buf` will contain
+        //a '\0', which is an empty environment.
+        if(!PCB_WString_append_chars(buf, 'A'/*any char will suffice*/, 0))
+            return false;
+    } else {
+        wchar_t *env_system = GetEnvironmentStringsW(), *cursor;
+        if(env_system == NULL) return false;
+        for(cursor = env_system; *cursor;) {
+            size_t varsize = PCB_wcslen(cursor) + 1;
+            cursor += varsize;
+        }
+        bool ok = PCB_WString_append_sv(
+            buf,
+            PCB_WStringView_from_parts(env_system, (size_t)(cursor - env_system + 1))
+        );
+        FreeEnvironmentStringsW(env_system);
+        if(!ok) return ok;
+    }
+    while(vars.length > 0) {
+        const wchar_t *var = PCB_SHIFT_UNCHECKED(vars.length, vars.data);
+        if(var == NULL) break;
+        if(!PCB__ShellCommand_setup_var(buf, var)) return false;
+    }
+    return true;
+}
+#elif PCB_PLATFORM_POSIX
+static bool PCB__envnamecmp(const char *var, const char *target, size_t targetlen) {
+    const char *v = var;
+    while(*v != '=') {++v;}
+    if((size_t)(v - var) != targetlen) return false;
+    return PCB_memcmp(var, target, targetlen) == 0;
+}
+
+static char* const* PCB__ShellCommand_setup_env(
+    PCB_FS_CStringsView vars, PCB_RWEBuffer *buf
+) {
+    extern char **environ;
+    char **env, **envp;
+    if(vars.length == 0) {
+        //exec doesn't tolerate a NULL envp, use the empty one.
+        static char *const emptyenv[1] = {NULL};
+        if(environ != NULL) return environ;
+        return emptyenv;
+    }
+    if(vars.data[vars.length-1] == NULL)
+        return (char* const*)vars.data;
+
+    size_t env_size = 0, env_cap;
+    for(envp = environ; *envp; ++envp, ++env_size) {}
+
+    //`buf` was allocated in the temporary arena, which guarantees
+    //alignment of at least `sizeof(void*)`.
+    while(buf->length%sizeof(void*) != 0) { ++buf->length; }
+    if(buf->length + (env_size+1)*sizeof(char*) > buf->capacity) return NULL;
+
+    env = (char**)((char*)buf->data + buf->length);
+    buf->length += (env_size+1)*sizeof(char*);
+    PCB_memcpy(env, environ, (env_size+1)*sizeof(char*));
+    env_cap = env_size;
+
+    while(vars.length > 0) {
+        const char *var = PCB_SHIFT_UNCHECKED(vars.length, vars.data), *cursor;
+        if(var == NULL) break;
+        envp = env;
+        for(cursor = var; *cursor && *cursor != '='; ++cursor) {}
+        for(; *envp; ++envp)
+            if(PCB__envnamecmp(*envp, var, (size_t)(cursor - var)))
+                break;
+
+        if(*envp) { //found
+            if(*cursor == '\0') { //no '=', remove
+                *envp = env[--env_size];
+                env[env_size] = NULL;
+            } else { //found, replace it
+                *envp = (char*)var;
+            }
+        } else { //not found
+            if(*cursor == '\0') continue; //no '=', ignore
+            if(env_size == env_cap) {
+                if(buf->length + sizeof(char*) > buf->capacity) return NULL;
+                buf->length += sizeof(char*);
+                ++env_cap;
+            }
+            env[env_size++] = (char*)var;
+            env[env_size] = NULL;
+        }
+    }
+    return env;
+}
+
+static const char* PCB__get_PATH(void) {
+    extern char **environ;
+    for(char **envp = environ; *envp; ++envp)
+        if(PCB__envnamecmp(*envp, "PATH", 4)) return *envp + 5;
+    return NULL;
+}
+
+//NOTE: This function should only run inside the forked child process.
+static int PCB__ShellCommand_run_POSIX(PCB_ShellCommand *cmd, PCB_RWEBuffer buf) {
+    PCB_StringView file = PCB_StringView_from_cstr(cmd->argv.data[0]);
+    int result = ENOENT;
+    bool eacces = false;
+
+    char *const *envp = PCB__ShellCommand_setup_env(cmd->env, &buf);
+    if(envp == NULL) return ENOMEM;
+
+    if(PCB_StringView_findCharFrom_cstr(file, "/").length > 0) {
+        execve(file.data, (char* const*)cmd->argv.data, envp);
+        return errno;
+    }
+
+    const char *PATH = PCB__get_PATH();
+    if(PATH == NULL) {
+#ifdef __GLIBC__
+        size_t n = confstr(_CS_PATH, NULL, 0);
+        if(buf.length + n > buf.capacity) return ENOMEM;
+        char *dummy = (char*)buf.data + buf.length;
+        buf.length += n;
+        confstr(_CS_PATH, dummy, n);
+        PATH = dummy;
+#else
+        //Preferrably we'd use `confstr`, but it's not async signal safe
+        //under other implementations.
+        //Fallback to a sane default used by other libcs anyway.
+        PATH = "/bin:/usr/bin";
+#endif
+    }
+    PCB_StringSlice filepath = PCB_ZEROED;
+    PCB_StringView path = {PATH, PCB_strlen(PATH)+1};
+    const PCB_StringView colon = {":", 2/*include the '\0'*/};
+    while(true) {
+        size_t path_bytes, comp_len;
+        PCB_StringView comp_end = PCB_StringView_findCharFrom(path, colon);
+        if(!*comp_end.data) break;
+        comp_len = (size_t)(comp_end.data - path.data);
+        path_bytes = comp_len + 1/*'/'*/ + file.length+1/*'\0'*/;
+        if(path_bytes > filepath.length) {
+            size_t delta = path_bytes - filepath.length;
+            if(buf.length + delta > buf.capacity) return ENOMEM;
+            if(filepath.data == NULL) filepath.data = (char*)buf.data + buf.length;
+            buf.length += delta;
+            filepath.length += delta;
+        }
+        PCB_memcpy(filepath.data, path.data, comp_len);
+        filepath.data[comp_len] = '/';
+        //If the component is empty (for example ":/usr/bin:..."), overwrite
+        //the just inserted '/'.
+        PCB_memcpy(filepath.data + comp_len + (comp_len > 0), file.data, file.length+1);
+        path = PCB_StringView_shift(comp_end);
+
+        execve(filepath.data, (char* const*)cmd->argv.data, envp);
+        switch(result = errno) {
+          case EACCES: eacces = true; //fallthrough
+          case ENOENT:
+          case ENOTDIR:
+            break;
+          default:
+            return result;
+        }
+    }
+    return eacces ? EACCES : result;
+}
+#endif //platforms
+
 PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
     PCB_CHECK_SELF(cmd, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
     PCB_CHECK_NULL(p,   PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
@@ -12588,6 +12867,23 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
     p->handle = pInfo.hProcess;
     return PCB_OK();
 #elif PCB_PLATFORM_POSIX
+    //Forces allocation if the temporary arena is not allocated.
+    PCB_Arena* tmp_arena = PCB_temp_get();
+    //After a fork, the child cannot safely allocate any memory, in particular
+    //from malloc as its state may be corrupted. mmap is also off the table
+    //as it's not async signal safe.
+    //At the same time, the parent can't safely measure how much memory the
+    //child needs as it requires interacting with the environment, which may
+    //be concurrently modified.
+    //We are therefore left with no choice but to guess.
+    PCB_RWEBuffer tmpbuf;
+    tmpbuf.length = 0;
+    if(tmp_arena != NULL) {
+        PCB_Arena_alloc_whole(tmp_arena, &tmpbuf.data, &tmpbuf.capacity);
+    } else {
+        tmpbuf.data = NULL;
+        tmpbuf.capacity = 0;
+    }
     //the caller may depend on the lack of null termination afterwards
     bool hadNullLast = true;
     if(cmd->argv.data[cmd->argv.length - 1] != NULL) {
@@ -12624,8 +12920,7 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
         goto end;
     } else if(p->handle == 0) {
         close(tmpPipe[0]);
-        execvp(cmd->argv.data[0], (char* const*)cmd->argv.data);
-        code = errno;
+        code = PCB__ShellCommand_run_POSIX(cmd, tmpbuf);
         write(tmpPipe[1], &code, sizeof(code));
         _exit(255);
     }
@@ -12643,6 +12938,7 @@ repeat:
         result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)code);
     } //0 means nothing was written and no error has occured
 end:
+    PCB_Arena_free(tmp_arena, tmpbuf.data);
     if(tmpPipe[1] >= 0) close(tmpPipe[1]);
     if(tmpPipe[0] >= 0) close(tmpPipe[0]);
     if(!PCB_ISOK(result)) {
