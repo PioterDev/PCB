@@ -1162,7 +1162,6 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 #define PCB_USE_LIBC 1
 #endif //PCB_USE_LIBC
 
-//TODO: only #include things that are actually required
 #if defined(PCB_USE_LIBC) && PCB_USE_LIBC+0 && __STDC_HOSTED__ == 1
 //for "_s" functions
 #ifndef __STDC_WANT_LIB_EXT1__
@@ -1171,14 +1170,12 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 
 #ifndef PCB_HAS_STDIO_H
 #if PCB_HAS_INCLUDE(<stdio.h>)
-#include <stdio.h>
 #define PCB_HAS_STDIO_H
 #endif //has stdio.h
 #endif //PCB_HAS_STDIO_H
 
 #ifndef PCB_HAS_STDLIB_H
 #if PCB_HAS_INCLUDE(<stdlib.h>)
-#include <stdlib.h>
 #define PCB_HAS_STDLIB_H
 #endif //has stdlib.h
 #endif //PCB_HAS_STDLIB_H
@@ -1192,14 +1189,18 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 
 #ifndef PCB_HAS_STRING_H
 #if PCB_HAS_INCLUDE(<string.h>)
+#ifndef PCB_NO_INLINE_EXPORTS
 #include <string.h>
+#endif //needed for inline string functions
 #define PCB_HAS_STRING_H
 #endif //has string.h
 #endif //PCB_HAS_STRING_H
 
 #ifndef PCB_HAS_WCHAR_H
 #if PCB_HAS_INCLUDE(<wchar.h>)
+#ifndef PCB_NO_INLINE_EXPORTS
 #include <wchar.h>
+#endif //needed for inline string functions
 #define PCB_HAS_WCHAR_H
 #endif //has wchar.h
 #endif //PCB_HAS_WCHAR_H
@@ -1210,7 +1211,6 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 #endif //C11's uchar
 //A useful command to list errno info: errno -l | sort -k2 -n
 #if PCB_HAS_INCLUDE(<errno.h>)
-#include <errno.h>
 #define PCB_HAS_ERRNO_H
 #else
 #ifndef errno
@@ -1219,22 +1219,18 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #endif //errno stub
 #endif //has errno.h
 #if PCB_HAS_INCLUDE(<inttypes.h>)
-#include <inttypes.h>
 #define PCB_HAS_INTTYPES_H
 #endif //has inttypes.h
 #if PCB_HAS_INCLUDE(<ctype.h>)
-#include <ctype.h>
 #define PCB_HAS_CTYPE_H
 #endif //has ctype.h
 #if PCB_HAS_INCLUDE(<time.h>)
-#include <time.h>
 #define PCB_HAS_TIME_H
 #endif //has time.h
 
 #if PCB_PLATFORM_POSIX
 #if PCB_HAS_INCLUDE(<strings.h>)
 #define PCB_HAS_STRINGS_H
-#include <strings.h>
 #endif //has strings.h
 #endif //POSIX-only header
 
@@ -2784,31 +2780,13 @@ for(                                                                \
 
 //Section 1.8: Import platform-specific header files
 #if PCB_PLATFORM_WINDOWS
-#include <winternl.h>
 #include <windef.h>
-#include <winbase.h>
-#include <wingdi.h>
-#include <wincon.h>
 #elif PCB_PLATFORM_POSIX
-#include <unistd.h>
-#include <fcntl.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <dirent.h>
-#include <signal.h>
-#include <sys/utsname.h>
 #if PCB_PLATFORM_LINUX
-#include <sys/syscall.h>
-#include <linux/sched.h>
-#include <sched.h>
-#include <poll.h>
 #endif //Linux-specific definitions
 #endif //platform-specific APIs
-
-#ifdef __SANITIZE_ADDRESS__
-#include <sanitizer/asan_interface.h>
-#endif //ASan
 
 
 
@@ -7497,6 +7475,58 @@ static PCB_ForceInline int PCB_getEndianness(void) {
 
 
 #ifdef PCB_IMPLEMENTATION_ANY
+#ifdef PCB_HAS_STDIO_H
+#include <stdio.h>
+#endif //PCB_HAS_STDIO_H
+#ifdef PCB_HAS_STDLIB_H
+#include <stdlib.h>
+#endif //PCB_HAS_STDLIB_H
+#if defined(PCB_HAS_STRING_H) && defined(PCB_NO_INLINE_EXPORTS)
+#include <string.h>
+#endif //PCB_HAS_STRING_H && <otherwise already included>
+#ifdef PCB_HAS_WCHAR_H
+#include <wchar.h>
+#endif //PCB_HAS_WCHAR_H
+#ifdef PCB_HAS_ERRNO_H
+#include <errno.h>
+#endif //PCB_HAS_ERRNO_H
+#ifdef PCB_HAS_INTTYPES_H
+#include <inttypes.h>
+#endif //PCB_HAS_INTTYPES_H
+#ifdef PCB_HAS_CTYPE_H
+#include <ctype.h>
+#endif //PCB_HAS_CTYPE_H
+#ifdef PCB_HAS_TIME_H
+#include <time.h>
+#endif //PCB_HAS_TIME_H
+
+
+#if PCB_PLATFORM_WINDOWS
+#include <winternl.h>
+#include <winbase.h>
+#include <wingdi.h>
+#include <wincon.h>
+#elif PCB_PLATFORM_POSIX
+#ifdef PCB_HAS_STRINGS_H
+#include <strings.h>
+#endif //PCB_HAS_STRINGS_H
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/utsname.h>
+#if PCB_PLATFORM_LINUX
+#include <sys/syscall.h>
+#include <linux/sched.h>
+#include <sched.h>
+#include <poll.h>
+#endif //Linux-specific headers
+#endif //platforms-specific headers
+
+#ifdef __SANITIZE_ADDRESS__
+#include <sanitizer/asan_interface.h>
+#endif //ASan
+
 /* ---------------------------------------------------------------- */
 /* ------------------------ Private macros ------------------------ */
 /* ---------------------------------------------------------------- */
