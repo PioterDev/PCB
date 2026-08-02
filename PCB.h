@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 8
+#define PCB_VERSION_PATCH 9
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -10832,17 +10832,18 @@ bool Type##_replace_range( \
     if(PCB_String_isEmpty(&other)) return Type##_remove_range(str, start, length); \
     PCB_CHECK((uintptr_t)str->data <= (uintptr_t)other.data && \
               (uintptr_t)other.data <= (uintptr_t)(str->data + str->length), false); \
-    charType* const after = str->data + start + length; \
+    const size_t after = start + length; \
+    const size_t bytes_to_move = (str->length - after)*sizeof(*str->data); \
     if(other.length > length) { \
         const size_t diff = other.length - length; \
         if(!Type##_reserve(str, diff)) return false; \
-        PCB_memmove(after + diff, after, (str->length - (start + length))*sizeof(*str->data)); \
+        PCB_memmove(str->data + after + diff, str->data + after, bytes_to_move); \
         PCB_memcpy(str->data + start, other.data, other.length*sizeof(*str->data)); \
         str->data[str->length += diff] = '\0'; \
     } else if(other.length < length) { \
         const size_t diff = length - other.length; \
         PCB_memcpy(str->data + start, other.data, other.length*sizeof(*str->data)); \
-        PCB_memmove(after - diff, after, (str->length - (start + length))*sizeof(*str->data)); \
+        PCB_memmove(str->data + after - diff, str->data + after, bytes_to_move); \
         str->data[str->length -= diff] = '\0'; \
     } else { \
         PCB_memcpy(str->data + start, other.data, length*sizeof(*str->data)); \
