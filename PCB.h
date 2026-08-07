@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 13
+#define PCB_VERSION_PATCH 14
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -11941,7 +11941,7 @@ PCB_Codepoint PCB_U16StringView_GetCodepoint_unchecked(PCB_U16StringView sv, siz
     PCB_char16 low  = *cursor;
     if(!(low >= 0xDC00 && low <= 0xDFFF)) return PCB__CP_ERR(-3, 1);
     high -= 0xD800; low -= 0xDC00;
-    return PCB_CLITERAL(PCB_Codepoint){(high << 10) | (low), 2};
+    return PCB_CLITERAL(PCB_Codepoint){((high << 10) | (low)) + 0x10000, 2};
 #undef PCB__CP_ERR
 }
 
