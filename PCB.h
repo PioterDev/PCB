@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 11
+#define PCB_VERSION_PATCH 12
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -16425,7 +16425,7 @@ defer:
 
 PCB_Status PCB_build_fromContext(PCB_BuildContext* context) {
     PCB_CHECK_SELF(context, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
-    if(context->sources.length == 0) {
+    if(context->sources.length == 0 && !PCB_BuildContext_flags(context).lwc) {
         PCB_log(PCB_LOGLEVEL_ERROR, "%s", PCB_BUILD_RESULT_NO_SRC_STR);
         return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_NO_SRC);
     }
