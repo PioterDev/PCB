@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 9
+#define PCB_VERSION_PATCH 10
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5100,7 +5100,7 @@ PCBAPI bool PCBCALL PCB_String_reserve_to(
  * @brief Resizes `str` to fit a string of `targetLength` length.
  * Truncates the string to `targetLength` if `targetLength < str->length`.
  * Does nothing if `targetLength == str->length`.
- * Behaves identically to `PCB_String_reserve` otherwise.
+ * Behaves identically to `PCB_String_reserve_to` otherwise.
  * @return whether the operation succeeded: fails on realloc failure.
  */
 PCBAPI bool PCBCALL PCB_String_resize(
@@ -10227,7 +10227,7 @@ bool Type##_resize(Type* PCB_restrict str, const size_t targetLength) { \
         str->data[str->length = targetLength] = '\0'; \
         return true; \
     } \
-    return Type##_reserve(str, targetLength - str->length); \
+    return Type##_reserve_to(str, targetLength - str->length); \
 }
 PCB__Str_resize(PCB_String)    //PCB_String_resize()
 PCB__Str_resize(PCB_WString)   //PCB_WString_resize()
