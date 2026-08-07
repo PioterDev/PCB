@@ -6446,6 +6446,9 @@ PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes) PCB_Nonnul
  * On error, the returned status can hold the following domain-code pairs:
  * - Common domain:
  *   - PCB_CEINVAL: `command` was empty or (Windows) resulted in an empty string.
+ *   - PCB_CENORES:
+ *      `command->argv.data[0]` (the file to be executed) doesn't exist
+ *      or was not found in PATH.
  * - POSIX domain (POSIX):
  *     See pipe(2), fcntl(2) & F_SETFD(2), fork(2), execvp(2), (Linux)clone3(2).
  * - WinAPI domain (Windows): See CreateProcessA.
@@ -13112,7 +13115,15 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
     );
     PCB_WString_destroy(&cmdline);
     PCB_WString_destroy(&environment_block);
-    if(!success) return PCB_STATUS_NATIVE_SYSTEM_API();
+    if(!success) {
+        DWORD e = GetLastError();
+        switch(e) {
+          case ERROR_FILE_NOT_FOUND:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+          default:
+            return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+        }
+    }
     CloseHandle(pInfo.hThread);
     p->handle = pInfo.hProcess;
     return PCB_OK();
@@ -13185,7 +13196,10 @@ repeat:
         //updated in kernel structures. If not...well...
         PCB_assert(r == sizeof(code));
         errno = code;
-        result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)code);
+        switch(code) {
+          case ENOENT: result = PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES); break;
+          default:     result = PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)code); break;
+        }
     } //0 means nothing was written and no error has occured
 end:
     PCB_Arena_free(tmp_arena, tmpbuf.data);
