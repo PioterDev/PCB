@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 12
+#define PCB_VERSION_PATCH 13
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -16176,6 +16176,7 @@ static PCB_Status PCB__build_fromContext_single_compile(
     }
     PCB_ShellCommand_reset(&context->commandBuffer);
     PCB_FS_CStrings_append(&context->objectFiles, obj);
+    PCB_BuildContext_flags(context).rebuiltAnything = true;
     return PCB_OK();
 }
 
