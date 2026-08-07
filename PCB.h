@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 10
+#define PCB_VERSION_PATCH 11
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -9013,7 +9013,8 @@ PCB_Status PCB_FS_getcwd_tmp_ne(PCB_FS_String *buf) {
     buf->data = (PCB_FS_char*)PCB_temp_alloc(buf->capacity*sizeof(*buf->data));
     if(buf->data == NULL) { buf->capacity = 0; return PCB_CERR_NOMEM; }
     while(true) {
-        result = PCB_FS_getcwd_ne(PCB_Slice_Vec_A_T(buf, PCB_FS_StringSlice));
+        PCB_FS_StringSlice sbuf = {buf->data, buf->capacity};
+        result = PCB_FS_getcwd_ne(sbuf);
         if(PCB_ISOK(result)) {
             buf->length = result.code;
             return result;
