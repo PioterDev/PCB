@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 14
+#define PCB_VERSION_PATCH 15
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -14246,7 +14246,7 @@ static PCB_Status PCB__setup_baked_msvc_environment(
     PCB_String buf = PCB_ZEROED;
     PCB_Status result = PCB_OK();
 
-    bool PATH_has_cl = true;
+    bool PATH_has_cl = true, setAnyMacro = false;
     for(size_t i = 0; i < PCB_ARRAY_LEN(names); i++) {
         errno_t err = _dupenv_s(&env[i].data, &env[i].length, names[i]);
         if(err != 0) PCB__return_defer(PCB_CERR_NOMEM);
@@ -14261,9 +14261,9 @@ static PCB_Status PCB__setup_baked_msvc_environment(
         if(i == 0) { //PATH
             PCB_StringView PATH = sv;
             while(true) {
-                result = PCB_FS_Exists_PATH("cl.exe", &PATH);
-                if(PCB_ISOK(result)) {
-                    if(result.code == 0) PATH_has_cl = false;
+                PCB_Status res = PCB_FS_Exists_PATH("cl.exe", &PATH);
+                if(PCB_ISOK(res)) {
+                    if(res.code == 0) PATH_has_cl = false;
                     break;
                 }
                 const char sep[2] = {PCB_FS_PATH_DELIM, '\0'};
@@ -14279,6 +14279,7 @@ static PCB_Status PCB__setup_baked_msvc_environment(
             sv = old_env[i];
         }
         if(!defineMacros) continue;
+        if(PCB_String_isEmpty(&sv)) continue;
         for(; sv.length > 0; ++sv.data, --sv.length) {
             if(!PCB_String_append_chars(&buf, *sv.data, *sv.data == '\\' ? 2 : 1))
                 PCB__return_defer(PCB_CERR_NOMEM);
@@ -14294,9 +14295,17 @@ static PCB_Status PCB__setup_baked_msvc_environment(
             if(res != PCB_VEC_OK) PCB__return_defer(PCB_CERR_NOMEM);
             if(!force) force = PCB_strcmp(sv.data, baked[i]) == 0;
             PCB_BuildContext_flags(context).alwaysBuild = force;
+            setAnyMacro = true;
         }
     }
     PCB__msvc_env_initialized = true;
+    if(defineMacros && !setAnyMacro)
+        PCB_log(
+            PCB_LOGLEVEL_ERROR,
+            "Cannot rebuild itself: no MSVC environment. "
+            "Rerun the program with appropriate environment variables set, "
+            "for example in a VS CMD or after running vcvars64.bat."
+        );
 defer:
     PCB_String_destroy(&buf);
     for(size_t i = 0; i < PCB_ARRAY_LEN(names); i++) {
