@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 15
+#define PCB_VERSION_PATCH 16
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -10093,7 +10093,7 @@ void PCB_FS_Iterator_destroy(PCB_FS_Iterator *it) {
 PCB_File PCB_IO_get_stdin(void) {
     PCB_File f = PCB_File_init();
 #if PCB_PLATFORM_WINDOWS
-    f.handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    f.handle = GetStdHandle(STD_INPUT_HANDLE);
 #elif PCB_PLATFORM_POSIX
     f.handle = STDIN_FILENO;
 #endif //platforms
