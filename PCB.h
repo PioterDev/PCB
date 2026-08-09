@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 16
+#define PCB_VERSION_PATCH 17
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -3833,6 +3833,11 @@ typedef struct {
      */
     PCB_FS_CStringsView env;
     /**
+     * Initial working directory for the child process.
+     */
+    const PCB_FS_char *cwd;
+    void* _reserved[8];
+    /**
      * Arena in which arguments converted from char into PCB_FS_char types
      * are stored, if that's necessary (it is not outside of Windows).
      * On first use, if NULL, a new arena is created with default size;
@@ -6441,6 +6446,8 @@ PCBAPI int PCBCALL PCB_Processes_waitForAll(PCB_Processes* processes) PCB_Nonnul
  *
  * On POSIX systems, if `command` is not null-terminated, this function will
  * append `NULL` to `command` prior to calling `exec` and remove it afterwards.
+ *
+ * On Windows, if `command->cwd != NULL`, it MUST be an absolute path.
  *
  * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
  * On error, the returned status can hold the following domain-code pairs:
@@ -13018,6 +13025,7 @@ static int PCB__ShellCommand_run_POSIX(PCB_ShellCommand *cmd, PCB_RWEBuffer buf)
     char *const *envp = PCB__ShellCommand_setup_env(cmd->env, &buf);
     if(envp == NULL) return ENOMEM;
 
+    if(cmd->cwd != NULL && chdir(cmd->cwd) < 0) return errno;
     if(PCB_StringView_findCharFrom_cstr(file, "/").length > 0) {
         execve(file.data, (char* const*)cmd->argv.data, envp);
         return errno;
@@ -13110,7 +13118,7 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
         true, //Inherit handles
         CREATE_UNICODE_ENVIRONMENT, //Process creation flags
         environment_block.data,
-        NULL, //Child's initial working directory
+        cmd->cwd,
         &startupinfo,
         &pInfo
     );
