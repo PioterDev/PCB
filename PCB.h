@@ -3720,6 +3720,8 @@ typedef PCB_WCStringsView PCB_FS_CStringsView;
 #define PCB__FS_LIT(lit) L"" L##lit L""
 #define PCB_FS_LIT(lit) PCB__FS_LIT(lit)
 #define PCB_FS_SV_LIT(lit) PCB_WSV_LIT(lit)
+#define PCB_PRIFS "ls"
+#define PCB_PRISVFS ".*ls"
 #define PCB_FS_Fmt "%ls"
 #define PCB_FS_SV_Fmt "%.*ls"
 #define PCB_FS_strlen PCB_wcslen
@@ -3767,6 +3769,8 @@ typedef PCB_CStringsView PCB_FS_CStringsView;
 #define PCB__FS_LIT(lit) "" lit ""
 #define PCB_FS_LIT(lit) PCB__FS_LIT(lit)
 #define PCB_FS_SV_LIT(lit) PCB_SV_LIT(lit)
+#define PCB_PRIFS "s"
+#define PCB_PRISVFS ".*s"
 #define PCB_FS_Fmt "%s"
 #define PCB_FS_SV_Fmt "%.*s"
 #define PCB_FS_strlen PCB_strlen
@@ -15452,8 +15456,8 @@ free_src:
     return result;
 }
 
-static void PCB__build_log(const PCB_FS_char *src, const PCB_FS_char *obj) {
-    PCB_log(PCB_LOGLEVEL_INFO, "Building " PCB_FS_Fmt " to " PCB_FS_Fmt "...", src, obj);
+static void PCB__build_log(const PCB_FS_char *src, const PCB_FS_char *obj, size_t rpad) {
+    PCB_log(PCB_LOGLEVEL_INFO, "Building %-*" PCB_PRIFS " to %" PCB_PRIFS "...", (int)rpad, src, obj);
 }
 
 static PCB_Status PCB__build_file(
@@ -15461,7 +15465,8 @@ static PCB_Status PCB__build_file(
     const PCB_FS_char *src,
     const PCB_FS_char *obj,
     bool addToObjs,
-    uint64_t *nobjmt
+    uint64_t *nobjmt,
+    size_t log_rpad
 ) {
     PCB_Status result = PCB_OK();
     PCB_Process process = PCB_Process_init();
@@ -15480,7 +15485,7 @@ compile:
 
     PCB_BuildContext_flags(context).rebuiltAnything = true;
 
-    PCB__build_log(src, obj);
+    PCB__build_log(src, obj, log_rpad);
 #if defined(PCB_DEBUG_SELF) && PCB_DEBUG_SELF+0
     if(!PCB__BuildContext_logCommand(context)) return PCB_CERR_NOMEM;
 #endif //PCB_DEBUG
@@ -15744,7 +15749,7 @@ static PCB_Status PCB__build_directory(
             if(PCB_BuildContext_flags(context).ccInCpp)
                 context->commandBuffer.argv.data[0] = PCB_FS_LIT(PCB_COMPILER_PATH_ALT);
 #endif //C++?
-            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt)))
+            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt, 0)))
                 goto defer;
 #ifdef __cplusplus
                 if(PCB_BuildContext_flags(context).ccInCpp)
@@ -15762,7 +15767,7 @@ static PCB_Status PCB__build_directory(
                 ); continue;
             }
 #endif //!C++?
-            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt)))
+            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt, 0)))
                 goto defer;
 #ifndef __cplusplus
             if(PCB_BuildContext_flags(context).ccInCpp)
@@ -15770,7 +15775,7 @@ static PCB_Status PCB__build_directory(
 #endif //!C++?
           } break;
           case PCB__LANG_ASM:
-            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt)))
+            if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt, 0)))
                 goto defer;
             break;
           default: PCB_Unreachable;
@@ -16380,10 +16385,16 @@ static PCB_Status PCB__BuildContext_compile(PCB_BuildContext *context) {
         const size_t L = context->sourceFiles.length;
         if(L > 0 && !PCB__BuildContext_logCommandTemplate(context))
             PCB__return_defer(PCB_CERR_NOMEM);
+        //For logs to be nicely aligned.
+        size_t max_srclen = 0;
+        for(size_t i = 0; i < L; i++) {
+            size_t srclen = PCB_FS_strlen(context->sourceFiles.data[i]);
+            if(srclen > max_srclen) max_srclen = srclen;
+        }
         for(size_t i = 0; i < L; i++) {
             const PCB_FS_char *src = context->sourceFiles.data[i];
             const PCB_FS_char *obj = context->objectFiles.data[i];
-            result = PCB__build_file(context, src, obj, false, NULL);
+            result = PCB__build_file(context, src, obj, false, NULL, max_srclen);
             if(!PCB_ISOK(result)) goto defer;
         }
         result = PCB_OK(1);
