@@ -1153,7 +1153,9 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 199901L)
 #define PCB_HAS_VA_COPY
 #endif //PCB_HAS_VA_COPY
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 202311L
 #include <stdbool.h>
+#endif //deprecated since C23, keywords in C++
 #include <stdint.h>
 #include <stddef.h>
 #include <limits.h>
@@ -1233,22 +1235,6 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #define PCB_HAS_STRINGS_H
 #endif //has strings.h
 #endif //POSIX-only header
-
-#else
-//fallback for no booleans
-#if !defined(__cplusplus) && defined(__STDC_VERSION__) && \
-    __STDC_VERSION__+0 < 202311L && !defined(bool)
-#ifndef PCB_BOOL_LOCALLY_DEFINED
-#define PCB_BOOL_LOCALLY_DEFINED
-#define bool _Bool
-#ifndef true
-#define true 1
-#endif //true
-#ifndef false
-#define false 0
-#endif //false
-#endif //PCB_BOOL_LOCALLY_DEFINED
-#endif //bool
 
 #endif //PCB_USE_LIBC?
 
@@ -16710,12 +16696,6 @@ defer:
 #endif //C++
 
 //Remove all locally defined, potentially conflicting macros
-
-#ifdef PCB_BOOL_LOCALLY_DEFINED
-#undef bool
-#undef true
-#undef false
-#endif //PCB_BOOL_LOCALLY_DEFINED
 
 #ifdef PCB_LOCAL_STRIP_INLINE
 #undef PCB_LOCAL_STRIP_INLINE
