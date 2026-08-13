@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 17
+#define PCB_VERSION_PATCH 18
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -11009,7 +11009,7 @@ bool Type##_eq(const Type* a, const Type* b) { \
     PCB_CHECK_SELF(a, false); PCB_CHECK_SELF(b, false); \
     if(a->data == NULL || b->data == NULL) return false; \
     if(a->length != b->length) return false; \
-    return PCB_memcmp(a->data, b->data, a->length*sizeof(*a->data)); \
+    return PCB_memcmp(a->data, b->data, a->length*sizeof(*a->data)) == 0; \
 }
 PCB__Str_eq(PCB_String)    //PCB_String_eq()
 PCB__Str_eq(PCB_WString)   //PCB_WString_eq()
