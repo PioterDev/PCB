@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 20
+#define PCB_VERSION_PATCH 21
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -13942,6 +13942,9 @@ PCB_NoInline void PCB__Arena_diagnose_ned(PCB_Arena* arena) {
     if(!(a->flags & PCB_ARENA_FLAG_ALLOC_META)) return;
     for(size_t l = 0; l < a->length;) {
         PCB_Arena_Alloc_Meta* m = (PCB_Arena_Alloc_Meta*)(PCB__Arena_start(a) + l*sizeof(void*));
+#ifdef __SANITIZE_ADDRESS__
+        ASAN_UNPOISON_MEMORY_REGION(m, sizeof(*m));
+#endif //ASan
         PCB_log(
             PCB_LOGLEVEL_WARN,
 #ifdef PCB_ARENA_TRACE_LOC
