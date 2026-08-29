@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 18
+#define PCB_VERSION_PATCH 19
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -6969,14 +6969,14 @@ PCBAPI void* PCBCALL PCB_temp_aligned_alloc_loc(
 PCBAPI void* PCBCALL PCB_temp_aligned_zalloc_loc(
     size_t size, size_t alignment, const char* file, int line, const char* func
 ) PCB_Nonnull_Arg(3, 5);
-#define PCB_temp_alloc(arena, size) \
-    PCB_temp_alloc_loc(arena, size, __FILE__, __LINE__, __func__)
-#define PCB_temp_zalloc(arena, size) \
-    PCB_temp_zalloc_loc(arena, size, __FILE__, __LINE__, __func__)
-#define PCB_temp_aligned_alloc(arena, size, alignment) \
-    PCB_temp_aligned_alloc_loc(arena, size, alignment, __FILE__, __LINE__, __func__)
-#define PCB_temp_aligned_zalloc(arena, size, alignment) \
-    PCB_temp_aligned_zalloc_loc(arena, size, alignment, __FILE__, __LINE__, __func__)
+#define PCB_temp_alloc(size) \
+    PCB_temp_alloc_loc(size, __FILE__, __LINE__, __func__)
+#define PCB_temp_zalloc(size) \
+    PCB_temp_zalloc_loc(size, __FILE__, __LINE__, __func__)
+#define PCB_temp_aligned_alloc(size, alignment) \
+    PCB_temp_aligned_alloc_loc(size, alignment, __FILE__, __LINE__, __func__)
+#define PCB_temp_aligned_zalloc(size, alignment) \
+    PCB_temp_aligned_zalloc_loc(size, alignment, __FILE__, __LINE__, __func__)
 #endif //PCB_ARENA_TRACE_LOC
 //See PCB_Arena_allocated_all.
 PCBAPI size_t PCBCALL PCB_temp_allocated(void);
