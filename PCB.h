@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 19
+#define PCB_VERSION_PATCH 20
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -13920,6 +13920,12 @@ void PCB_Arena_reset(PCB_Arena* arena) {
     PCB_CHECK_SELF(arena, );
     PCB__Arena_forEach_node(current, next) {
         current->length = 0;
+#ifdef __SANITIZE_ADDRESS__
+        ASAN_POISON_MEMORY_REGION(
+            PCB__Arena_start(current),
+            current->capacity*sizeof(void*)
+        );
+#endif //ASan
     }
 }
 
