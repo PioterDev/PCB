@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 21
+#define PCB_VERSION_PATCH 22
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1145,6 +1145,20 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 
 
 //Section 1.5: Import libc, unless `PCB_USE_LIBC` is defined as 0
+#ifndef PCB_USE_LIBC
+#define PCB_USE_LIBC 1
+#endif //PCB_USE_LIBC
+
+//for "_s" functions
+#ifndef __STDC_WANT_LIB_EXT1__
+#define __STDC_WANT_LIB_EXT1__ 1
+#endif //__STDC_WANT_LIB_EXT1__
+
+//Microsoft strikes again.
+#ifndef __STDC_WANT_SECURE_LIB__
+#define __STDC_WANT_SECURE_LIB__ 1
+#endif //__STDC_WANT_SECURE_LIB__
+
 
 //These should be universally available on every single platform in
 //a conforming C99+ implementation.
@@ -1160,15 +1174,7 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
 #include <stddef.h>
 #include <limits.h>
 
-#ifndef PCB_USE_LIBC
-#define PCB_USE_LIBC 1
-#endif //PCB_USE_LIBC
-
 #if defined(PCB_USE_LIBC) && PCB_USE_LIBC+0 && __STDC_HOSTED__ == 1
-//for "_s" functions
-#ifndef __STDC_WANT_LIB_EXT1__
-#define __STDC_WANT_LIB_EXT1__ 1
-#endif //__STDC_WANT_LIB_EXT1__
 
 #ifndef PCB_HAS_STDIO_H
 #if PCB_HAS_INCLUDE(<stdio.h>)
@@ -4605,6 +4611,8 @@ PCBAPI void PCBCALL PCB_ClearError(void);
  * @brief Get a textual representation of `status.code`, depending on
  * `status.domain`.
  * @return whether `bufsize` was sufficient to fit the entire string.
+ * @notes `buf` is guaranteed to contain a message that can be reported to
+ * the user. In particular, it is guaranteed to NOT contain garbage.
  */
 PCBAPI bool PCBCALL PCB_Status_toString(PCB_Status status, char *buf, size_t bufsize);
 /**
@@ -8012,6 +8020,14 @@ void PCB_ClearError(void) {
     errno = 0;
 }
 
+static bool PCB__strerror(int e, char *buf, size_t bufsize) {
+#if defined(__STDC_LIB_EXT1__) || defined(__STDC_SECURE_LIB__)
+    return strerror_s(buf, bufsize, e) == 0;
+#else
+    return (unsigned int)PCB_snprintf(buf, bufsize, "%s", strerror(e)) < bufsize;
+#endif
+}
+
 static bool PCB__Status_toString_POSIX(int e, char *buf, size_t bufsize) {
 #ifdef _GNU_SOURCE
     char *str = strerror_r(e, buf, bufsize);
@@ -8019,17 +8035,29 @@ static bool PCB__Status_toString_POSIX(int e, char *buf, size_t bufsize) {
         return (unsigned int)PCB_snprintf(buf, bufsize, "%s", str) < bufsize;
     else return true; //no way to tell if it would fit or not
 #elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE+0 >= 200112L
-    int code = strerror_r(e, buf, bufsize);
-    if(code < 0) return errno != ERANGE; //glibc < 2.13
-    else if(code == ERANGE) return false; //glibc >= 2.13
-    return true;
+    int code = strerror_r(e, buf, bufsize), l;
+    if(code < 0) code = errno; //glibc < 2.13
+    if(code == 0) return true;
+    //Stinky POSIX can't even guarantee that anything useful at all
+    //was put into the buffer on error, despite many implementations doing so.
+    //In the name of "portability" we have to therefore mindlessly waste
+    //time overwriting it yet again so the caller (unlike us) doesn't
+    //have to worry about the buffer being empty (or worse, containing garbage)
+    //since they want to just report an error without all of the nonsense above.
+    if(code == EINVAL) l = PCB_snprintf(buf, bufsize, "Unknown error %d", e);
+    else l = PCB_snprintf(buf, bufsize, "No error information; buffer too small");
+    return (unsigned int)l < bufsize;
 #else
-    return (unsigned int)PCB_snprintf(buf, bufsize, "%s", strerror(e)) < bufsize;
+    return PCB__strerror(e, buf, bufsize);
 #endif //this is really annoying...
 }
 
 #if PCB_PLATFORM_WINDOWS
 static bool PCB__Status_toString_WinAPI(DWORD e, char *buf, size_t bufsize) {
+    //Microsoft doesn't document behavior on error, but from looking at Wine's
+    //implementation it seems that FormatMessageA may store nothing, so we
+    //store a "degraded" message to always have something the user can interpret.
+    (void)PCB_snprintf(buf, bufsize, "WinAPI error %lu", e);
     DWORD l = FormatMessageA(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         NULL, e, 0, buf, (DWORD)bufsize, NULL
@@ -8122,7 +8150,7 @@ bool PCB_Status_toString(PCB_Status st, char* buf, size_t bufsize) {
       case PCB_STATUS_DOMAIN_COMMON:
         return PCB__Status_toString_common((PCB_Common_Error)st.code, buf, bufsize);
       case PCB_STATUS_DOMAIN_C:
-        return (unsigned int)PCB_snprintf(buf, bufsize, "%s", strerror((int)st.code)) < bufsize;
+        return PCB__strerror((int)st.code, buf, bufsize);
       case PCB_STATUS_DOMAIN_POSIX:
         return PCB__Status_toString_POSIX((int)st.code, buf, bufsize);
       case PCB_STATUS_DOMAIN_WINAPI:
