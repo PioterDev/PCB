@@ -2973,6 +2973,39 @@ PCB_Enum_Fixed(PCB_Status_Domain, uint32_t) {
      */
     PCB_STATUS_DOMAIN_WINAPI = 4,
     /**
+     * @brief Special domain that portably describes I/O errors.
+     * `code` corresponds to values defined in `PCB_IO_Error`.
+     */
+    PCB_STATUS_DOMAIN_IO = 5,
+    /**
+     * @brief Special domain that portably describes filesystem errors.
+     * `code` corresponds to values defined in `PCB_FS_Error`.
+     */
+    PCB_STATUS_DOMAIN_FS = 6,
+    /**
+     * @brief Special domain that portably describes network errors.
+     * Reserved for future implementation.
+     */
+    PCB_STATUS_DOMAIN_NET = 7,
+    /**
+     * @brief Special domain that describes errors encountered by processes,
+     * i.e. instances of programs running under and managed by an operating system.
+     * `code` corresponds to values defined in `PCB_Proc_Error`.
+     *
+     * Implementations SHALL NOT use this domain when not running under
+     * an operating system.
+     */
+    PCB_STATUS_DOMAIN_PROC = 8,
+    /**
+     * @brief Special domain that describes errors, which affect an
+     * operating system as a whole.
+     * `code` corresponds to values defined in `PCB_OS_Error`.
+     *
+     * Implementations SHALL NOT use this domain when not running under
+     * an operating system.
+     */
+    PCB_STATUS_DOMAIN_OS = 9,
+    /**
      * @brief Status comes from PCB.
      * `code` corresponds to values defined in `PCB_Result`.
      */
@@ -3001,6 +3034,11 @@ typedef uint32_t PCB_Status_Domain;
 #define PCB_STATUS_DOMAIN_C (PCB_Status_Domain)2
 #define PCB_STATUS_DOMAIN_POSIX (PCB_Status_Domain)3
 #define PCB_STATUS_DOMAIN_WINAPI (PCB_Status_Domain)4
+#define PCB_STATUS_DOMAIN_IO (PCB_Status_Domain)5
+#define PCB_STATUS_DOMAIN_FS (PCB_Status_Domain)6
+#define PCB_STATUS_DOMAIN_NET (PCB_Status_Domain)7
+#define PCB_STATUS_DOMAIN_PROC (PCB_Status_Domain)8
+#define PCB_STATUS_DOMAIN_OS (PCB_Status_Domain)9
 #define PCB_STATUS_DOMAIN_PCB (PCB_Status_Domain)65536
 #define PCB_STATUS_DOMAIN_PCB_BUILD (PCB_Status_Domain)65537
 #endif //provide an actual enumeration if possible, fallback to macros
@@ -3148,6 +3186,11 @@ typedef struct {
     uint32_t code;
 } PCB_Status;
 
+typedef struct {
+    PCB_Status_Domain domain;
+    uint64_t code;
+} PCB_Status64;
+
 #ifndef PCB_OK
 /**
  * @brief Creates a `PCB_Status` in the success domain with provided code.
@@ -3155,6 +3198,10 @@ typedef struct {
  */
 #define PCB_OK(...) PCB_STATUS(PCB_STATUS_DOMAIN_SUCCESS, __VA_ARGS__+0)
 #endif //PCB_OK
+#ifndef PCB_OK64
+#define PCB_OK64(...) PCB_STATUS64(PCB_STATUS_DOMAIN_SUCCESS, __VA_ARGS__+0)
+#endif //PCB_OK64
+
 #ifndef PCB_ISOK
 /**
  * @brief Checks if `status` is OK, i.e. whether it lies in the success domain.
@@ -3173,7 +3220,7 @@ typedef struct {
  */
 #define PCB_Q(status) do {                              \
     PCB_Status PCB_MANGLE(s) = (status);                \
-    if(!PCB_ISOK(PCB_MANGLE(s))) return PCB_MANGLE(s);   \
+    if(!PCB_ISOK(PCB_MANGLE(s))) return PCB_MANGLE(s);  \
 } while(0)
 #endif //PCB_Q
 #ifndef PCB_QD
@@ -3192,6 +3239,10 @@ typedef struct {
  */
 #define PCB_STATUS(domain, code) (PCB_CLITERAL(PCB_Status){domain, code})
 #endif //PCB_STATUS
+#ifndef PCB_STATUS64
+#define PCB_STATUS64(domain, code) (PCB_CLITERAL(PCB_Status64){domain, code})
+#endif //PCB_STATUS64
+
 /**
  * @brief Most commonly encountered error conditions.
  * A large part of this enum is a repetition of POSIX.
@@ -3231,6 +3282,23 @@ PCB_Enum(PCB_Common_Error, uint32_t) {
     PCB_CENORES = 6,
     PCB_CENOENT = PCB_CENORES,
     PCB_CE2BIG = 7,
+    /**
+     * @brief Requested to create a resource, but it already exists.
+     */
+    PCB_CEEXIST = 8,
+    /**
+     * @brief A write was attempted on a read-only resource.
+     */
+    PCB_CERDONLY = 9,
+    /**
+     * @brief Value is out of permitted range.
+     */
+    PCB_CERANGE = 10,
+    /**
+     * @brief Bad handle.
+     */
+    PCB_CEBADH = 11,
+    PCB_CEBADF = PCB_CEBADH,
 };
 
 //Helper macros.
@@ -3243,6 +3311,74 @@ PCB_Enum(PCB_Common_Error, uint32_t) {
 #else
 #define PCB_STATUS_NATIVE_SYSTEM_API() PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB) //stub
 #endif
+
+/**
+ * @brief Error conditions regarding I/O operations.
+ */
+PCB_Enum(PCB_IO_Error, uint32_t) {
+    /**
+     * @brief Low level I/O error which the system API doesn't dare to
+     * describe in detail.
+     * Corresponds to POSIX's EIO.
+     */
+    PCB_IOERR_LOWLEVEL = 1,
+    PCB_IOERR_BROKEN_PIPE,
+    PCB_IOERR_NOT_SEEKABLE,
+    PCB_IOERR_NOT_FLUSHABLE,
+    /**
+     * @brief The I/O operation cannot be performed because another entity
+     * has locked a portion of data the caller is interested in.
+     */
+    PCB_IOERR_LOCKED,
+    PCB_IOERR_INVALID_ALIGNMENT,
+};
+
+/**
+ * @brief Error conditions regarding filesystem operations.
+ */
+PCB_Enum(PCB_FS_Error, uint32_t) {
+    //Operation would exceed the user's disk block/file quota.
+    PCB_FSERR_QUOTA = 1,
+    //Too many indirections (symlinks, reparse points, etc.) encountered.
+    PCB_FSERR_INDIR_LIMIT,
+    PCB_FSERR_NO_SPACE,
+    PCB_FSERR_ISDIR,  //Specified file is a directory.
+    PCB_FSERR_NOTDIR, //Specified file is not a directory.
+    PCB_FSERR_ROFS,
+};
+
+/**
+ * @brief Error conditions regarding network operations.
+ * Currently reserved.
+ */
+typedef uint32_t PCB_Net_Error;
+
+/**
+ * @brief Error conditions regarding the state of the process.
+ */
+PCB_Enum(PCB_Proc_Error, uint32_t) {
+    /**
+     * Too many open files.
+     * Realistically speaking, this won't be returned on Windows.
+     * On POSIX, the caller may need to close other files and/or raise
+     * the per-process open file limit via setrlimit(2).
+     */
+    PCB_PROCERR_LIMIT_FILE = 1,
+};
+
+/**
+ * @brief Error conditions regarding the state of the OS as a whole.
+ */
+PCB_Enum(PCB_OS_Error, uint32_t) {
+    PCB_OSERR_NOSYS = 1,
+    PCB_OSERR_LIMIT_FILE,
+    /**
+     * Note that this might not necessarily mean that the whole system is out of
+     * process space. For example, there may be a per-user limit.
+     * See Linux's fork(2).
+     */
+    PCB_OSERR_LIMIT_PROC,
+};
 
 /**
  * @brief Different error values returned in conjunction with the
@@ -4703,6 +4839,11 @@ PCBAPI void PCBCALL PCB_Status_log(
 
 PCBAPI PCB_StringView PCBCALL PCB_Status_domain(PCB_Status status) PCB_ConstFn;
 PCBAPI PCB_StringView PCBCALL PCB_Common_strerror(PCB_Common_Error errnum) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_IO_strerror(PCB_IO_Error errnum) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_FS_strerror(PCB_FS_Error errnum) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_Net_strerror(PCB_Net_Error errnum) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_Proc_strerror(PCB_Proc_Error errnum) PCB_ConstFn;
+PCBAPI PCB_StringView PCBCALL PCB_OS_strerror(PCB_OS_Error errnum) PCB_ConstFn;
 PCBAPI PCB_StringView PCBCALL PCB_Result_strerror(PCB_Result errnum) PCB_ConstFn;
 PCBAPI PCB_StringView PCBCALL PCB_Build_Result_strerror(PCB_Build_Result errnum) PCB_ConstFn;
 
@@ -8155,6 +8296,10 @@ static PCB_StringView PCB__Common_strerror(PCB_Common_Error e) {
       case PCB_CEACCES:  return PCB_SV_LIT("Permission denied");
       case PCB_CENORES:  return PCB_SV_LIT("No such resource");
       case PCB_CE2BIG:   return PCB_SV_LIT("Too big");
+      case PCB_CEEXIST:  return PCB_SV_LIT("Resource already exists");
+      case PCB_CERDONLY: return PCB_SV_LIT("Resource is read-only");
+      case PCB_CERANGE:  return PCB_SV_LIT("Value out of permitted range");
+      case PCB_CEBADH:   return PCB_SV_LIT("Bad handle");
       default: return PCB_ZEROED_T(PCB_StringView);
     }
 }
@@ -8163,6 +8308,93 @@ static bool PCB__Status_toString_common(PCB_Common_Error e, char *buf, size_t bu
     const char *msg = PCB__Common_strerror(e).data;
     int required = msg == NULL
         ? PCB_snprintf(buf, bufsize, "Unknown common error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
+static PCB_StringView PCB__IO_strerror(PCB_IO_Error e) {
+    switch(e) {
+      case PCB_IOERR_LOWLEVEL:          return PCB_SV_LIT("Low level I/O error");
+      case PCB_IOERR_BROKEN_PIPE:       return PCB_SV_LIT("Broken pipe");
+      case PCB_IOERR_NOT_SEEKABLE:      return PCB_SV_LIT("Data stream is not seekable");
+      case PCB_IOERR_NOT_FLUSHABLE:     return PCB_SV_LIT("Data stream is not flushable");
+      case PCB_IOERR_LOCKED:            return PCB_SV_LIT("Operation prevented by a lock");
+      case PCB_IOERR_INVALID_ALIGNMENT: return PCB_SV_LIT("Invalid alignment");
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_IO(PCB_IO_Error e, char *buf, size_t bufsize) {
+    const char *msg = PCB__IO_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown I/O error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
+
+static PCB_StringView PCB__FS_strerror(PCB_FS_Error e) {
+    switch(e) {
+      case PCB_FSERR_QUOTA:       return PCB_SV_LIT("Quota exceeded");
+      case PCB_FSERR_INDIR_LIMIT: return PCB_SV_LIT("Too many indirections encountered");
+      case PCB_FSERR_NO_SPACE:    return PCB_SV_LIT("No space left on the storage device");
+      case PCB_FSERR_ISDIR:       return PCB_SV_LIT("Is a directory");
+      case PCB_FSERR_NOTDIR:      return PCB_SV_LIT("Not a directory");
+      case PCB_FSERR_ROFS:        return PCB_SV_LIT("Read-only filesystem");
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_FS(PCB_FS_Error e, char *buf, size_t bufsize) {
+    const char *msg = PCB__FS_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown filesystem error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
+static PCB_StringView PCB__Net_strerror(PCB_Net_Error e) {
+    switch(e) {
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_Net(PCB_Net_Error e, char *buf, size_t bufsize) {
+    const char *msg = PCB__Net_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown filesystem error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
+static PCB_StringView PCB__Proc_strerror(PCB_Proc_Error e) {
+    switch(e) {
+      case PCB_PROCERR_LIMIT_FILE: return PCB_SV_LIT("Per-process limit of open files reached");
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_Proc(PCB_Proc_Error e, char *buf, size_t bufsize) {
+    const char *msg = PCB__Proc_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown process error %u", (unsigned int)e)
+        : PCB_snprintf(buf, bufsize, "%s", msg);
+    return (unsigned int)required < bufsize;
+}
+
+static PCB_StringView PCB__OS_strerror(PCB_OS_Error e) {
+    switch(e) {
+      case PCB_OSERR_NOSYS:      return PCB_SV_LIT("System call not implemented");
+      case PCB_OSERR_LIMIT_FILE: return PCB_SV_LIT("System limit of open files reached");
+      case PCB_OSERR_LIMIT_PROC: return PCB_SV_LIT("System-imposed limit of processes reached");
+      default: return PCB_ZEROED_T(PCB_StringView);
+    }
+}
+
+static bool PCB__Status_toString_OS(PCB_OS_Error e, char *buf, size_t bufsize) {
+    const char *msg = PCB__OS_strerror(e).data;
+    int required = msg == NULL
+        ? PCB_snprintf(buf, bufsize, "Unknown OS-wide error %u", (unsigned int)e)
         : PCB_snprintf(buf, bufsize, "%s", msg);
     return (unsigned int)required < bufsize;
 }
@@ -8229,6 +8461,16 @@ bool PCB_Status_toString(PCB_Status st, char* buf, size_t bufsize) {
         return PCB__Status_toString_POSIX((int)st.code, buf, bufsize);
       case PCB_STATUS_DOMAIN_WINAPI:
         return PCB__Status_toString_WinAPI(st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_IO:
+        return PCB__Status_toString_IO((PCB_IO_Error)st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_FS:
+        return PCB__Status_toString_FS((PCB_FS_Error)st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_NET:
+        return PCB__Status_toString_Net((PCB_Net_Error)st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_PROC:
+        return PCB__Status_toString_Proc((PCB_Proc_Error)st.code, buf, bufsize);
+      case PCB_STATUS_DOMAIN_OS:
+        return PCB__Status_toString_OS((PCB_OS_Error)st.code, buf, bufsize);
       case PCB_STATUS_DOMAIN_PCB:
         return PCB__Status_toString_PCB((PCB_Result)st.code, buf, bufsize);
       case PCB_STATUS_DOMAIN_PCB_BUILD:
@@ -8247,6 +8489,11 @@ PCB_StringView PCB_Status_domain(PCB_Status st) {
       case PCB_STATUS_DOMAIN_C:         return PCB_SV_LIT("ISO C");
       case PCB_STATUS_DOMAIN_POSIX:     return PCB_SV_LIT("POSIX");
       case PCB_STATUS_DOMAIN_WINAPI:    return PCB_SV_LIT("WinAPI");
+      case PCB_STATUS_DOMAIN_IO:        return PCB_SV_LIT("I/O");
+      case PCB_STATUS_DOMAIN_FS:        return PCB_SV_LIT("Filesystem");
+      case PCB_STATUS_DOMAIN_NET:       return PCB_SV_LIT("Network");
+      case PCB_STATUS_DOMAIN_PROC:      return PCB_SV_LIT("Process");
+      case PCB_STATUS_DOMAIN_OS:        return PCB_SV_LIT("OS");
       case PCB_STATUS_DOMAIN_PCB:       return PCB_SV_LIT("PCB");
       case PCB_STATUS_DOMAIN_PCB_BUILD: return PCB_SV_LIT("PCB/build");
       default:                          return PCB_SV_LIT("Unknown");
@@ -8279,6 +8526,35 @@ PCB_StringView PCB_Common_strerror(PCB_Common_Error e) {
     return msg;
 }
 
+PCB_StringView PCB_IO_strerror(PCB_IO_Error e) {
+    PCB_StringView msg = PCB__IO_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
+}
+
+PCB_StringView PCB_FS_strerror(PCB_FS_Error e) {
+    PCB_StringView msg = PCB__FS_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
+}
+
+PCB_StringView PCB_Net_strerror(PCB_Net_Error e) {
+    PCB_StringView msg = PCB__Net_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
+}
+
+PCB_StringView PCB_Proc_strerror(PCB_Proc_Error e) {
+    PCB_StringView msg = PCB__Proc_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
+}
+
+PCB_StringView PCB_OS_strerror(PCB_OS_Error e) {
+    PCB_StringView msg = PCB__OS_strerror(e);
+    if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
+    return msg;
+}
 PCB_StringView PCB_Result_strerror(PCB_Result e) {
     PCB_StringView msg = PCB__Result_strerror(e);
     if(msg.data == NULL) return PCB_SV_LIT("Unknown error");
