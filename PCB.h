@@ -3780,16 +3780,16 @@ typedef uint32_t PCB_File_Options;
  * This option is primarily provided for documentation purposes and has
  * otherwise no effect.
  */
-#define PCB_FILE_OPTION_ACCESS_DEFAULT ((PCB_File_Options)0x0000)
+#define PCB_FILE_OPTION_ACCESS_HINT_DEFAULT ((PCB_File_Options)0x0000)
 /**
  * @brief The file will be accessed sequentially (i.e. towards higher offsets).
  */
-#define PCB_FILE_OPTION_ACCESS_SEQUENTIAL ((PCB_File_Options)0x0800)
+#define PCB_FILE_OPTION_ACCESS_HINT_SEQUENTIAL ((PCB_File_Options)0x0800)
 /**
  * @brief The file will be accessed randomly (i.e. not in an easily predictable way).
  */
-#define PCB_FILE_OPTION_ACCESS_RANDOM ((PCB_File_Options)0x1000)
-#define PCB_FILE_OPTION_ACCESS_MASK ((PCB_File_Options)0x1800)
+#define PCB_FILE_OPTION_ACCESS_HINT_RANDOM ((PCB_File_Options)0x1000)
+#define PCB_FILE_OPTION_ACCESS_HINT_MASK ((PCB_File_Options)0x1800)
 
 typedef struct {
     PCB_FileType type;
@@ -5071,6 +5071,109 @@ PCBAPI void PCBCALL PCB_freeNativePath(const PCB_FS_char* path);
  */
 PCBAPI void PCBCALL PCB_freePath(const char* path);
 PCBAPI bool PCBCALL PCB_isAbsolutePath(const PCB_FS_char* path) PCB_Nonnull_Arg(1);
+
+/**
+ * @brief Open a file located at `path`, given `options`,
+ * and store the handle in `file`.
+ * Equivalent to `PCB_FS_openat_ne` with `base.handle` equal to:
+ * - NULL (Windows);
+ * - AT_FDCWD (POSIX).
+ * @return see `PCB_FS_openat_ne`.
+ * @thread-safety See `PCB_FS_openat_ne`.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_open_ne(
+    PCB_File *file,
+    const PCB_FS_char *path,
+    PCB_File_Options options
+) PCB_Nonnull_Arg(1, 2);
+/**
+ * @brief Open a file relative to `base` located at `path`,
+ * given `options`, and store the handle in `file`.
+ *
+ * (Windows)
+ * If `base.handle == NULL`, `path` MUST be an absolute path starting
+ * with "\??\" (i.e. an NT kernel path).
+ * This is temporary: future releases will implement conversion to a kernel
+ * path automatically. However, the requirement of `path` being absolute will
+ * stay as getting the current working directory is not thread safe.
+ *
+ * If `base.handle != NULL`, `path` MUST be a relative path which doesn't contain
+ * any "." or ".." components and doesn't end with dots.
+ * This is also temporary: future releases will normalize the path internally.
+ * However, in particular, `path` must not start with "..", as the NT kernel
+ * doesn't treat it as "parent directory".
+ *
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEINVAL:
+ *      `options` specified write/append access to a directory, or an invalid
+ *      disposition (lowest 3 bits), or an invalid access hint, or `base` is not
+ *      a valid file, or (Windows, temporary behavior, will be updated in future releases):
+ *      - if `path[0] != '\\'`-> `base.handle != NULL`;
+ *      - otherwise -> `path` doesn't start with "\??\".
+ *   - PCB_CENOMEM: Insufficient memory.
+ *   - PCB_CENORES:
+ *      A component of `path` doesn't exist or is not a directory,
+ *      or `options & PCB_FILE_OPTION_DISPOSITION_MASK` specified
+ *      `PCB_FILE_OPTION_(OPEN/TRUNCATE)` and the basename component of `path`
+ *      doesn't exist.
+ *   - PCB_CEACCES: Permission denied to one or more components of `path`.
+ *   - PCB_CEEXIST:
+ *      `options & PCB_FILE_OPTION_DISPOSITION_MASK` specified
+ *      `PCB_FILE_OPTION_CREATE` and the file already exists.
+ *   - PCB_CERDONLY:
+ *      `options` specified write access and the file is read-only.
+ *   - PCB_CEBADH: `base` is not a valid file.
+ *   - PCB_CEFAULT: `path` is not a valid memory address.
+ *   - PCB_CE2BIG: `path` is too long.
+ * - FS domain:
+ *   - PCB_FSERR_QUOTA:
+ *      File was to be created, but the user's disk quota would
+ *      be exceeded.
+ *   - PCB_FSERR_INDIR: Too many indirections encountered.
+ *   - PCB_FSERR_NO_SPACE:
+ *      File was to be created, but the storage device has no space for it.
+ *   - PCB_FSERR_ISDIR:
+ *      `path` refers to a directory and `options` specified writing.
+ *   - PCB_FSERR_ROFS:
+ *      Write access was requested to a file on a read-only filesystem.
+ * - Process domain:
+ *   - PCB_PROCERR_LIMIT_FILE: See definition.
+ * - OS domain:
+ *   - PCB_OSERR_LIMIT_FILE:
+ *      Too many open files in the system.
+ *      Not returned on Windows: NT kernel's handle limit is dictated by memory.
+ * - PCB domain:
+ *   - PCB_RESULT_TOCTOU:
+ *      `options` specified `PCB_FILE_OPTION_CREATE(_OPEN)`
+ *      and `PCB_FILE_OPTION_DIRECTORY` and the created directory was
+ *      concurrently deleted.
+ *      This error can only be returned under POSIX. The implementation
+ *      emulates Windows' behavior by issuing 2 separate syscalls for creating
+ *      and opening the directory, which is not atomic.
+ *      On Windows, these steps are done in the kernel and are therefore
+ *      not subject to such races.
+ * - POSIX domain (POSIX): see mkdirat(2) and openat(2).
+ * - WinAPI domain (Windows): see CreateFile.
+ * @thread-safety MT-Safe <=> PFN+Arg(file)
+ *
+ * @notes The recommended way of using this & `PCB_FS_open_ne` functions is to
+ * first use the latter to open CWD and then open other files relative to CWD
+ * using the returned handle. This is both more efficient because there's
+ * less unnecessary path parsing involved, and free from races involving
+ * changes to the filesystem that'd affect a path-based way of opening files.
+ * To avoid potential in-process data races, CWD MUST be opened prior to starting
+ * any threads that may read/write CWD's path.
+ * CWD may be obtained from `PCB_FS_getcwd*` family of functions.
+ * On Windows, it is currently required to prepend "\??\" to the obtained path.
+ */
+PCBAPI PCB_Status PCBCALL PCB_FS_openat_ne(
+    PCB_File *file,
+    PCB_File base,
+    const PCB_FS_char *path,
+    PCB_File_Options options
+) PCB_Nonnull_Arg(1, 3);
 /**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
@@ -7917,6 +8020,14 @@ static PCB_ForceInline int PCB_getEndianness(void) {
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/utsname.h>
+
+//See https://www.gnu.org/software/gnulib/manual/html_node/fcntl_002eh.html.
+#if (defined(AT_FDCWD) && AT_FDCWD+0 == -1) || !defined(AT_FDCWD)
+#define PCB__AT_FDCWD (-2)
+#else
+#define PCB__AT_FDCWD AT_FDCWD
+#endif
+
 #if PCB_PLATFORM_LINUX
 #include <sys/syscall.h>
 #include <linux/sched.h>
@@ -7969,12 +8080,24 @@ static struct {
     struct {
         uint32_t major, minor, patch;
     } version;
-} PCB__SYSTEM_INFO;
+} PCB__SYSTEM_INFO = PCB_ZEROED;
 
 PCB_InitFn(PCB__SYSTEM_INFO_GET) {
     int ret = uname(&PCB__SYSTEM_INFO.strings);
     if(ret < 0) return; //only EFAULT is possible, maybe we should _exit?
-    const unsigned char *C = (const unsigned char*)PCB__SYSTEM_INFO.strings.release;
+#if PCB_PLATFORM_AIX
+    //https://www.ibm.com/docs/en/aix/7.2.0?topic=u-uname-command
+    PCB__SYSTEM_INFO.version.major = PCB__SYSTEM_INFO.strings.version[0] - '0';
+    PCB__SYSTEM_INFO.version.minor = PCB__SYSTEM_INFO.strings.release[0] - '0';
+#else
+    const unsigned char *C = (const unsigned char*)PCB__SYSTEM_INFO.strings.
+#if PCB_PLATFORM_SOLARIS
+        //uname -r on Solaris doesn't give enough information, but -v does.
+        //See https://blogs.oracle.com/solaris/whats-in-a-uname- and "Solaris version check".
+        version;
+#else
+        release;
+#endif
     uint32_t v;
 
     //6.14.3-whatever
@@ -8002,6 +8125,19 @@ PCB_InitFn(PCB__SYSTEM_INFO_GET) {
     PCB__SYSTEM_INFO.version.patch = v;
     //We only care about kernel version (for now at least).
     //And holy hell, there's so much C++ here!
+#endif
+}
+
+static int PCB__SYSTEM_INFO_vercmp(
+    uint32_t major, uint32_t minor, uint32_t patch
+) {
+    if(PCB__SYSTEM_INFO.version.major > major) return 1;
+    if(PCB__SYSTEM_INFO.version.major < major) return -1;
+    if(PCB__SYSTEM_INFO.version.minor > minor) return 1;
+    if(PCB__SYSTEM_INFO.version.minor < minor) return -1;
+    if(PCB__SYSTEM_INFO.version.patch > patch) return 1;
+    if(PCB__SYSTEM_INFO.version.patch < patch) return -1;
+    return 0;
 }
 
 static bool PCB__Linux_has_pidfd(void) {
@@ -8069,6 +8205,46 @@ PCB_InitFn(PCB__cpuid_get) {
 #endif //cpuid is really slow and we need to check CPU info in hot loops, cache it.
        //For now private.
 
+#if PCB_PLATFORM_WINDOWS
+typedef NTSTATUS (NTAPI *PCB__NtCreateFile_pfn)(
+    HANDLE* FileHandle,
+    ACCESS_MASK DesiredAccess,
+    OBJECT_ATTRIBUTES* ObjectAttributes,
+    IO_STATUS_BLOCK* IoStatusBlock,
+    LARGE_INTEGER* AllocationSize,
+    ULONG FileAttributes,
+    ULONG ShareAccess,
+    ULONG CreateDisposition,
+    ULONG CreateOptions,
+    void* EaBuffer,
+    ULONG EaLength
+);
+typedef ULONG (NTAPI *PCB__RtlNtStatusToDosError_pfn)(NTSTATUS Status);
+typedef struct {
+    PCB__NtCreateFile_pfn ntCreateFile;
+    PCB__RtlNtStatusToDosError_pfn rtlNtStatusToDosError;
+} PCB__SysOps;
+
+static PCB__SysOps PCB__sysops;
+
+static void PCB__load_ntdll_pfns(void) {
+    static bool loaded = false;
+    if(loaded) return;
+    PCB__SysOps *ops = &PCB__sysops;
+    FARPROC proc;
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    //If ntdll isn't mapped, the process, or even the entire system, is beyond broken.
+    if(ntdll == NULL) PCB_abort();
+
+    proc = GetProcAddress(ntdll, "NtCreateFile");
+    PCB_memcpy(&ops->ntCreateFile, &proc, sizeof(proc)); //direct `=` breaks strict aliasing
+
+    proc = GetProcAddress(ntdll, "RtlNtStatusToDosError");
+    PCB_memcpy(&ops->rtlNtStatusToDosError, &proc, sizeof(proc));
+
+    loaded = true;
+}
+#endif //Windows-only shenanigans
 #endif //PCB_IMPLEMENTATION_ANY
 
 #ifdef PCB_IMPLEMENTATION_LIBC_FALLBACKS
@@ -9298,6 +9474,249 @@ static PCB_Status64 PCB__POSIX_translate_errno_64(int e) {
     return PCB_STATUS64(s.domain, s.code);
 }
 #endif //platforms
+
+PCB_Status PCB_FS_open_ne(
+    PCB_File *file, const PCB_FS_char *path, PCB_File_Options options
+) {
+#if PCB_PLATFORM_WINDOWS
+    PCB_File base = { NULL };
+    return PCB_FS_openat_ne(file, base, path, options);
+#elif PCB_PLATFORM_POSIX
+    PCB_File base = { PCB__AT_FDCWD };
+    return PCB_FS_openat_ne(file, base, path, options);
+#else
+    (void)path;
+    *file = PCB_File_init();
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_FS_openat_ne(
+    PCB_File *file, PCB_File base,
+    const PCB_FS_char *path, PCB_File_Options options
+) {
+#if PCB_PLATFORM_WINDOWS
+    ACCESS_MASK desired_access = FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+    OBJECT_ATTRIBUTES oa = PCB_ZEROED;
+    IO_STATUS_BLOCK iosb;
+    UNICODE_STRING path_;
+    ULONG file_attributes = 0,
+          share_access = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+          crd = 0, //create disposition
+          create_options = FILE_SYNCHRONOUS_IO_ALERT;
+    NTSTATUS status;
+#elif PCB_PLATFORM_POSIX
+    int flags = 0, val, advice = POSIX_FADV_NORMAL;
+    bool dir_created = false;
+#endif //platforms
+
+    PCB_CHECK_NULL(file, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_CHECK_NULL(path, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    *file = PCB_File_init();
+    if((options & PCB_FILE_OPTION_APPEND) != 0 && (options & PCB_FILE_OPTION_WRITE) == 0)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+#if PCB_PLATFORM_WINDOWS
+    if(options & PCB_FILE_OPTION_DIRECT) options |= PCB_FILE_OPTION_PERSISTENT;
+    PCB__load_ntdll_pfns();
+    //TODO: normalize `path` instead of requiring the user to provide a path like this
+    if(path[0] != '\\') {
+        if(base.handle != NULL)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    } else {
+        if(!(path[1] == '?' && path[2] == '?' && path[3] == '\\'))
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    }
+    path_.Buffer = PCB_const_cast(wchar_t*)(path);
+    size_t pathlen = PCB_wcslen(path);
+    if(pathlen > 32767) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CE2BIG);
+    path_.Length = path_.MaximumLength = (USHORT)(pathlen*sizeof(*path));
+
+    if(options & PCB_FILE_OPTION_DIRECTORY) {
+        file_attributes |= FILE_ATTRIBUTE_DIRECTORY;
+        create_options |= FILE_DIRECTORY_FILE;
+        if(options & PCB_FILE_OPTION_WRITE)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+        if(options & PCB_FILE_OPTION_EXECUTE)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+        if(options & PCB_FILE_OPTION_APPEND)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+        if(options & PCB_FILE_OPTION_READ)
+            desired_access |= FILE_LIST_DIRECTORY | FILE_TRAVERSE;
+    } else {
+        file_attributes |= FILE_ATTRIBUTE_NORMAL;
+        create_options |= FILE_NON_DIRECTORY_FILE;
+        if(options & PCB_FILE_OPTION_READ)
+            desired_access |= STANDARD_RIGHTS_READ | FILE_READ_DATA | FILE_READ_EA;
+        if(options & PCB_FILE_OPTION_WRITE)
+            desired_access |= STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA |
+                              FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA;
+        if(options & PCB_FILE_OPTION_EXECUTE)
+            desired_access |= STANDARD_RIGHTS_EXECUTE | FILE_EXECUTE;
+        if(options & PCB_FILE_OPTION_APPEND)
+            desired_access |= FILE_APPEND_DATA;
+    }
+
+    switch(options & PCB_FILE_OPTION_DISPOSITION_MASK) {
+      case PCB_FILE_OPTION_OPEN:               crd = FILE_OPEN;         break;
+      case PCB_FILE_OPTION_CREATE:             crd = FILE_CREATE;       break;
+      case PCB_FILE_OPTION_CREATE_OPEN:        crd = FILE_OPEN_IF;      break;
+      case PCB_FILE_OPTION_TRUNCATE:           crd = FILE_OVERWRITE;    break;
+      case PCB_FILE_OPTION_TRUNCATE_OR_CREATE: crd = FILE_OVERWRITE_IF; break;
+      default: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    }
+    oa.Length = sizeof(oa);
+    oa.ObjectName = &path_;
+    oa.Attributes |= OBJ_CASE_INSENSITIVE;
+    if(options & PCB_FILE_OPTION_INHERIT) oa.Attributes |= OBJ_INHERIT;
+    if(base.handle == NULL) oa.RootDirectory = NULL;
+    else if(base.handle == INVALID_HANDLE_VALUE)
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    else oa.RootDirectory = base.handle;
+
+    if(options & PCB_FILE_OPTION_PERSISTENT) create_options |= FILE_WRITE_THROUGH;
+    if(options & PCB_FILE_OPTION_DIRECT)     create_options |= FILE_NO_INTERMEDIATE_BUFFERING;
+    switch(options & PCB_FILE_OPTION_ACCESS_HINT_MASK) {
+      case PCB_FILE_OPTION_ACCESS_HINT_DEFAULT: break;
+      case PCB_FILE_OPTION_ACCESS_HINT_SEQUENTIAL:
+        //Despite this being worded as if "non-sequential access is not allowed",
+        //the documentation for CreateFileW's FILE_FLAG_SEQUENTIAL_SCAN states that
+        //"(...) correct operation is still guaranteed".
+        create_options |= FILE_SEQUENTIAL_ONLY; break;
+      case PCB_FILE_OPTION_ACCESS_HINT_RANDOM:
+        create_options |= FILE_RANDOM_ACCESS; break;
+      default: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    }
+
+    status = PCB__sysops.ntCreateFile(
+        &file->handle,
+        desired_access,
+        &oa,
+        &iosb,
+        NULL, //Allocation size
+        file_attributes,
+        share_access,
+        crd,
+        create_options,
+        NULL, //Extended attributes buffer
+        0 //Size of the above
+    );
+    return PCB__Windows_translate_NTSTATUS(status);
+#elif PCB_PLATFORM_POSIX
+    if(options & PCB_FILE_OPTION_DIRECTORY) {
+        flags |= O_DIRECTORY;
+        if(options & PCB_FILE_OPTION_WRITE)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+        if(options & PCB_FILE_OPTION_EXECUTE)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+        if(options & PCB_FILE_OPTION_READ)
+            flags |= O_RDONLY;
+#if PCB_PLATFORM_LINUX
+        else
+            flags |= O_PATH;
+#endif
+        switch(options & PCB_FILE_OPTION_DISPOSITION_MASK) {
+          case PCB_FILE_OPTION_OPEN: break;
+          case PCB_FILE_OPTION_CREATE: //fallthrough
+          case PCB_FILE_OPTION_CREATE_OPEN:
+            if(mkdirat(base.handle, path, 0755) == 0) { dir_created = true; break; }
+            switch(val = errno) {
+              case EACCES: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+              case ENOENT: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+              case EEXIST:
+                if((options & PCB_FILE_OPTION_DISPOSITION_MASK) == PCB_FILE_OPTION_CREATE_OPEN) break;
+                return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEEXIST);
+              default: return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)val);
+            } break;
+          case PCB_FILE_OPTION_TRUNCATE:           //fallthrough
+          case PCB_FILE_OPTION_TRUNCATE_OR_CREATE: //fallthrough
+          default: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+        }
+    } else {
+        const PCB_File_Options RDWR = PCB_FILE_OPTION_READ | PCB_FILE_OPTION_WRITE;
+        if(options & PCB_FILE_OPTION_EXECUTE) {
+            if(options & RDWR) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+#if PCB_PLATFORM_LINUX
+            flags |= O_PATH;
+#else
+            flags |= O_EXEC;
+#endif
+        } else if((options & RDWR) == RDWR) {
+            flags |= O_RDWR;
+        } else {
+            if(options & PCB_FILE_OPTION_WRITE) flags |= O_WRONLY;
+            if(options & PCB_FILE_OPTION_READ)  flags |= O_RDONLY;
+        }
+        if(options & PCB_FILE_OPTION_APPEND) flags |= O_APPEND;
+        switch(options & PCB_FILE_OPTION_DISPOSITION_MASK) {
+          case PCB_FILE_OPTION_OPEN:                                           break;
+          case PCB_FILE_OPTION_CREATE:             flags |= O_CREAT | O_EXCL;  break;
+          case PCB_FILE_OPTION_CREATE_OPEN:        flags |= O_CREAT;           break;
+          case PCB_FILE_OPTION_TRUNCATE:           flags |= O_TRUNC;           break;
+          case PCB_FILE_OPTION_TRUNCATE_OR_CREATE: flags |= O_CREAT | O_TRUNC; break;
+          default: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+        }
+
+        if(options & PCB_FILE_OPTION_PERSISTENT)
+#if PCB_PLATFORM_DRAGONFLY
+            flags |= O_FSYNC;
+#else
+            //NOTE: https://stackoverflow.com/questions/76519402/macos-not-posix-compliant
+            flags |= O_DSYNC;
+#endif
+    }
+    if(!(options & PCB_FILE_OPTION_INHERIT)) flags |= O_CLOEXEC;
+
+    if(options & PCB_FILE_OPTION_DIRECT) {
+//Solaris also has an equivalent of this, but it's enabled on a per-file basis
+//rather than per-descriptor, so I'm not sure whether we should use it.
+//We may use it if people complain.
+//See https://docs.oracle.com/cd/E86824_01/html/E54766/directio-3c.html.
+#if PCB_PLATFORM_LINUX || PCB_PLATFORM_FREEBSD || PCB_PLATFORM_NETBSD
+#if PCB_PLATFORM_LINUX
+        if(PCB__SYSTEM_INFO_vercmp(2, 4, 10) >= 0)
+#elif PCB_PLATFORM_FREEBSD
+        if(PCB__SYSTEM_INFO_vercmp(4, 4, 0) >= 0)
+#elif PCB_PLATFORM_NETBSD
+        if(PCB__SYSTEM_INFO_vercmp(4, 0, 0) >= 0)
+#endif
+            flags |= O_DIRECT;
+        else return PCB_STATUS(PCB_STATUS_DOMAIN_OS, PCB_OSERR_NOSYS);
+#elif PCB_PLATFORM_DRAGONFLY || PCB_PLATFORM_AIX
+        flags |= O_DIRECT;
+#endif
+    }
+    switch(options & PCB_FILE_OPTION_ACCESS_HINT_MASK) {
+      case PCB_FILE_OPTION_ACCESS_HINT_DEFAULT: break;
+      case PCB_FILE_OPTION_ACCESS_HINT_SEQUENTIAL:
+        advice = POSIX_FADV_SEQUENTIAL; break;
+      case PCB_FILE_OPTION_ACCESS_HINT_RANDOM:
+        advice = POSIX_FADV_RANDOM; break;
+      default: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+    }
+retry:
+    val = openat(base.handle, path, flags, 0644);
+    if(val >= 0) {
+        file->handle = val;
+        if(advice != POSIX_FADV_NORMAL) (void)posix_fadvise(val, 0, 0, advice);
+        return PCB_OK();
+    }
+    switch(val = errno) {
+      case EINTR:  goto retry;
+      case EISDIR:
+        if(flags & O_TMPFILE) return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)val);
+        else return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_ISDIR);
+      case ENOENT:
+        //User requested to create & open the created directory, but it was
+        //somehow concurrently deleted.
+        if(dir_created) return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_TOCTOU);
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+      default: return PCB__POSIX_translate_errno(val);
+    }
+#else
+    (void)path; (void)base;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
 
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
