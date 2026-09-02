@@ -3634,6 +3634,163 @@ typedef struct {
 #endif //platform
 } PCB_File;
 
+typedef uint32_t PCB_File_Options;
+/**
+ * @brief If the file exists, it is opened. Otherwise the call fails.
+ *
+ * This is the default behavior - there's no need to specify it explicitly,
+ * unless for documentation purposes.
+ */
+#define PCB_FILE_OPTION_OPEN ((PCB_File_Options)0x0)
+/**
+ * @brief If the file doesn't exist, it is created. Otherwise the call fails.
+ */
+#define PCB_FILE_OPTION_CREATE ((PCB_File_Options)0x1)
+/**
+ * @brief If the file doesn't exist, it is created. It is then opened.
+ */
+#define PCB_FILE_OPTION_CREATE_OPEN ((PCB_File_Options)0x2)
+/**
+ * @brief If the file exists, it should be truncated. Otherwise the call fails.
+ * Invalid for directories.
+ */
+#define PCB_FILE_OPTION_TRUNCATE ((PCB_File_Options)0x3)
+/**
+ * @brief If the file exists, it should be truncated. Otherwise it is created.
+ * Invalid for directories.
+ */
+#define PCB_FILE_OPTION_TRUNCATE_OR_CREATE ((PCB_File_Options)0x4)
+#define PCB_FILE_OPTION_DISPOSITION_MASK ((PCB_File_Options)0x7)
+/**
+ * @brief The file should be opened with read access.
+ *
+ * If used in conjunction with `PCB_FILE_OPTION_DIRECTORY`, the directory
+ * can be traversed.
+ * Otherwise, only the following operations are permitted:
+ * - file metadata can be read;
+ * - the file can be used as a reference point in the filesystem;
+ * - (POSIX) operations listed in the O_PATH flag documentation in open(2)
+ *   can be performed.
+ */
+#define PCB_FILE_OPTION_READ ((PCB_File_Options)1 << 3)
+/**
+ * @brief The file should be opened with write access.
+ * Invalid for directories.
+ */
+#define PCB_FILE_OPTION_WRITE ((PCB_File_Options)1 << 4)
+/**
+ * @brief The file should be opened with execute access.
+ * Required to create executable file mappings on Windows.
+ * Invalid for directories.
+ */
+#define PCB_FILE_OPTION_EXECUTE ((PCB_File_Options)1 << 5)
+/**
+ * @brief Writes to the file should only occur at the end.
+ * Invalid for directories.
+ *
+ * This option is incompatible with `PCB_FILE_OPTION_DIRECT` on Windows.
+ */
+#define PCB_FILE_OPTION_APPEND ((PCB_File_Options)1 << 6)
+/**
+ * @brief The file being opened is a directory.
+ */
+#define PCB_FILE_OPTION_DIRECTORY ((PCB_File_Options)1 << 7)
+/**
+ * @brief The file handle can be inherited by a child process.
+ *
+ * On POSIX systems, "child process" in this context means a process created
+ * via a combination of fork(2) and exec(2), NOT a lone fork(2).
+ * If you fork(2) without exec(2), the file descriptor will persist in
+ * the child process and you'll need to close it manually.
+ */
+#define PCB_FILE_OPTION_INHERIT ((PCB_File_Options)1 << 8)
+/**
+ * @brief Writes to the file via the handle shall not return until data
+ * and a platform-specific set of metadata (see below) has been transferred to
+ * the underlying storage device.
+ *
+ * There is a lot of platform-specific nuance involved with written metadata.
+ * Brace yourself.
+ * POSIX defines 2 (3 if we include file reads, not relevant here)
+ * "synchronized I/O integrity" semantics for data & the entire file separately.
+ * The former (O_DSYNC) guarantees that data and metadata required for
+ * a subsequent read operation is transferred, while the latter (O_SYNC) forces
+ * the transfer of data and all metadata associated with the file.
+ *
+ * WinAPI, on the other hand, defines a "write through" semantic: writes via
+ * the handle are immediately flushed to disk, including any metadata changed
+ * that result from the write operation.
+ * This doesn't, however, mean that the changed metadata will be immediately visible
+ * to the rest of the system; see <2>.
+ *
+ * As a consequence, the Windows semantic is somewhat stronger than O_DSYNC, but
+ * weaker than O_SYNC.
+ * Portable applications should treat this flag as if it had the weaker semantic
+ * of O_DSYNC on Windows and explicitly flush the file to ensure that all metadata
+ * is transferred; see `PCB_File_flush`.
+ *
+ * @sa
+ * <1> POSIX's descriptions of O_DSYNC & O_SYNC flags for the open syscall
+ * <2> https://stackoverflow.com/questions/317801/win32-write-to-file-without-buffering
+ * <3> https://learn.microsoft.com/en-us/windows/win32/fileio/file-caching
+ * <4> https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+ */
+#define PCB_FILE_OPTION_PERSISTENT ((PCB_File_Options)1 << 9)
+/**
+ * @brief I/O via the handle SHOULD skip kernel caching layers and be done
+ * directly from user-provided buffers.
+ *
+ * Note that this option is advisory on some platforms and doesn't affect
+ * correctness, while on others it requires changing how the API is used.
+ *
+ * The filesystem may or may not impose alignment restrictions on values of
+ * `offset` and `bufsize` for reads & writes, as well as values of `offset` for seeks.
+ * Portable applications SHOULD assume alignment is always required when using this option.
+ * The required integral of alignment can be queried using `PCB_File_query_alignment`.
+ *
+ * This option implies `PCB_FILE_OPTION_PERSISTENT` on Windows.
+ *
+ * This option is not available on all systems and may apply additional
+ * restrictions. Moreover, some functions require that this option is set.
+ *
+ * The rest of this description assumes systems where this option is non-advisory.
+ *
+ * Mixing direct and buffered I/O on the same file SHOULD be avoided for data
+ * consistency. In the presence of arbitrary uncooperating processes having
+ * access to the file, direct I/O on the file MUST be avoided in security-minded
+ * applications. This is impossible to enforce without restricting access to
+ * the file. Where feasible, applications using direct I/O SHOULD run as
+ * separate users and only allow 1 instance of themselves running at any time.
+ *
+ * Changing the file size can race with direct writes and SHOULD be synchronized
+ * within the application.
+ *
+ * On Linux, direct I/O MUST never be run concurrently with fork(2) (this
+ * includes `PCB_ShellCommand_run*` functions) if the memory buffer is a private
+ * mapping; see O_DIRECT NOTES section in the Linux's open(2) manpage.
+ * That being said, it's better to avoid using mmap(2) with direct I/O altogether.
+ *
+ * Direct I/O in older Linux kernels was particularly bad.
+ * See the entire "O_DIRECT question" thread in the LKML.
+ */
+#define PCB_FILE_OPTION_DIRECT ((PCB_File_Options)1 << 10)
+/**
+ * @brief The file will be accessed in some application-defined manner.
+ * No hints are given to the kernel.
+ * This option is primarily provided for documentation purposes and has
+ * otherwise no effect.
+ */
+#define PCB_FILE_OPTION_ACCESS_DEFAULT ((PCB_File_Options)0x0000)
+/**
+ * @brief The file will be accessed sequentially (i.e. towards higher offsets).
+ */
+#define PCB_FILE_OPTION_ACCESS_SEQUENTIAL ((PCB_File_Options)0x0800)
+/**
+ * @brief The file will be accessed randomly (i.e. not in an easily predictable way).
+ */
+#define PCB_FILE_OPTION_ACCESS_RANDOM ((PCB_File_Options)0x1000)
+#define PCB_FILE_OPTION_ACCESS_MASK ((PCB_File_Options)0x1800)
+
 typedef struct {
     PCB_FileType type;
     uint64_t size;
