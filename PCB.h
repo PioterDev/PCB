@@ -7883,9 +7883,31 @@ static PCB_ForceInline int PCB_getEndianness(void) {
 
 #if PCB_PLATFORM_WINDOWS
 #include <winternl.h>
+#include <winnt.h>
 #include <winbase.h>
 #include <wingdi.h>
 #include <wincon.h>
+
+//nstatus.h isn't universally available with all Windows compilers, so
+//we need to define these constants locally.
+//See http://msdn.microsoft.com/en-us/library/cc704588.aspx.
+#define PCB__NTSTATUS_SUCCESS (NTSTATUS)0x00000000
+#define PCB__NTSTATUS_USER_APC (NTSTATUS)0x000000C0
+#define PCB__NTSTATUS_ALERTED (NTSTATUS)0x00000101
+#define PCB__NTSTATUS_TIMEOUT (NTSTATUS)0x00000102
+#define PCB__NTSTATUS_OBJECT_NAME_NOT_FOUND (NTSTATUS)0xC0000034
+#define PCB__NTSTATUS_ACCESS_DENIED (NTSTATUS)0xC0000022
+#define PCB__NTSTATUS_ACCESS_VIOLATION (NTSTATUS)0xC0000005
+#define PCB__NTSTATUS_NO_MEMORY (NTSTATUS)0xC0000017
+#define PCB__NTSTATUS_BROKEN_PIPE (NTSTATUS)0xC000014B
+#define PCB__NTSTATUS_INVALID_HANDLE (NTSTATUS)0xC0000008
+#define PCB__NTSTATUS_DISK_QUOTA_EXCEEDED (NTSTATUS)0xC0000802
+#define PCB__NTSTATUS_DISK_FULL (NTSTATUS)0xC000007F
+#define PCB__NTSTATUS_NOT_A_DIRECTORY (NTSTATUS)0xC0000103
+#define PCB__NTSTATUS_TOO_MANY_OPENED_FILES (NTSTATUS)0xC000011F
+#define PCB__NTSTATUS_NOT_IMPLEMENTED (NTSTATUS)0xC0000002
+#define PCB__NTSTATUS_MEDIA_WRITE_PROTECTED (NTSTATUS)0xC00000A2
+
 #elif PCB_PLATFORM_POSIX
 #ifdef PCB_HAS_STRINGS_H
 #include <strings.h>
@@ -9200,6 +9222,82 @@ bool PCB_isAbsolutePath(const PCB_FS_char* path) {
 )
 #define PCB__POSIX_HAS_NS_STAT_TIMESTAMPS
 #endif //see stat(3type)
+
+#if PCB_PLATFORM_WINDOWS
+static PCB_Status PCB__Windows_translate_NTSTATUS(NTSTATUS status) {
+    PCB__logTrace("0x%08lX", status);
+    if(status == PCB__NTSTATUS_SUCCESS) return PCB_OK();
+    ULONG e = PCB__sysops.rtlNtStatusToDosError(status);
+    SetLastError(e);
+    if(!NT_ERROR(status)) return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+    switch(status) {
+      case PCB__NTSTATUS_INVALID_HANDLE:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+      case PCB__NTSTATUS_OBJECT_NAME_NOT_FOUND:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENORES);
+      case PCB__NTSTATUS_ACCESS_DENIED:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+      case PCB__NTSTATUS_ACCESS_VIOLATION:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT);
+      case PCB__NTSTATUS_NO_MEMORY:
+        return PCB_CERR_NOMEM;
+      case PCB__NTSTATUS_BROKEN_PIPE:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_IO, PCB_IOERR_BROKEN_PIPE);
+      case PCB__NTSTATUS_DISK_QUOTA_EXCEEDED:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_QUOTA);
+      case PCB__NTSTATUS_DISK_FULL:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_NO_SPACE);
+      case PCB__NTSTATUS_NOT_A_DIRECTORY:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_NOTDIR);
+      //This one is more complex.
+      //NT kernel doesn't really impose a limit of open files (i.e. handles) in
+      //the system and is instead limited by memory.
+      //There are, however, per-process limits.
+      //That being said, we may be running under Wine and the underlying
+      //POSIX system may impose system-wide limits, but the NT API doesn't
+      //have an error value corresponding to POSIX's ENFILE, so this info is lost.
+      case PCB__NTSTATUS_TOO_MANY_OPENED_FILES:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PROC, PCB_PROCERR_LIMIT_FILE);
+      case PCB__NTSTATUS_NOT_IMPLEMENTED:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_OS, PCB_OSERR_NOSYS);
+      case PCB__NTSTATUS_MEDIA_WRITE_PROTECTED:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_ROFS);
+      default: return PCB_STATUS(PCB_STATUS_DOMAIN_WINAPI, e);
+    }
+}
+static PCB_Status64 PCB__Windows_translate_NTSTATUS_64(NTSTATUS status) {
+    PCB_Status s = PCB__Windows_translate_NTSTATUS(status);
+    return PCB_STATUS64(s.domain, s.code);
+}
+#elif PCB_PLATFORM_POSIX
+static PCB_Status PCB__POSIX_translate_errno(int e) {
+    switch(e) {
+      case EBADF:  return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+      case ENOMEM: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CENOMEM);
+      case EACCES: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+      case EEXIST: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEEXIST);
+      case EFAULT: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT);
+      case EFBIG:  return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CE2BIG);
+      case EDQUOT: return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_QUOTA);
+      case ELOOP:  return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_INDIR_LIMIT);
+      case EMFILE: return PCB_STATUS(PCB_STATUS_DOMAIN_PROC, PCB_PROCERR_LIMIT_FILE);
+      case ENFILE: return PCB_STATUS(PCB_STATUS_DOMAIN_OS, PCB_OSERR_LIMIT_FILE);
+      case ENOSPC: return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_NO_SPACE);
+      case EISDIR: return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_ISDIR);
+      case EROFS:  return PCB_STATUS(PCB_STATUS_DOMAIN_FS, PCB_FSERR_ROFS);
+      case EIO:    return PCB_STATUS(PCB_STATUS_DOMAIN_IO, PCB_IOERR_LOWLEVEL);
+      case EPIPE:  return PCB_STATUS(PCB_STATUS_DOMAIN_IO, PCB_IOERR_BROKEN_PIPE);
+      case ESPIPE: return PCB_STATUS(PCB_STATUS_DOMAIN_IO, PCB_IOERR_NOT_SEEKABLE);
+      case ENOSYS: return PCB_STATUS(PCB_STATUS_DOMAIN_OS, PCB_OSERR_NOSYS);
+      default:     return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+    }
+}
+
+static PCB_Status64 PCB__POSIX_translate_errno_64(int e) {
+    PCB_Status s = PCB__POSIX_translate_errno(e);
+    return PCB_STATUS64(s.domain, s.code);
+}
+#endif //platforms
 
 bool PCB_mkdir(const char* path) {
 #if PCB_PLATFORM_POSIX
