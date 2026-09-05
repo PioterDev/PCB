@@ -3791,6 +3791,21 @@ typedef uint32_t PCB_File_Options;
 #define PCB_FILE_OPTION_ACCESS_HINT_RANDOM ((PCB_File_Options)0x1000)
 #define PCB_FILE_OPTION_ACCESS_HINT_MASK ((PCB_File_Options)0x1800)
 
+typedef enum {
+    /**
+     * @brief Absolute offset: current_offset = specified_offset.
+     */
+    PCB_FILE_SEEK_MODE_ABS,
+    /**
+     * @brief Relative offset: current_offset = current_offset + specified_offset.
+     */
+    PCB_FILE_SEEK_MODE_REL,
+    /**
+     * @brief End-relative offset: current_offset = EOF_position + specified_offset.
+     */
+    PCB_FILE_SEEK_MODE_REL_END,
+} PCB_File_Seek_Mode;
+
 typedef struct {
     PCB_FileType type;
     uint64_t size;
@@ -5269,6 +5284,32 @@ PCBAPI PCB_Status64 PCBCALL PCB_File_write(
     size_t bufsize,
     const uint64_t *offset
 ) PCB_Nonnull_Arg(2);
+/**
+ * @brief Modify the `f`ile's system-maintained file position by `offset`
+ * according to `mode`.
+ * @return On success, `PCB_OK64(<current offset>)`; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEBADH: Bad file handle.
+ *   - PCB_CERANGE:
+ *      `offset` would result in a file position which is out of the allowed
+ *      range (likely negative).
+ * - I/O domain:
+ *   - PCB_IOERR_NOT_SEEKABLE: `f` is not seekable.
+ * - POSIX domain (POSIX): see lseek(2).
+ * - WinAPI domain (Windows):
+ *     Microsoft doesn't dare to document what exactly can be returned, so
+ *     we can't either.
+ * @thread-safety MT-Safe <=> PFN, but:
+ * Changing the file position in relative modes on Windows is subject to
+ * TOCTOU as there's no dedicated syscall to do this atomically. Use
+ * explicit offsets instead.
+ */
+PCBAPI PCB_Status64 PCBCALL PCB_File_seek(
+    PCB_File f,
+    int64_t offset,
+    PCB_File_Seek_Mode mode
+);
 /**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
@@ -8328,11 +8369,22 @@ typedef NTSTATUS (NTAPI *PCB__NtWriteFile_pfn)(
 //Surprisingly, they have the same signature.
 typedef PCB__NtWriteFile_pfn PCB__NtReadFile_pfn;
 typedef ULONG (NTAPI *PCB__RtlNtStatusToDosError_pfn)(NTSTATUS Status);
+typedef NTSTATUS (NTAPI *PCB__NtQueryInformationFile_pfn)(
+    HANDLE FileHandle,
+    IO_STATUS_BLOCK* IoStatusBlock,
+    void* FileInformation,
+    ULONG Length,
+    FILE_INFORMATION_CLASS FileInformationClass
+);
+//Same here.
+typedef PCB__NtQueryInformationFile_pfn PCB__NtSetInformationFile_pfn;
 typedef struct {
     PCB__NtCreateFile_pfn ntCreateFile;
     PCB__RtlNtStatusToDosError_pfn rtlNtStatusToDosError;
     PCB__NtReadFile_pfn ntReadFile;
     PCB__NtWriteFile_pfn ntWriteFile;
+    PCB__NtQueryInformationFile_pfn ntQueryInformationFile;
+    PCB__NtSetInformationFile_pfn ntSetInformationFile;
 } PCB__SysOps;
 
 static PCB__SysOps PCB__sysops;
@@ -8357,6 +8409,12 @@ static void PCB__load_ntdll_pfns(void) {
 
     proc = GetProcAddress(ntdll, "NtWriteFile");
     PCB_memcpy(&ops->ntWriteFile, &proc, sizeof(proc));
+
+    proc = GetProcAddress(ntdll, "NtQueryInformationFile");
+    PCB_memcpy(&ops->ntQueryInformationFile, &proc, sizeof(proc));
+
+    proc = GetProcAddress(ntdll, "NtSetInformationFile");
+    PCB_memcpy(&ops->ntSetInformationFile, &proc, sizeof(proc));
 
     loaded = true;
 }
@@ -9925,6 +9983,67 @@ retry:
 #else
     (void)buf; (void)bufsize; (void)offset;
     return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status64 PCB_File_seek(
+    PCB_File f, int64_t offset, PCB_File_Seek_Mode mode
+) {
+#if PCB_PLATFORM_WINDOWS
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS st;
+    //MSVC doesn't ship with these definitions...
+    struct { LARGE_INTEGER CurrentByteOffset; } info; //FILE_POSITION_INFORMATION
+    const int posinfo = 14, stdinfo = 5;
+    PCB__load_ntdll_pfns();
+    switch(mode) {
+      case PCB_FILE_SEEK_MODE_ABS: {
+        info.CurrentByteOffset.QuadPart = offset;
+      } break;
+      case PCB_FILE_SEEK_MODE_REL: {
+        st = PCB__sysops.ntQueryInformationFile(
+            f.handle, &iosb, &info, sizeof(info), (FILE_INFORMATION_CLASS)posinfo
+        );
+        if(st != PCB__NTSTATUS_SUCCESS) return PCB__Windows_translate_NTSTATUS_64(st);
+        if(offset == 0) goto end; //Avoids an unnecessary syscall.
+        info.CurrentByteOffset.QuadPart += offset;
+      } break;
+      case PCB_FILE_SEEK_MODE_REL_END: {
+        FILE_STANDARD_INFO sinfo;
+        st = PCB__sysops.ntQueryInformationFile(
+            f.handle, &iosb, &sinfo, sizeof(sinfo), (FILE_INFORMATION_CLASS)stdinfo
+        );
+        if(st != PCB__NTSTATUS_SUCCESS) return PCB__Windows_translate_NTSTATUS_64(st);
+        info.CurrentByteOffset.QuadPart = sinfo.EndOfFile.QuadPart + offset;
+      } break;
+      default: PCB_Unreachable;
+    }
+    st = PCB__sysops.ntSetInformationFile(
+        f.handle, &iosb, &info, sizeof(info), (FILE_INFORMATION_CLASS)posinfo
+    );
+    if(st != PCB__NTSTATUS_SUCCESS) return PCB__Windows_translate_NTSTATUS_64(st);
+end:
+    return PCB_OK64((uint64_t)info.CurrentByteOffset.QuadPart);
+#elif PCB_PLATFORM_POSIX
+    int whence;
+    switch(mode) {
+      case PCB_FILE_SEEK_MODE_ABS:     whence = SEEK_SET; break;
+      case PCB_FILE_SEEK_MODE_REL:     whence = SEEK_CUR; break;
+      case PCB_FILE_SEEK_MODE_REL_END: whence = SEEK_END; break;
+      default: PCB_Unreachable;
+    }
+    off_t result = lseek(f.handle, offset, whence);
+    if(result == (off_t)-1) {
+        int e = errno;
+        switch(e) {
+          case EINVAL: return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CERANGE);
+          default:     return PCB__POSIX_translate_errno_64(e);
+        }
+    }
+    return PCB_OK64((uint64_t)(int64_t)result);
+#else
+    (void)f; (void)offset; (void)mode;
+    return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
 
