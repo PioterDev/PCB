@@ -3391,6 +3391,7 @@ PCB_Enum(PCB_Result, uint32_t) {
      * @brief A time-of-check-time-of-use condition was detected.
      */
     PCB_RESULT_TOCTOU = 2,
+    PCB_RESULT_RESOURCE_MAY_HAVE_BEEN_LEAKED = 3,
     /**
      * @brief Number of constants in this enum. SHALL never be returned.
      */
@@ -5370,6 +5371,65 @@ PCBAPI PCB_Status64 PCBCALL PCB_File_seek(
  * (not conforming to POSIX), as well as Windows.
  */
 PCBAPI PCB_Status PCBCALL PCB_File_flush(PCB_File f, PCB_File_Flush_Mode mode);
+/**
+ * Close the `f`ile.
+ * `f.handle` is dangling on a success; make sure to not use it or invalidate
+ * it (also see `PCB_File_close_invalidate`).
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEBADH: `f.handle` is not a valid file handle.
+ * - POSIX domain (POSIX): See close(2).
+ * - WinAPI domain (Windows): See CloseHandle.
+ * - PCB domain:
+ *   - PCB_RESULT_RESOURCE_MAY_HAVE_BEEN_LEAKED:
+ *      (POSIX) When closing `f`, the thread was interrupted by a signal
+ *      and `f.handle` is in an unspecified state, possibly closed, but possibly
+ *      still open. See @bugs.
+ * I/O errors may be returned when trying to close the file, see `PCB_File_write`
+ * and others.
+ *
+ * @thread-safety MT-Safe, but see @bugs.
+ *
+ * @bugs (POSIX) When a signal is caught in close(2) syscall, some systems <1>
+ * close the descriptor always, some <2> never. Worst of all, some systems <3>
+ * don't specify this behavior, which stems from POSIX itself leaving this edge
+ * case as "unspecified". It was only standardized in the 2024 revision (SUSv5),
+ * largely unadopted as of 05.09.2026.
+ *
+ * On systems labeled as <3>, when close(2) fails with EINTR, it is unspecified
+ * whether `f.handle` is still open, so we must not retry to avoid
+ * an arguably worse outcome of a possible race condition.
+ * This potentially leaves `f.handle` still open, which, in a long-running
+ * application, will eventually exhaust space in the file descriptor table.
+ *
+ * It is possible, although difficult, to structure your application to halt
+ * all descriptor creation and attempt to safely retry closing potentially
+ * dangling files. We can't do this without making unsafe assumptions, but
+ * the application has a better understanding and might possibly handle it.
+ *
+ * This function tries to transparently deals with this problem wherever it can,
+ * which includes Linux, HP-UX & MacOS (unconfirmed):
+ * on these systems, no further action is required.
+ *
+ * On other systems, you should look whether an interrupted close(2) leaves
+ * the descriptor open or not, and report it as a bugfix for this function.
+ *
+ * Thank you very much for this mess, POSIX. If you'd use "implementation-defined"
+ * instead of "unspecified", there'd be no issue...
+ */
+PCBAPI PCB_Status PCBCALL PCB_File_close(PCB_File f);
+/**
+ * @brief Close the `f`ile and invalidate `f.handle`.
+ * NOTE: If closing fails, `f.handle` is NOT invalidated.
+ *
+ * Prefer this function over `PCB_File_close` unless you know what you're doing
+ * or are on a system labeled as <3> in `PCB_File_close`.
+ *
+ * @return See `PCB_File_close`.
+ * @thread-safety MT-Safe <=> Arg(f) + (see `PCB_File_close`)
+ */
+PCBAPI PCB_Status PCBCALL PCB_File_close_invalidate(PCB_File *f) PCB_Nonnull_Arg(1);
 /**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
@@ -10194,6 +10254,76 @@ retry:
     (void)f; (void)mode;
     return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
+}
+
+PCB_Status PCB_File_close(PCB_File f) {
+#if PCB_PLATFORM_WINDOWS
+    return CloseHandle(f.handle) ? PCB_OK() : PCB_STATUS_NATIVE_SYSTEM_API();
+#elif PCB_PLATFORM_POSIX
+    int e;
+#if !PCB_PLATFORM_LINUX && !PCB_PLATFORM_HPUX
+    /*
+     * Until POSIX.1-2024, it was unspecified whether an interrupted close(2)
+     * would actually close the file descriptor.
+     * Some systems <1>, like Linux, close it, while some <2>, like HP-UX, don't.
+     *
+     * To make sure it's closed, we'd need to call close(2) until it doesn't fail with EINTR.
+     * This of course would result in a race on systems <1> for which there isn't a
+     * coded exception:
+     * When this thread closes the fd and gets interrupted, it will retry,
+     * while another thread may have interleaved so that it opens a file with
+     * the same fd as the one closed by this thread, which will retry and
+     * close the file opened by another thread.
+     *
+     * Because of this, on those other systems we return immediately after
+     * erroring with EINTR, which may or may not leak the fd.
+     * This way the caller can at least structure their code around this issue
+     * and try to close again when they know a race isn't possible.
+     * If we were to retry and a race was triggered, the application probably
+     * would not be able to recover.
+     *
+     * The above `#if` should ideally grow in the future to avoid this problem.
+     * These 2 systems are the only ones mentioned in the Linux close(2) manpage.
+     * TODO: Use posix_close when available; see SUSv5.
+     */
+#endif //this conditional block is only for documentation purposes
+#if PCB_PLATFORM_MACOS
+    //This is supposedly "not recommended" and "may break in the future".
+    //I don't care. The alternative is a descriptor leak or a race condition.
+    if(syscall(SYS_close_nocancel, f.handle) == 0) return PCB_OK();
+    return PCB__POSIX_translate_errno(e = errno);
+#else
+retry:
+    if(close(f.handle) == 0) return PCB_OK();
+    switch(e = errno) {
+      case EINTR:
+#if PCB_PLATFORM_LINUX
+        //Linux guarantees that an interrupted close(2) will close the fd.
+        return PCB_OK();
+#elif PCB_PLATFORM_HPUX
+       //HP-UX guarantees the opposite.
+        goto retry;
+#else
+        //We have no idea on other systems, so it's safer to potentially leak it.
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB, PCB_RESULT_RESOURCE_MAY_HAVE_BEEN_LEAKED);
+#endif
+      //See SUSv5's description of close.
+      case EINPROGRESS: return PCB_OK();
+      case EBADF: return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+      default: return PCB__POSIX_translate_errno(e);
+    }
+    if(0) goto retry; //suppress "unused label"
+#endif //Mac has a separate syscall without this problem
+#else
+    (void)f; return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_File_close_invalidate(PCB_File *f) {
+    PCB_CHECK_NULL(f, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    PCB_Status result = PCB_File_close(*f);
+    if(PCB_ISOK(result)) *f = PCB_File_init();
+    return result;
 }
 
 bool PCB_mkdir(const char* path) {
