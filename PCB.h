@@ -3806,6 +3806,30 @@ typedef enum {
     PCB_FILE_SEEK_MODE_REL_END,
 } PCB_File_Seek_Mode;
 
+typedef enum {
+    /**
+     * @brief Flush data and all metadata (default).
+     */
+    PCB_FILE_FLUSH_MODE_ALL,
+    /**
+     * @brief Flush data and minimal amount of metadata required for subsequent
+     * data retrieval.
+     */
+    PCB_FILE_FLUSH_MODE_DATA_ONLY,
+    /**
+     * @brief Flush data and all metadata without flushing the underlying
+     * storage device's cache.
+     * Not available under POSIX: `PCB_FILE_FLUSH_MODE_ALL` is used instead.
+     */
+    PCB_FILE_FLUSH_MODE_ALL_NOSYNC,
+    /**
+     * @brief Flush data without flushing the underlying storage device's cache.
+     * Not available under POSIX: `PCB_FILE_FLUSH_MODE_DATA_ONLY` is used instead.
+     * Due to unexplained quirkiness of the NT API, no metadata is flushed.
+     */
+    PCB_FILE_FLUSH_MODE_DATA_ONLY_NOSYNC,
+} PCB_File_Flush_Mode;
+
 typedef struct {
     PCB_FileType type;
     uint64_t size;
@@ -5310,6 +5334,42 @@ PCBAPI PCB_Status64 PCBCALL PCB_File_seek(
     int64_t offset,
     PCB_File_Seek_Mode mode
 );
+/**
+ * @brief Flush any existing kernel in-memory cache not yet transferred to
+ * the underlying storage device of a specified `f`ile according to `mode`.
+ *
+ * If a particular `mode` isn't available, the function will try to use
+ * another variant that flushes at least the same amount of (meta)data as
+ * the requested variant. If none are available, the call fails.
+ *
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEBADH: `f.handle` is not a valid file handle.
+ * - I/O domain:
+ *   - PCB_IOERR_LOWLEVEL: No more useful info.
+ *   - PCB_IOERR_NOT_FLUSHABLE:
+ *      `f` is not a file that can be flushed, such as a pipe or socket.
+ * - FS domain:
+ *   - PCB_FSERR_QUOTA: The flush would exceed the quota.
+ *   - PCB_FSERR_NO_SPACE: No space left on the storage device.
+ *    The former may be returned on some filesystems, such as NFS, that don't
+ *    allocate storage space at the point of a file write.
+ *    The latter may be returned on any filesystem that may require additional
+ *    auxiliary space to store the data, such as COW-based filesystems.
+ * - OS domain:
+ *   - PCB_OSERR_NOSYS:
+ *      (Windows <Vista) Explicit flushing is not available.
+ *      Applications should instead use `PCB_FILE_OPTION_PERSISTENT`
+ *      when opening the file.
+ * - POSIX domain (POSIX): see fsync(2) & fdatasync(2).
+ * - WinAPI domain (Windows): see NtFlushBuffersFile(Ex).
+ * @thread-safety MT-Safe <=> PFN [+ Init (Windows)]
+ * @notes Some systems require that the `f`ile is opened with write access.
+ * This is the case for certain UNIX SVR4-based systems like HP-UX and IBM AIX
+ * (not conforming to POSIX), as well as Windows.
+ */
+PCBAPI PCB_Status PCBCALL PCB_File_flush(PCB_File f, PCB_File_Flush_Mode mode);
 /**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
@@ -8289,6 +8349,7 @@ static struct {
 } PCB__SYSTEM_INFO = PCB_ZEROED;
 
 static void PCB__SYSTEM_INFO_GET(void) {
+    if(PCB__SYSTEM_INFO.initialized) return;
     PCB__SYSTEM_INFO.version.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEXW);
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     //Should always be mapped, be we're paranoid.
@@ -8309,8 +8370,8 @@ static void PCB__SYSTEM_INFO_GET(void) {
 }
 
 bool PCB_Windows_can_opt_out_of_MAX_PATH(void) {
-    if(!PCB__SYSTEM_INFO.initialized) PCB__SYSTEM_INFO_GET();
-    const OSVERSIONINFOEXW* v = &PCB__SYSTEM_INFO.version;
+    PCB__SYSTEM_INFO_GET();
+    const OSVERSIONINFOEXW *v = &PCB__SYSTEM_INFO.version;
     if(v->dwMajorVersion > 10) return true;
     if(v->dwMajorVersion == 10 && v->dwBuildNumber >= 14393) return true;
     return false;
@@ -8378,6 +8439,17 @@ typedef NTSTATUS (NTAPI *PCB__NtQueryInformationFile_pfn)(
 );
 //Same here.
 typedef PCB__NtQueryInformationFile_pfn PCB__NtSetInformationFile_pfn;
+typedef NTSTATUS (NTAPI *PCB__NtFlushBuffersFile_pfn)(
+    HANDLE FileHandle,
+    IO_STATUS_BLOCK* IoStatusBLock
+);
+typedef NTSTATUS (NTAPI *PCB__NtFlushBuffersFileEx_pfn)(
+    HANDLE FileHandle,
+    ULONG Flags,
+    void* Parameters,
+    ULONG ParametersSize,
+    IO_STATUS_BLOCK* IoStatusBLock
+);
 typedef struct {
     PCB__NtCreateFile_pfn ntCreateFile;
     PCB__RtlNtStatusToDosError_pfn rtlNtStatusToDosError;
@@ -8385,6 +8457,8 @@ typedef struct {
     PCB__NtWriteFile_pfn ntWriteFile;
     PCB__NtQueryInformationFile_pfn ntQueryInformationFile;
     PCB__NtSetInformationFile_pfn ntSetInformationFile;
+    PCB__NtFlushBuffersFile_pfn ntFlushBuffersFile;
+    PCB__NtFlushBuffersFileEx_pfn ntFlushBuffersFileEx;
 } PCB__SysOps;
 
 static PCB__SysOps PCB__sysops;
@@ -8415,6 +8489,12 @@ static void PCB__load_ntdll_pfns(void) {
 
     proc = GetProcAddress(ntdll, "NtSetInformationFile");
     PCB_memcpy(&ops->ntSetInformationFile, &proc, sizeof(proc));
+
+    proc = GetProcAddress(ntdll, "NtFlushBuffersFile");
+    PCB_memcpy(&ops->ntFlushBuffersFile, &proc, sizeof(proc));
+
+    proc = GetProcAddress(ntdll, "NtFlushBuffersFileEx");
+    PCB_memcpy(&ops->ntFlushBuffersFileEx, &proc, sizeof(proc));
 
     loaded = true;
 }
@@ -10044,6 +10124,75 @@ end:
 #else
     (void)f; (void)offset; (void)mode;
     return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_File_flush(PCB_File f, PCB_File_Flush_Mode mode) {
+#if PCB_PLATFORM_WINDOWS
+    PCB__SYSTEM_INFO_GET();
+    PCB__load_ntdll_pfns();
+    if(!PCB_File_isValid(f)) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+    IO_STATUS_BLOCK iosb;
+    if(PCB__sysops.ntFlushBuffersFileEx != NULL) {
+        ULONG flags = 0;
+        //Constants taken from the Windows SDK's ntifs.h header.
+        //https://github.com/tpn/winsdk-10
+        switch(mode) {
+          case PCB_FILE_FLUSH_MODE_ALL: break;
+          case PCB_FILE_FLUSH_MODE_DATA_ONLY:
+            //Windows 10 Anniversary Update (RS1)
+            if(PCB__SYSTEM_INFO.version.dwBuildNumber >= 14393)
+                flags = 0x4;
+            //Otherwise not available; we'll use the stronger variant.
+            break;
+          case PCB_FILE_FLUSH_MODE_ALL_NOSYNC:
+            flags = 0x2; break;
+          case PCB_FILE_FLUSH_MODE_DATA_ONLY_NOSYNC:
+            flags = 0x1; break;
+          default: PCB_Unreachable;
+        }
+        NTSTATUS status = PCB__sysops.ntFlushBuffersFileEx(f.handle, flags, NULL, 0, &iosb);
+        if(status == PCB__NTSTATUS_ACCESS_DENIED)
+            return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+        return PCB__Windows_translate_NTSTATUS(status);
+    } else if(PCB__sysops.ntFlushBuffersFile != NULL) {
+        return PCB__Windows_translate_NTSTATUS(PCB__sysops.ntFlushBuffersFile(f.handle, &iosb));
+    } else {
+        //NOTE: There is FlushFileBuffers, but it requires GENERIC_WRITE access,
+        //which we don't use in `PCB_FS_openat_ne`, so I'm not sure if using it
+        //is safe. Will do more research another time, for now it's treated
+        //as unsafe.
+        return PCB_STATUS(PCB_STATUS_DOMAIN_OS, PCB_OSERR_NOSYS);
+    }
+#elif PCB_PLATFORM_POSIX
+    int ret;
+    if(!PCB_File_isValid(f)) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+retry:
+    switch(mode) {
+      case PCB_FILE_FLUSH_MODE_ALL: //fallthrough
+      case PCB_FILE_FLUSH_MODE_ALL_NOSYNC:
+        ret = fsync(f.handle);
+        break;
+      case PCB_FILE_FLUSH_MODE_DATA_ONLY: //fallthrough
+      case PCB_FILE_FLUSH_MODE_DATA_ONLY_NOSYNC:
+        ret = fdatasync(f.handle);
+        break;
+      default: PCB_Unreachable;
+    }
+    if(ret == 0) return PCB_OK();
+    switch(ret = errno) {
+      case EINTR: goto retry;
+#if PCB_PLATFORM_LINUX
+      case EROFS: //fallthrough
+#endif //why?
+      case EINVAL:
+        return PCB_STATUS(PCB_STATUS_DOMAIN_IO, PCB_IOERR_NOT_FLUSHABLE);
+      default:
+        return PCB__POSIX_translate_errno(ret);
+    }
+#else
+    (void)f; (void)mode;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
 
