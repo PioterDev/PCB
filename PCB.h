@@ -5175,6 +5175,101 @@ PCBAPI PCB_Status PCBCALL PCB_FS_openat_ne(
     PCB_File_Options options
 ) PCB_Nonnull_Arg(1, 3);
 /**
+ * @brief Read data from a `f`ile into `buf`, reading at most `bufsize` bytes.
+ *
+ * The optional `offset` parameter specifies the position relative to the start
+ * of the file from which data should be read.
+ *
+ * NOTE: Semantics of using `offset` differ from Windows and POSIX.
+ * On Windows, the file offset is updated to `offset + <bytes read>` after a successful read.
+ * On POSIX, however, the file offset is not updated.
+ * Portable applications SHOULD use either only the system-maintained offset
+ * (in which case `offset` should always be NULL) or only their own offset
+ * (in which case `offset` should always be non-NULL).
+ *
+ * @return `PCB_OK64(`N == <bytes read>`)` on success; check with `PCB_ISOK()`.
+ * If `N == 0`, there is no more data available to read from the `f`ile.
+ *
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEBADH: `f.handle` is not a valid file handle.
+ *   - PCB_CEACCES:
+ *      `f` is write-only, or (POSIX) `f.handle` is a dangling file descriptor.
+ *   - PCB_CEINVAL:
+ *      When using direct I/O, one of {`buf`, `bufsize`, `*offset`} is misaligned.
+ *   - PCB_CEFAULT: `buf[0..bufsize]` is not a valid address range.
+ * - I/O domain:
+ *   - PCB_IOERR_LOWLEVEL: No more useful info.
+ * - FS domain:
+ *   - PCB_FSERR_ISDIR: `f` refers to a directory.
+ * - POSIX domain (POSIX): see read(2) (+ lseek(2) if `offset != NULL`).
+ * - WinAPI domain (Windows): see ReadFile.
+ * In addition to errors above, other errors may be returned.
+ * The caller SHOULD NOT assume this is the full error set.
+ *
+ * Note that on a successful read `N` may be less than `bufsize`.
+ * Applications should be prepared for this if `f` does not refer to a regular file.
+ *
+ * @thread-safety MT-Safe <=> PFN+Arg(buf)
+ */
+PCBAPI PCB_Status64 PCBCALL PCB_File_read(
+    PCB_File f,
+    void* buf,
+    size_t bufsize,
+    const uint64_t *offset
+) PCB_Nonnull_Arg(2);
+/**
+ * @brief Write data to a `f`ile from `buf`, writing at most `bufsize` bytes.
+ *
+ * The optional `offset` parameter specifies the position relative to the start
+ * of the file to which data should be written.
+ * However, see the NOTE in `PCB_File_read` before use.
+ *
+ * @return `PCB_OK64(`N == <bytes written>`)` on success; check with `PCB_ISOK()`.
+ *
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEBADH: `f.handle` is not a valid file handle.
+ *   - PCB_CEACCES:
+ *      `f` is read-only, or (POSIX) `f.handle` is a dangling file descriptor.
+ *   - PCB_CEINVAL:
+ *      When using direct I/O, one of {`buf`, `bufsize`, `*offset`} is misaligned.
+ *   - PCB_CE2BIG:
+ *      (POSIX) see EFBIG in write(2).
+ * - I/O domain:
+ *   - PCB_IOERR_LOWLEVEL: No more useful info.
+ *   - PCB_IOERR_BROKEN_PIPE:
+ *      `f` refers to a pipe/socket with no readers left.
+ *      This error is returned on POSIX only if the SIGPIPE signal has an
+ *      installed handler that doesn't terminate the process, or the signal is ignored.
+ * - FS domain:
+ *   - PCB_FSERR_QUOTA: Storage quota exceeded.
+ *   - PCB_FSERR_NO_SPACE: No space left on the storage device.
+ * - POSIX domain (POSIX): see write(2) (+ lseek(2) if `offset != NULL`).
+ * - WinAPI domain (Windows): see WriteFile.
+ * In addition to errors above, other errors may be returned.
+ * The caller SHOULD NOT assume this is the full error set.
+ *
+ * Note that on a successful write `N` may be less than `bufsize`.
+ * Applications MUST be prepared for this; otherwise data may be lost.
+ *
+ * A write error when using direct I/O MAY write partial data.
+ * Applications SHOULD consider the file range covered by the attempted write
+ * as inconsistent.
+ *
+ * Some filesystems, such as NFS, may fail to write data while not reporting an
+ * error immediately, instead deferring it to a subsequent write, flush or even close.
+ *
+ * @thread-safety MT-Safe <=> PFN.
+ * Note that concurrent writes to overlapping ranges is a file-level race condition.
+ */
+PCBAPI PCB_Status64 PCBCALL PCB_File_write(
+    PCB_File f,
+    const void* buf,
+    size_t bufsize,
+    const uint64_t *offset
+) PCB_Nonnull_Arg(2);
+/**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
  *
@@ -8219,10 +8314,25 @@ typedef NTSTATUS (NTAPI *PCB__NtCreateFile_pfn)(
     void* EaBuffer,
     ULONG EaLength
 );
+typedef NTSTATUS (NTAPI *PCB__NtWriteFile_pfn)(
+    HANDLE FileHandle,
+    HANDLE Event,
+    PIO_APC_ROUTINE ApcRoutine,
+    void* ApcContext,
+    IO_STATUS_BLOCK* IoStatusBlock,
+    void* Buffer,
+    ULONG Length,
+    LARGE_INTEGER* ByteOffset,
+    ULONG* Key
+);
+//Surprisingly, they have the same signature.
+typedef PCB__NtWriteFile_pfn PCB__NtReadFile_pfn;
 typedef ULONG (NTAPI *PCB__RtlNtStatusToDosError_pfn)(NTSTATUS Status);
 typedef struct {
     PCB__NtCreateFile_pfn ntCreateFile;
     PCB__RtlNtStatusToDosError_pfn rtlNtStatusToDosError;
+    PCB__NtReadFile_pfn ntReadFile;
+    PCB__NtWriteFile_pfn ntWriteFile;
 } PCB__SysOps;
 
 static PCB__SysOps PCB__sysops;
@@ -8241,6 +8351,12 @@ static void PCB__load_ntdll_pfns(void) {
 
     proc = GetProcAddress(ntdll, "RtlNtStatusToDosError");
     PCB_memcpy(&ops->rtlNtStatusToDosError, &proc, sizeof(proc));
+
+    proc = GetProcAddress(ntdll, "NtReadFile");
+    PCB_memcpy(&ops->ntReadFile, &proc, sizeof(proc));
+
+    proc = GetProcAddress(ntdll, "NtWriteFile");
+    PCB_memcpy(&ops->ntWriteFile, &proc, sizeof(proc));
 
     loaded = true;
 }
@@ -9714,6 +9830,100 @@ retry:
     }
 #else
     (void)path; (void)base;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status64 PCBCALL PCB_File_read(
+    PCB_File f, void* buf, size_t bufsize, const uint64_t *offset
+) {
+    PCB_CHECK_NULL(buf, PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+#if PCB_PLATFORM_WINDOWS
+    if(bufsize > ULONG_MAX) bufsize = ULONG_MAX;
+    PCB__load_ntdll_pfns();
+    IO_STATUS_BLOCK iosb = PCB_ZEROED;
+    LARGE_INTEGER byte_offset;
+    if(offset != NULL) byte_offset.QuadPart = *offset;
+    NTSTATUS status = PCB__sysops.ntReadFile(
+        f.handle,
+        NULL/*event*/, NULL/*APC Routine*/, NULL/*APC Routine context*/,
+        &iosb,
+        buf,
+        (ULONG)bufsize,
+        offset == NULL ? NULL : &byte_offset,
+        NULL/*Some random key nobody cares about*/
+    );
+    switch(status) {
+      case PCB__NTSTATUS_SUCCESS: return PCB_OK64(iosb.Information);
+      //On Windows, BROKEN_PIPE on read means there are no more writers, i.e. EOF.
+      case PCB__NTSTATUS_BROKEN_PIPE: return PCB_OK64(0);
+      default: return PCB__Windows_translate_NTSTATUS_64(status);
+    }
+#elif PCB_PLATFORM_POSIX
+    ssize_t r;
+    int e;
+retry:
+    if(offset != NULL) r = pread(f.handle, buf, bufsize, (off_t)*offset);
+    else               r =  read(f.handle, buf, bufsize);
+    if(r >= 0) return PCB_OK64((size_t)r);
+    switch(e = errno) {
+      case EINTR: goto retry;
+      case EINVAL: return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+      //POSIX, in its infinite wisdom, uses EBADF for both "invalid fildes"
+      //and "not open for reading".
+      //PCB_CEBADH should be used instead, but it's impossible to check if
+      //`f.handle` is valid without a race condition and additional syscalls.
+      case EBADF:  return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+      default:     return PCB__POSIX_translate_errno_64(e);
+    }
+#else
+    (void)buf; (void)bufsize; (void)offset;
+    return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status64 PCBCALL PCB_File_write(
+    PCB_File f, const void* buf, size_t bufsize, const uint64_t *offset
+) {
+    PCB_CHECK_NULL(buf, PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+#if PCB_PLATFORM_WINDOWS
+    if(bufsize > ULONG_MAX) bufsize = ULONG_MAX;
+    PCB__load_ntdll_pfns();
+    IO_STATUS_BLOCK iosb = PCB_ZEROED;
+    LARGE_INTEGER byte_offset;
+    if(offset != NULL) byte_offset.QuadPart = *offset;
+    NTSTATUS status = PCB__sysops.ntWriteFile(
+        f.handle,
+        NULL/*event*/, NULL/*APC Routine*/, NULL/*APC Routine context*/,
+        &iosb,
+        PCB_const_cast(void*)(buf),
+        (ULONG)bufsize,
+        offset == NULL ? NULL : &byte_offset,
+        NULL/*Some random key nobody cares about*/
+    );
+    if(status == PCB__NTSTATUS_SUCCESS) return PCB_OK64(iosb.Information);
+    return PCB__Windows_translate_NTSTATUS_64(status);
+#elif PCB_PLATFORM_POSIX
+    ssize_t w;
+    int e;
+retry:
+    if(offset != NULL) w = pwrite(f.handle, buf, bufsize, (off_t)*offset);
+    else               w =  write(f.handle, buf, bufsize);
+    if(w >= 0) return PCB_OK64((size_t)w);
+    switch(e = errno) {
+      case EINTR: goto retry;
+      case EINVAL: return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEINVAL);
+      //POSIX, in its infinite wisdom, uses EBADF for both "invalid fildes"
+      //and "not open for writing".
+      //PCB_CEBADH should be used instead, but it's impossible to check if
+      //`f.handle` is valid without a race condition and additional syscalls.
+      case EBADF: return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEACCES);
+      default:    return PCB__POSIX_translate_errno_64(e);
+    }
+#else
+    (void)buf; (void)bufsize; (void)offset;
     return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
