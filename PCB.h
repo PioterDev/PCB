@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 2
+#define PCB_VERSION_PATCH 3
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -10925,7 +10925,9 @@ defer:
 PCB_Status PCB_FS_Exists(const char *path) {
     PCB_File_Info info;
     PCB_Status result = PCB_File_Info_get(&info, path, true);
-    if(!PCB_ISOK(result)) return result;
+    if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENORES)
+        return PCB_OK(false);
+    else if(!PCB_ISOK(result)) return result;
     return PCB_OK(info.type != PCB_FILETYPE_NONE);
 }
 
