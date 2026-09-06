@@ -34,11 +34,11 @@
 #endif //PCB_VERSION_MAJOR
 
 #ifndef PCB_VERSION_MINOR
-#define PCB_VERSION_MINOR 9
+#define PCB_VERSION_MINOR 10
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 22
+#define PCB_VERSION_PATCH 0
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -273,11 +273,25 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE 1
 #endif //_GNU_SOURCE
+#elif PCB_PLATFORM_AIX
+//See "General Programming Concepts: Writing and Debugging Programs"
+//at https://www.ibm.com/docs/en/aix/5.3.0?topic=aix-older-versions.
+//#defined for O_DIRECT.
+#ifndef _ALL_SOURCE
+#define _ALL_SOURCE 1
+#endif //_ALL_SOURCE
 #else
 #if !defined(_XOPEN_SOURCE) && !defined(_POSIX_C_SOURCE)
 #define _XOPEN_SOURCE 700
 #endif //only #define if no feature test macro is #defined
 #endif //Use _GNU_SOURCE on Linux
+
+//There is very little reason to not use the 64 bits for files, but for special
+//legitimate cases it can't be assumed that we can enable 64 bits.
+//Use this macro with care as it changes the binary layout of many library structures.
+#ifndef PCB_NO_64BIT_FILES
+#define _FILE_OFFSET_BITS 64
+#endif //PCB_NO_64BIT_FILES
 #endif //POSIX sources used locally
 
 //BSD variants/systems based on BSD implement similar APIs and
