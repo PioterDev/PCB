@@ -3854,6 +3854,25 @@ typedef enum {
     PCB_FILE_FLUSH_MODE_DATA_ONLY_NOSYNC,
 } PCB_File_Flush_Mode;
 
+typedef struct { PCB_File in, out, err; } PCB_Stdio_Handles;
+/**
+ * @brief Initializer for `PCB_Stdio_Handles`.
+ * MUST be used instead of standard zero-initialization, otherwise
+ * the behavior is incorrect.
+ */
+#define PCB_Stdio_Handles_init() \
+    PCB_CLITERAL(PCB_Stdio_Handles){PCB_File_init(), PCB_File_init(), PCB_File_init()}
+
+typedef struct {
+    PCB_File read_end, write_end;
+} PCB_Pipe;
+/**
+ * @brief Initializer for `PCB_Pipe`.
+ * MUST be used instead of standard zero-initialization, otherwise
+ * the behavior is incorrect.
+ */
+#define PCB_Pipe_init() PCB_CLITERAL(PCB_Pipe){PCB_File_init(), PCB_File_init()}
+
 typedef struct {
     PCB_FileType type;
     uint64_t size;
@@ -4259,7 +4278,17 @@ typedef struct {
      * Initial working directory for the child process.
      */
     const PCB_FS_char *cwd;
-    void* _reserved[8];
+    /**
+     * Handles that will replace stdin, stdout and stderr in the child process.
+     * If a given handle is invalid, the parent's value is used.
+     */
+    const PCB_Stdio_Handles *redirects;
+    /**
+     * Path to the executable program.
+     * If NULL, `argv.data[0]` is used as the path instead.
+     */
+    const PCB_FS_char *program_path;
+    void* _reserved[6];
     /**
      * Arena in which arguments converted from char into PCB_FS_char types
      * are stored, if that's necessary (it is not outside of Windows).
@@ -5837,6 +5866,16 @@ PCBAPI PCB_File PCBCALL PCB_IO_get_stdout(void);
  * @brief Get the native handle to the process' standard error.
  */
 PCBAPI PCB_File PCBCALL PCB_IO_get_stderr(void);
+/**
+ * @brief Create an anonymous pipe.
+ * @param noninheritable opposite of `PCB_FILE_OPTION_INHERIT`.
+ * Since pipes are usually created for IPC, it makes sense for them to be
+ * inherited by default.
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, `PCB_STATUS_NATIVE_SYSTEM_API()` is returned.
+ * Refer to pipe(2)+fcntl(2)/pipe2(2) & CreatePipe documentation for details.
+ */
+PCBAPI PCB_Status PCBCALL PCB_IO_pipe_new(PCB_Pipe *pipe, bool noninheritable) PCB_Nonnull_Arg(1);
 
 
 
@@ -11935,6 +11974,51 @@ PCB_File PCB_IO_get_stderr(void) {
 #endif //platforms
     return f;
 }
+
+PCB_Status PCB_IO_pipe_new(PCB_Pipe *pipe, bool noninheritable) {
+#if PCB_PLATFORM_WINDOWS
+    //NOTE: We may in the future reimplement this to use NtCreateNamedPipeFile.
+    //This may be confusing at first because we're creating an anonymous pipe here.
+    //Well, there's no such thing in the NT kernel.
+    //Wine uses "\??\pipe\Win32.Pipes.<PID>.<counter>" path to create such pipes
+    //and, as of commit 0bbf48a2648, it's not thread safe because the counter
+    //is not modified atomically and the call doesn't fail if the pipe already exists.
+    //I'm not sure, however, if taking responsibility for such low level thing
+    //is a good move, hence this comment exists.
+    //@sa https://learn.microsoft.com/en-us/windows/win32/devnotes/nt-create-named-pipe-file
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = NULL;
+    sa.bInheritHandle = !noninheritable;
+    return CreatePipe(&pipe->read_end.handle, &pipe->write_end.handle, &sa, 0)
+        ? PCB_OK() : PCB_STATUS_NATIVE_SYSTEM_API();
+#elif PCB_PLATFORM_POSIX
+    int fds[2];
+#ifdef _GNU_SOURCE
+    if(pipe2(fds, (noninheritable ? O_CLOEXEC : 0)) < 0)
+        return PCB_STATUS_NATIVE_SYSTEM_API();
+#else
+    //TODO: SUSv5 standardized pipe2.
+    if(pipe(fds) < 0) return PCB_STATUS_NATIVE_SYSTEM_API();
+    if(noninheritable) {
+        for(int i = 0; i < 2; i++) {
+            if(fcntl(fds[0], F_SETFD, FD_CLOEXEC) == 0) continue;
+            int e = errno;
+            PCB_File fs[2] = { {fds[0]}, {fds[1]} };
+            PCB_File_close(fs[0]); PCB_File_close(fs[1]);
+            errno = e;
+            return PCB_STATUS(PCB_STATUS_DOMAIN_POSIX, (unsigned int)e);
+        }
+    }
+#endif //_GNU_SOURCE
+    pipe->read_end.handle  = fds[0];
+    pipe->write_end.handle = fds[1];
+    return PCB_OK();
+#else
+    (void)pipe;
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
 #endif //PCB_IMPLEMENTATION_IO
 
 
@@ -14827,15 +14911,35 @@ static const char* PCB__get_PATH(void) {
 
 //NOTE: This function should only run inside the forked child process.
 static int PCB__ShellCommand_run_POSIX(PCB_ShellCommand *cmd, PCB_RWEBuffer buf) {
-    PCB_StringView file = PCB_StringView_from_cstr(cmd->argv.data[0]);
+    PCB_StringView file;
+    if(cmd->program_path == NULL) file = PCB_StringView_from_cstr(cmd->argv.data[0]);
+    else file = PCB_StringView_from_cstr(cmd->program_path);
     int result = ENOENT;
     bool eacces = false;
+    bool search_in_PATH = PCB_StringView_findCharFrom_cstr(file, "/").length == 0;
 
     char *const *envp = PCB__ShellCommand_setup_env(cmd->env, &buf);
     if(envp == NULL) return ENOMEM;
+    if(cmd->redirects != NULL) {
+        const PCB_Stdio_Handles *r = cmd->redirects;
+        PCB_File fs[3] = {r->in, r->out, r->err};
+        for(int fd = 0, e; fd <= 2; fd++) {
+            if(fs[fd].handle < 0) continue;
+        retry:
+            if(dup2(fs[fd].handle, fd) < 0) switch(e = errno) {
+              case EINTR: goto retry;
+              default: return e;
+            }
+        }
+        //Close the now dup2(2)ed file, otherwise it will leak after exec.
+        //May be later reimplemented using `close_range` syscall to close
+        //everything after stderr as 1 syscall.
+        for(int i = 0; i <= 2; i++) if(fs[i].handle >= 2) PCB_File_close(fs[i]);
+    }
+
 
     if(cmd->cwd != NULL && chdir(cmd->cwd) < 0) return errno;
-    if(PCB_StringView_findCharFrom_cstr(file, "/").length > 0) {
+    if(!search_in_PATH) {
         execve(file.data, (char* const*)cmd->argv.data, envp);
         return errno;
     }
@@ -14918,9 +15022,20 @@ PCB_Status PCB_ShellCommand_runBg(PCB_ShellCommand *cmd, PCB_Process *p) {
         PCB_WString_destroy(&cmdline);
         return PCB_CERR_NOMEM;
     }
+    if(cmd->redirects != NULL) {
+        const PCB_Stdio_Handles *r = cmd->redirects;
+        HANDLE i = r->in.handle, o = r->out.handle, e = r->err.handle;
+        if(i == INVALID_HANDLE_VALUE || i == NULL) i = GetStdHandle(STD_INPUT_HANDLE);
+        if(o == INVALID_HANDLE_VALUE || o == NULL) o = GetStdHandle(STD_OUTPUT_HANDLE);
+        if(e == INVALID_HANDLE_VALUE || e == NULL) e = GetStdHandle(STD_ERROR_HANDLE);
+        startupinfo.hStdInput  = i;
+        startupinfo.hStdOutput = o;
+        startupinfo.hStdError  = e;
+        startupinfo.dwFlags |= STARTF_USESTDHANDLES;
+    }
 
     BOOL success = CreateProcessW(
-        NULL, //Application name
+        cmd->program_path,
         cmdline.data,
         NULL, //Process security attributes
         NULL, //Thread security attributes
