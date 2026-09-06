@@ -2351,6 +2351,14 @@ for(                                                                    \
 #endif //C++
 #endif //PCB_extern_C
 
+#ifndef PCB_reinterpret_cast
+#ifdef __cplusplus
+#define PCB_reinterpret_cast(Type) reinterpret_cast<Type>
+#else
+#define PCB_reinterpret_cast(Type) (Type)
+#endif //C++
+#endif //PCB_reinterpret_cast
+
 #ifndef PCB_const_cast
 #ifdef __cplusplus
 #define PCB_const_cast(Type) const_cast<Type>
@@ -5431,6 +5439,24 @@ PCBAPI PCB_Status PCBCALL PCB_File_close(PCB_File f);
  */
 PCBAPI PCB_Status PCBCALL PCB_File_close_invalidate(PCB_File *f) PCB_Nonnull_Arg(1);
 /**
+ * @brief Duplicate a file handle from `src` into `dst`.
+ * @param options file options to set for `*dst`.
+ * Currently only `PCB_FILE_OPTION_INHERIT` is used; other options are ignored.
+ * @return `PCB_OK()` on success; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEBADH: `f.handle` is not a valid file handle.
+ * - Process domain:
+ *   - PCB_PROCERR_LIMIT_FILE: See definition.
+ * There may be other errors returned, courtesy of Microsoft.
+ * @thread-safety MT-Safe <=> PFN
+ */
+PCBAPI PCB_Status PCBCALL PCB_File_dup(
+    PCB_File *dst,
+    PCB_File src,
+    PCB_File_Options options
+) PCB_Nonnull_Arg(1);
+/**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
  *
@@ -8267,6 +8293,9 @@ static PCB_ForceInline int PCB_getEndianness(void) {
 #define PCB__NTSTATUS_NOT_IMPLEMENTED (NTSTATUS)0xC0000002
 #define PCB__NTSTATUS_MEDIA_WRITE_PROTECTED (NTSTATUS)0xC00000A2
 
+//Defined as such in MinGW 16.1.0 headers, but not in MSVC headers.
+#define PCB__NtCurrentProcess() PCB_reinterpret_cast(HANDLE)((LONG_PTR)-1)
+
 #elif PCB_PLATFORM_POSIX
 #ifdef PCB_HAS_STRINGS_H
 #include <strings.h>
@@ -8510,6 +8539,16 @@ typedef NTSTATUS (NTAPI *PCB__NtFlushBuffersFileEx_pfn)(
     ULONG ParametersSize,
     IO_STATUS_BLOCK* IoStatusBLock
 );
+typedef NTSTATUS (NTAPI *PCB__NtDuplicateObject_pfn)(
+    HANDLE SourceProcessHandle,
+    HANDLE SourceHandle,
+    HANDLE TargetProcessHandle,
+    HANDLE *TargetHandle,
+    ACCESS_MASK DesiredAccess,
+    ULONG HandleAttributes,
+    ULONG Options
+);
+
 typedef struct {
     PCB__NtCreateFile_pfn ntCreateFile;
     PCB__RtlNtStatusToDosError_pfn rtlNtStatusToDosError;
@@ -8519,6 +8558,7 @@ typedef struct {
     PCB__NtSetInformationFile_pfn ntSetInformationFile;
     PCB__NtFlushBuffersFile_pfn ntFlushBuffersFile;
     PCB__NtFlushBuffersFileEx_pfn ntFlushBuffersFileEx;
+    PCB__NtDuplicateObject_pfn ntDuplicateObject;
 } PCB__SysOps;
 
 static PCB__SysOps PCB__sysops;
@@ -10324,6 +10364,34 @@ PCB_Status PCB_File_close_invalidate(PCB_File *f) {
     PCB_Status result = PCB_File_close(*f);
     if(PCB_ISOK(result)) *f = PCB_File_init();
     return result;
+}
+
+PCB_Status PCB_File_dup(PCB_File *dst, PCB_File src, PCB_File_Options options) {
+    PCB_CHECK_NULL(dst, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
+    bool inheritable = (options & PCB_FILE_OPTION_INHERIT) != 0;
+#if PCB_PLATFORM_WINDOWS
+    PCB__load_ntdll_pfns();
+    if(!PCB_File_isValid(src)) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+    NTSTATUS status = PCB__sysops.ntDuplicateObject(
+        PCB__NtCurrentProcess(),
+        src.handle,
+        PCB__NtCurrentProcess(),
+        &dst->handle,
+        0, //ignored
+        OBJ_CASE_INSENSITIVE | (inheritable ? OBJ_INHERIT : 0),
+        DUPLICATE_SAME_ACCESS
+    );
+    return PCB__Windows_translate_NTSTATUS(status);
+#elif PCB_PLATFORM_POSIX
+    if(!PCB_File_isValid(src)) return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
+    dst->handle = fcntl(src.handle, inheritable ? F_DUPFD : F_DUPFD_CLOEXEC, 0);
+    if(dst->handle < 0) return PCB__POSIX_translate_errno(errno);
+    return PCB_OK();
+#else
+    (void)src; (void)inheritable;
+    *dst = PCB_File_init();
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
 }
 
 bool PCB_mkdir(const char* path) {
