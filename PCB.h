@@ -112,7 +112,8 @@
  *
  * - PFN: The interface may access library-local globally accessible function pointers.
  *   -------------------------------------------------------------------------
- *   Safety requirement: Call any PFN-marked function once before concurrent use.
+ *   Safety requirement: Call `PCB_eagerly_load_lazily_loaded_pfns_for_thread_safety`
+ *   or any PFN-marked function once before concurrent use.
  *
  * If thread safety is not explicitly stated,
  * MT-Safe <=> Arg(<all observable modifiable arguments*>) should be assumed.
@@ -7803,6 +7804,28 @@ PCBAPI char* PCBCALL PCB_temp_strndup(const char* str, size_t n) PCB_Nonnull_Arg
  * A value of 0 is returned on platforms that are not supported.
  */
 PCBAPI size_t PCBCALL PCB_getNumberOfCores(void);
+
+/**
+ * @brief The name should be self-explanatory, but below is the concrete
+ * explanation of why this function is needed.
+ *
+ * The library uses runtime linking of various system libraries to probe for
+ * features, to avoid a load-time dependency for symbols that may not exist
+ * on the host system and to access otherwise not exposed system APIs.
+ * Because symbol lookup repeated on each function call would be expensive
+ * and potentially not thread-safe, all symbols are looked up once and
+ * the result is cached in a global object.
+ * The lookup is done either lazily on the first call to a function marked
+ * with a PFN thread safety requirement or eagerly via a call to this function.
+ * If a PFN-marked function is called from multiple threads before the lookup,
+ * it is possible for them to interleave so that one thread sees the lookup
+ * as done while another hasn't yet stored all function pointers, leading
+ * to a call to NULL. Adding synchronization is not worth the performance
+ * overhead, even for just a single atomic load.
+ *
+ * @thread-safety MT-Safe <=> PFN
+ */
+PCBAPI void PCBCALL PCB_eagerly_load_lazily_loaded_pfns_for_thread_safety(void);
 
 /* -------------------------------------------------------------- */
 /*-------------- platform-specific functions ---------------------*/
@@ -15975,7 +15998,7 @@ char* PCB_temp_strndup(const char* str, size_t n) {
 #endif //PCB_IMPLEMENTATION_ARENA
 
 //uncategorized functions should be put here
-#ifdef PCB_IMPLEMENTATION
+#ifdef PCB_IMPLEMENTATION_ANY
 size_t PCB_getNumberOfCores(void) {
 #if PCB_PLATFORM_WINDOWS
     SYSTEM_INFO sysinfo;
@@ -15987,7 +16010,16 @@ size_t PCB_getNumberOfCores(void) {
     return 0;
 #endif //platform
 }
-#endif //PCB_IMPLEMENTATION
+
+void PCB_eagerly_load_lazily_loaded_pfns_for_thread_safety(void) {
+#if PCB_PLATFORM_WINDOWS
+    PCB__load_ntdll_pfns();
+#else
+    //Currently a no-op. In the future we may do runtime linking on other
+    //platforms as well.
+#endif
+}
+#endif //PCB_IMPLEMENTATION_ANY
 
 //Section 3.7: build capability
 #ifdef PCB_IMPLEMENTATION_BUILD
