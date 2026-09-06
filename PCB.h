@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 1
+#define PCB_VERSION_PATCH 2
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -9232,6 +9232,8 @@ static PCB_StringView PCB__Result_strerror(PCB_Result e) {
       case PCB_RESULT_BUFFER_TOO_SMALL: return PCB_SV_LIT("Buffer too small");
       case PCB_RESULT_TOCTOU:
         return PCB_SV_LIT("Time-of-check-time-of-use condition was detected");
+      case PCB_RESULT_RESOURCE_MAY_HAVE_BEEN_LEAKED:
+        return PCB_SV_LIT("Resource may have been leaked");
       case PCB_RESULT_COUNT:
       default: return PCB_ZEROED_T(PCB_StringView);
     }
