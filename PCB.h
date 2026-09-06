@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 0
+#define PCB_VERSION_PATCH 1
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -8519,12 +8519,36 @@ static int PCB__SYSTEM_INFO_vercmp(
     return 0;
 }
 
+#ifdef PCB_IMPLEMENTATION_PROCESS
+#if PCB_PLATFORM_LINUX
 static bool PCB__Linux_has_pidfd(void) {
     return (PCB__SYSTEM_INFO.version.major > 5 || (
         PCB__SYSTEM_INFO.version.major == 5 &&
         PCB__SYSTEM_INFO.version.minor >= 3
     ));
 }
+#endif //Linux-specific
+
+static bool PCB__POSIX_has_fexecve(void) {
+    //https://www.gnu.org/software/gnulib/manual/html_node/fexecve.html
+#if PCB_PLATFORM_LINUX
+    return true;
+#elif PCB_PLATFORM_FREEBSD
+    return PCB__SYSTEM_INFO.version.major >= 8;
+#elif PCB_PLATFORM_NETBSD
+    //https://man.netbsd.org/NetBSD-10.0/execve.2
+    return PCB__SYSTEM_INFO.version.major >= 10;
+#elif PCB_PLATFORM_SOLARIS
+    //https://docs.oracle.com/cd/E23824_01/index.html
+    return PCB__SYSTEM_INFO.version.major >= 11;
+#elif PCB_PLATFORM_AIX
+    //https://www.ibm.com/docs/en/aix/5.3.0?topic=aix-older-versions
+    return PCB__SYSTEM_INFO.version.major >= 7;
+#else
+    return false;
+#endif //platforms
+}
+#endif //PCB_IMPLEMENTATION_PROCESS
 #elif PCB_PLATFORM_WINDOWS
 static struct {
     OSVERSIONINFOEXW version;
@@ -14902,6 +14926,26 @@ static char* const* PCB__ShellCommand_setup_env(
     return env;
 }
 
+static const char* PCB__ShellCommand_get_abspath(const char *path, PCB_RWEBuffer *buf) {
+    size_t path_bytes = PCB_strlen(path) + 1, cwdlen;
+    char *cwd = getcwd((char*)buf->data + buf->length, buf->capacity - buf->length);
+    if(cwd == NULL) return NULL;
+    cwdlen = PCB_strlen(cwd);
+    buf->length += cwdlen;
+    if(cwd[cwdlen-1] != '/') {
+        cwd[cwdlen++] = '/';
+        ++buf->length;
+    }
+    if(buf->length + path_bytes > buf->capacity) goto nomem;
+    buf->length += path_bytes;
+    PCB_memcpy(cwd + cwdlen, path, path_bytes);
+    //Let the kernel normalize the path.
+    return cwd;
+nomem:
+    errno = ENOMEM;
+    return NULL;
+}
+
 static const char* PCB__get_PATH(void) {
     extern char **environ;
     for(char **envp = environ; *envp; ++envp)
@@ -14937,8 +14981,29 @@ static int PCB__ShellCommand_run_POSIX(PCB_ShellCommand *cmd, PCB_RWEBuffer buf)
         for(int i = 0; i <= 2; i++) if(fs[i].handle >= 2) PCB_File_close(fs[i]);
     }
 
+    if(cmd->cwd != NULL) {
+        if(PCB_isAbsolutePath(file.data) || search_in_PATH) {
+            if(chdir(cmd->cwd) < 0) return errno;
+        } else if(PCB__POSIX_has_fexecve()) {
+#if PCB_PLATFORM_LINUX
+            int fd = open(file.data, O_PATH | O_CLOEXEC);
+#else
+            int fd = open(file.data, O_EXEC | O_CLOEXEC);
+#endif //Linux doesn't have O_EXEC
+            if(fd < 0) return errno;
+            if(chdir(cmd->cwd) < 0) return errno;
+            //TODO: runtime linking for fexecve
+            fexecve(fd, (char* const*)cmd->argv.data, envp);
+            return errno;
+        } else {
+            //This replacement is safe because, if we got here, `search_in_PATH`
+            //was false, so `file.length` doesn't need to be updated.
+            file.data = PCB__ShellCommand_get_abspath(file.data, &buf);
+            if(file.data == NULL) return errno;
+            if(chdir(cmd->cwd) < 0) return errno;
+        }
+    }
 
-    if(cmd->cwd != NULL && chdir(cmd->cwd) < 0) return errno;
     if(!search_in_PATH) {
         execve(file.data, (char* const*)cmd->argv.data, envp);
         return errno;
