@@ -15035,6 +15035,7 @@ static int PCB__ShellCommand_run_POSIX(PCB_ShellCommand *cmd, PCB_RWEBuffer buf)
     while(true) {
         size_t path_bytes, comp_len;
         PCB_StringView comp_end = PCB_StringView_findCharFrom(path, colon);
+        PCB_assert(comp_end.data != NULL);
         if(!*comp_end.data) break;
         comp_len = (size_t)(comp_end.data - path.data);
         path_bytes = comp_len + 1/*'/'*/ + file.length+1/*'\0'*/;
