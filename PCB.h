@@ -5457,6 +5457,24 @@ PCBAPI PCB_Status PCBCALL PCB_File_dup(
     PCB_File_Options options
 ) PCB_Nonnull_Arg(1);
 /**
+ * @brief Get the integral multiple of alignment required for I/O by the `f`ile.
+ * @return `PCB_OK(<value>)`; check with `PCB_ISOK()`.
+ * On error, the returned status can hold the following domain-code pairs:
+ * - Common domain:
+ *   - PCB_CEBADH: `f.handle` is not a valid file handle.
+ *   - PCB_CENOMEM: Insufficient kernel memory.
+ * Other, unspecified errors may also be returned.
+ * @thread-safety MT-Safe <=> PFN
+ *
+ * @notes The I/O operation following a call to this function may still fail
+ * due to misalignment. This might be the case if the system doesn't expose
+ * a dedicated way to query alignment, in which case the function falls back
+ * to a more common interface, which may report an incorrect value.
+ * Applications SHOULD be prepared for this.
+ */
+PCBAPI PCB_Status PCBCALL PCB_File_query_alignment(PCB_File f);
+
+/**
  * @brief Creates a directory in the given `path`.
  * Returns whether the operation succeeded.
  *
@@ -10390,6 +10408,42 @@ PCB_Status PCB_File_dup(PCB_File *dst, PCB_File src, PCB_File_Options options) {
 #else
     (void)src; (void)inheritable;
     *dst = PCB_File_init();
+    return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
+#endif //platforms
+}
+
+PCB_Status PCB_File_query_alignment(PCB_File f) {
+#if PCB_PLATFORM_WINDOWS
+    const FILE_INFORMATION_CLASS aligninfo = (FILE_INFORMATION_CLASS)17;
+    ULONG align;
+    IO_STATUS_BLOCK iosb;
+    PCB__load_ntdll_pfns();
+    NTSTATUS st = PCB__sysops.ntQueryInformationFile(f.handle, &iosb, &align, sizeof(align), aligninfo);
+    if(st != PCB__NTSTATUS_SUCCESS) return PCB__Windows_translate_NTSTATUS(st);
+    return PCB_OK(align);
+#elif PCB_PLATFORM_POSIX
+#if PCB_PLATFORM_LINUX
+    if(PCB__SYSTEM_INFO_vercmp(6, 1, 0) >= 0) {
+        struct statx buf;
+        long ret = syscall(SYS_statx, f.handle, "", AT_EMPTY_PATH | AT_STATX_SYNC_AS_STAT, STATX_DIOALIGN, &buf);
+        if(ret == 0) {
+            uint32_t max_align = buf.stx_dio_mem_align > buf.stx_dio_offset_align
+                ? buf.stx_dio_mem_align : buf.stx_dio_offset_align;
+            return PCB_OK(max_align);
+        }
+        //musl does not set errno, while glibc does.
+        //NOTE: EPERM == 1. Thankfully, statx doesn't return it.
+        return PCB__POSIX_translate_errno(ret == -1 ? errno : -(int)ret);
+    }
+    //open(2) recommends using ioctl(2) to query alignment, but that requires
+    //somehow getting an fd to the block device housing `f`, as using a regular
+    //file's descriptor doesn't work, which is non-trivial.
+#endif //Linux-specific
+    struct stat st;
+    if(fstat(f.handle, &st) < 0) return PCB__POSIX_translate_errno(errno);
+    return PCB_OK((uint32_t)st.st_blksize);
+#else
+    (void)f;
     return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
