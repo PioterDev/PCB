@@ -50,6 +50,77 @@
 #endif //C89/90?
 
 //Section 0: The preamble.
+/* -------------------------------------------------------------------------
+ * ----------------------------- Thread safety -----------------------------
+ * -------------------------------------------------------------------------
+ *
+ * This section describes the various thread safety terms used within
+ * the documentation.
+ * NOTE: This section reuses certain terms described in
+ * the Linux attributes(7) manual, which itself is based on glibc's
+ * "POSIX Safety Concepts" manual. Further background on the topics described
+ * here can be found in both of the mentioned manuals.
+ *
+ * - MT-Safe ("Multi Thread" Safe): The interface can be safely used from
+ *   multiple threads without additional constraints.
+ *
+ * - MT-Unsafe ("Multi Thread" Unsafe): The interface cannot be safely used
+ *   from multiple threads.
+ *
+ * - MT-Safe <=> R1+R2+...: The interface is MT-Safe, if and only if
+ *   R1, R2, ... requirements are met.
+ *
+ * - MT-Safe <=> `expr`: The interface is MT-Safe, if and only if
+ *   `expr` will evaluate as true.
+ *
+ * - MT-Safe <=> A {comment}: The comment refers to requirement A.
+ *
+ * Conditional MT-Safety requirements:
+ * - Arg(arg): The argument `arg` passed to a function cannot be safely
+ *   modified from multiple threads.
+ *   -------------------------------------------------------------------------
+ *   Safety requirement: Concurrent calls to functions with the same `arg`
+ *   MUST be externally synchronized.
+
+ * - Init: The function performs an MT-Unsafe initialization when it's first called.
+ *   -------------------------------------------------------------------------
+ *   Safety requirement: Call the function once prior to concurrent use.
+ *
+ * - Env: The interface may access the environment.
+ *   -------------------------------------------------------------------------
+ *   Safety requirement: Make sure that the environment is not concurrently
+ *   modified when using the interface.
+ *   -------------------------------------------------------------------------
+ *   On some platforms, for example Windows, the environment *can* be safely
+ *   accessed without assuming its immutability. If the interface can arrange
+ *   that, it shall be stated as such and the requirement is lifted on that platform.
+ *
+ * - Locale: The interface may access the global locale.
+ *   -------------------------------------------------------------------------
+ *   Safety requirement: Make sure that the global locale is not concurrently
+ *   modified when using the interface.
+ *
+ * - CWD: The interface may access the process' working directory.
+ *   -------------------------------------------------------------------------
+ *   Safety requirement: Make sure that the working directory is not concurrently
+ *   modified when using the interface.
+ *   -------------------------------------------------------------------------
+ *   POSIX systems don't have this problem as getcwd & chdir are required to be
+ *   thread-safe. However, even if access itself is safe, it doesn't mean that
+ *   concurrently reading & writing the working directory will yield correct
+ *   (from the POV of userspace) results.
+ *
+ * - PFN: The interface may access library-local globally accessible function pointers.
+ *   -------------------------------------------------------------------------
+ *   Safety requirement: Call any PFN-marked function once before concurrent use.
+ *
+ * If thread safety is not explicitly stated,
+ * MT-Safe <=> Arg(<all observable modifiable arguments*>) should be assumed.
+ * In certain cases Env, Locale & CWD may be conservatively added if the caller
+ * isn't sure the environment, locale and CWD are not accessed.
+ * * - typically means "passed by non-const reference/pointer" and includes all
+ * values not regarded as const that are reachable through the pointer.
+ */
 
 
 //Section 1: The preprocessor shenanigans
@@ -5000,8 +5071,7 @@ PCBAPI PCB_Status PCBCALL PCB_FS_Iterator_init(
  *
  * All applications must be prepared for the file type to be reported as "unknown".
  *
- * @thread-safety Concurrent calls to this function with the same `it` are not safe;
- * use external synchronization.
+ * @thread-safety
  * (POSIX) On ancient libc implementations concurrent calls to `readdir(3)`
  * with different streams are not safe.
  * Unless you're targeting a very old system, this is not a problem.
@@ -7037,6 +7107,10 @@ PCBAPI size_t PCBCALL PCB_getNumberOfCores(void);
 /*-------------- platform-specific functions ---------------------*/
 /* -------------------------------------------------------------- */
 #if PCB_PLATFORM_WINDOWS
+/**
+ * @brief Check whether Win32 APIs support opting out of the MAX_PATH limitation.
+ * @thread-safety MT-Safe <=> Init
+ */
 PCBAPI bool PCBCALL PCB_Windows_can_opt_out_of_MAX_PATH(void);
 PCBAPI bool PCBCALL PCB_Windows_running_under_WINE(void);
 #endif //platform-specific functions
