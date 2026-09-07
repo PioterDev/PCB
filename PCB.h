@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 3
+#define PCB_VERSION_PATCH 4
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -14539,6 +14539,9 @@ void PCB_ShellCommand_reset(PCB_ShellCommand *cmd) {
     PCB_CHECK_NULL(cmd,);
     PCB_Vec_reset(&cmd->argv);
     cmd->env = PCB_ZEROED_T(PCB_FS_CStringsView);
+    cmd->cwd = NULL;
+    cmd->redirects = NULL;
+    cmd->program_path = NULL;
     if(cmd->arena != NULL && cmd->_mark != NULL)
         PCB_Arena_restore_to(cmd->arena, cmd->_mark);
 }
