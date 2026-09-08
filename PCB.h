@@ -4983,6 +4983,34 @@ typedef uint64_t PCB_BuildOptions;
 #define PCB_BUILDOPTION_LOCAL_SYSTEM ((PCB_BuildOptions)1 << 10)
 //TODO: more options
 
+typedef uint64_t PCB_BuildContext_ResetFlags;
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_OBJECT_FILES    ((PCB_BuildContext_ResetFlags)1 << 0)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_INCLUDES        ((PCB_BuildContext_ResetFlags)1 << 1)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_LIBS            ((PCB_BuildContext_ResetFlags)1 << 2)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STATIC_LIBS     ((PCB_BuildContext_ResetFlags)1 << 3)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DIAGNOSTICS     ((PCB_BuildContext_ResetFlags)1 << 4)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEBUG_FLAGS     ((PCB_BuildContext_ResetFlags)1 << 5)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_OPTIMIZATION_FLAGS ((PCB_BuildContext_ResetFlags)1 << 6)
+//Dang it!!                                               ^
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEFINES         ((PCB_BuildContext_ResetFlags)1 << 7)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_UNDEFINES       ((PCB_BuildContext_ResetFlags)1 << 8)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER        ((PCB_BuildContext_ResetFlags)1 << 9)
+//NOTE: Refers to `otherCompilerFlags`.
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER_FLAGS  ((PCB_BuildContext_ResetFlags)1 << 10)
+//NOTE: Refers to `otherLinkerFlags`.
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_LINKER_FLAGS    ((PCB_BuildContext_ResetFlags)1 << 11)
+//NOTE: Refers to `target`, not `outputPath`.
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_TARGET          ((PCB_BuildContext_ResetFlags)1 << 12)
+//NOTE: Refers to `PCB_BuildContext_flags`.
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_FLAGS           ((PCB_BuildContext_ResetFlags)1 << 13)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STANDARD        ((PCB_BuildContext_ResetFlags)1 << 14)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH      ((PCB_BuildContext_ResetFlags)1 << 15)
+
+typedef struct {
+    PCB_BuildContext_ResetFlags flags;
+} PCB_BuildContext_ResetOptions;
+
+
 
 /**
  * @brief Check whether `f` supports ANSI escape sequences.
@@ -7116,6 +7144,7 @@ PCBAPI int PCBCALL PCB_CStrings_append_multiple(PCB_CStrings *cstrs, const char 
 PCBAPI int PCBCALL PCB_CStringPairs_append(PCB_CStringPairs *pairs, PCB_CStringPair pair) PCB_Nonnull_Arg(1);
 
 PCBAPI int PCBCALL PCB_FS_CStrings_append(PCB_FS_CStrings *cstrs, const PCB_FS_char* cstr) PCB_Nonnull_Arg(1);
+PCBAPI int PCBCALL PCB_FS_CStrings_append_multiple(PCB_FS_CStrings *cstrs, const PCB_FS_char *const *data, size_t n) PCB_Nonnull_Arg(1, 2);
 
 /**
  * @brief Appends `arg`, which may be NULL, to `cmd`.
@@ -8137,9 +8166,21 @@ PCBAPI PCB_Status PCBCALL PCB_BuildContext_configure(
 PCBAPI PCB_BuildContext PCBCALL PCB_BuildContext_create(PCB_BuildOptions options);
 /**
  * @brief Resets `context` so it can be used in another build.
- * Identical to `PCB_BuildContext_destroy`, but memory is not deallocated.
+ * Equivalent to `PCB_BuildContext_reset_opt` with a zero-initialized `*opt`.
  */
 PCBAPI void PCBCALL PCB_BuildContext_reset(PCB_BuildContext* context) PCB_Nonnull_Arg(1);
+/**
+ * @brief Resets `context` so it can be used in another build.
+ * The additional `opt` structure contains additional information about which
+ * fields to reset (or not) and how that differ from the default reset behavior.
+ * By default, all fields are reset.
+ * To reset using default options, pass a zeroed-out `*opt`
+ * or use `PCB_BuildContext_reset`.
+ */
+PCBAPI void PCBCALL PCB_BuildContext_reset_opt(
+    PCB_BuildContext* context,
+    const PCB_BuildContext_ResetOptions* opt
+) PCB_Nonnull_Arg(1, 2);
 /**
  * @brief Destroys the passed `context`.
  * Frees any memory allocated by PCB functions that
@@ -14056,6 +14097,17 @@ int PCB_FS_CStrings_append(PCB_FS_CStrings *cstrs, const PCB_FS_char* cstr) {
     return res;
 }
 
+int PCB_FS_CStrings_append_multiple(
+    PCB_FS_CStrings *cstrs, const PCB_FS_char *const *data, size_t n
+) {
+    PCB_CHECK_NULL(cstrs, -1);
+    PCB_CHECK_NULL(data,  -1);
+    int res = PCB__FS_CStrings_reserve(cstrs, n);
+    if(res != PCB_VEC_OK) return res;
+    PCB_Vec_do_append_multiple(cstrs, data, n);
+    return res;
+}
+
 int PCB_CStrings_append_variadic(PCB_CStrings *cstrs, ...) {
     PCB_CHECK_NULL(cstrs, -1);
     va_list args;
@@ -17372,26 +17424,50 @@ PCB_BuildContext PCB_BuildContext_create(PCB_BuildOptions options) {
 }
 
 void PCB_BuildContext_reset(PCB_BuildContext* context) {
+    PCB_BuildContext_ResetOptions opt = PCB_ZEROED;
+    PCB_BuildContext_reset_opt(context, &opt);
+}
+
+void PCB_BuildContext_reset_opt(
+    PCB_BuildContext* context, const PCB_BuildContext_ResetOptions* opt
+) {
     PCB_CHECK_SELF(context, );
-    context->compiler.kind = PCB_COMPILER_RT_UNKNOWN;
-    context->compiler.version = 0;
-    context->compiler.path = NULL;
-    context->buildPath = NULL;
+    PCB_CHECK_NULL(opt, );
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER)) {
+        context->compiler.kind    = PCB_COMPILER_RT_UNKNOWN;
+        context->compiler.version = 0;
+        context->compiler.path    = NULL;
+    }
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH))
+        context->buildPath = NULL;
     context->outputPath = NULL;
-    context->target.arch = PCB_ARCH_RT_UNKNOWN;
-    context->target.platform = PCB_PLATFORM_RT_UNKNOWN;
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_TARGET)) {
+        context->target.arch     = PCB_ARCH_RT_UNKNOWN;
+        context->target.platform = PCB_PLATFORM_RT_UNKNOWN;
+    }
     PCB_Vec_reset(&context->sources);
-    PCB_Vec_reset(&context->includes);
-    PCB_Vec_reset(&context->libs);
-    PCB_Vec_reset(&context->staticLibs);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_INCLUDES))
+        PCB_Vec_reset(&context->includes);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_LIBS))
+        PCB_Vec_reset(&context->libs);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_STATIC_LIBS))
+        PCB_Vec_reset(&context->staticLibs);
     PCB_Vec_reset(&context->librarySearchPaths);
-    PCB_Vec_reset(&context->diagnosticFlags);
-    PCB_Vec_reset(&context->debugFlags);
-    PCB_Vec_reset(&context->optimizationFlags);
-    PCB_Vec_reset(&context->preprocessorFlags.defines);
-    PCB_Vec_reset(&context->preprocessorFlags.undefines);
-    PCB_Vec_reset(&context->otherCompilerFlags);
-    PCB_Vec_reset(&context->otherLinkerFlags);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_DIAGNOSTICS))
+        PCB_Vec_reset(&context->diagnosticFlags);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEBUG_FLAGS))
+        PCB_Vec_reset(&context->debugFlags);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_OPTIMIZATION_FLAGS))
+        PCB_Vec_reset(&context->optimizationFlags);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEFINES))
+        PCB_Vec_reset(&context->preprocessorFlags.defines);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_UNDEFINES))
+        PCB_Vec_reset(&context->preprocessorFlags.undefines);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER_FLAGS))
+        PCB_Vec_reset(&context->otherCompilerFlags);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_LINKER_FLAGS))
+        PCB_Vec_reset(&context->otherLinkerFlags);
+
     PCB_String_reset(&context->currentSourcePath);
     PCB_String_reset(&context->currentBuildPath);
     PCB_ShellCommand_reset(&context->commandBuffer);
@@ -17399,9 +17475,13 @@ void PCB_BuildContext_reset(PCB_BuildContext* context) {
         PCB_Process_destroy(process);
     PCB_Vec_reset(&context->processes);
     PCB_Vec_reset(&context->sourceFiles);
-    PCB_Vec_reset(&context->objectFiles);
-    context->standard = 0;
-    context->flags.all = 0;
+
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_OBJECT_FILES))
+        PCB_Vec_reset(&context->objectFiles);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_STANDARD))
+        context->standard = 0;
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_FLAGS))
+        context->flags.all = 0;
 
     PCB_Arena_restore_to(context->arena, context->mark);
 }
