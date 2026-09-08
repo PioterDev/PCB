@@ -4192,9 +4192,14 @@ typedef PCB_WCStringsView PCB_FS_CStringsView;
 #define PCB_FS_String_endsWith_sv PCB_WString_endsWith_sv
 #define PCB_FS_String_pop PCB_WString_pop
 #define PCB_FS_String_pop_many PCB_WString_pop_many
+
 #define PCB_FS_StringView_from_cstr PCB_WStringView_from_cstr
 #define PCB_FS_StringView_from_parts PCB_WStringView_from_parts
 #define PCB_FS_StringView_findCharFrom_n PCB_WStringView_findCharFrom_n
+#define PCB_FS_StringView_startsWith PCB_WStringView_startsWith
+#define PCB_FS_StringView_startsWith_cstr PCB_WStringView_startsWith_cstr
+#define PCB_FS_StringView_endsWith PCB_WStringView_endsWith
+#define PCB_FS_StringView_endsWith_cstr PCB_WStringView_endsWith_cstr
 #else
 typedef char PCB_FS_char;
 typedef PCB_String PCB_FS_String;
@@ -4241,9 +4246,14 @@ typedef PCB_CStringsView PCB_FS_CStringsView;
 #define PCB_FS_String_endsWith_sv PCB_String_endsWith_sv
 #define PCB_FS_String_pop PCB_String_pop
 #define PCB_FS_String_pop_many PCB_String_pop_many
+
 #define PCB_FS_StringView_from_cstr PCB_StringView_from_cstr
 #define PCB_FS_StringView_from_parts PCB_StringView_from_parts
 #define PCB_FS_StringView_findCharFrom_n PCB_StringView_findCharFrom_n
+#define PCB_FS_StringView_startsWith PCB_StringView_startsWith
+#define PCB_FS_StringView_startsWith_cstr PCB_StringView_startsWith_cstr
+#define PCB_FS_StringView_endsWith PCB_StringView_endsWith
+#define PCB_FS_StringView_endsWith_cstr PCB_StringView_endsWith_cstr
 #endif //Microsoft made a brilliant decision to bet everything on UCS-2.
        //Then came codepoints outside of BMP...
        //@sa https://www.moria.us/articles/wchar-is-a-historical-accident/
@@ -6556,6 +6566,11 @@ PCBAPI PCB_StringView PCBCALL PCB_StringView_trim_left(PCB_StringView sv);
  */
 PCBAPI PCB_StringView PCBCALL PCB_StringView_trim_right(PCB_StringView sv);
 
+PCBAPI bool PCBCALL PCB_StringView_startsWith(PCB_StringView sv, PCB_StringView other);
+PCBAPI bool PCBCALL PCB_StringView_startsWith_cstr(PCB_StringView sv, const char* PCB_restrict other) PCB_Nonnull_Arg(2);
+PCBAPI bool PCBCALL PCB_StringView_endsWith(PCB_StringView sv, PCB_StringView other);
+PCBAPI bool PCBCALL PCB_StringView_endsWith_cstr(PCB_StringView sv, const char* PCB_restrict other) PCB_Nonnull_Arg(2);
+
 /**
  * @brief Get the length of the Unicode codepoint in `sv` from byte (!)
  * at index `index`.
@@ -6825,6 +6840,10 @@ PCBAPI bool PCBCALL PCB_WString_endsWith_sv(const PCB_WString* str, PCB_WStringV
 PCBAPI wchar_t PCBCALL PCB_WString_pop(PCB_WString* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t PCBCALL PCB_WString_pop_many(PCB_WString* PCB_restrict str, size_t howMany, wchar_t* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+PCBAPI bool PCBCALL PCB_WStringView_startsWith(PCB_WStringView sv, PCB_WStringView other);
+PCBAPI bool PCBCALL PCB_WStringView_startsWith_cstr(PCB_WStringView sv, const wchar_t* PCB_restrict other) PCB_Nonnull_Arg(2);
+PCBAPI bool PCBCALL PCB_WStringView_endsWith(PCB_WStringView sv, PCB_WStringView other);
+PCBAPI bool PCBCALL PCB_WStringView_endsWith_cstr(PCB_WStringView sv, const wchar_t* PCB_restrict other) PCB_Nonnull_Arg(2);
 //See `PCB_U(16|32)String_GetCodepoint`.
 PCBAPI PCB_Codepoint PCBCALL PCB_WStringView_GetCodepoint(PCB_WStringView sv, size_t index) PCB_PureFn;
 //See `PCB_U(16|32)String_GetCodepoint_unchecked`.
@@ -6868,6 +6887,10 @@ PCBAPI bool    PCBCALL PCB_U8String_endsWith_sv(const PCB_U8String* str, PCB_U8S
 PCBAPI PCB_char8 PCBCALL PCB_U8String_pop(PCB_U8String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U8String_pop_many(PCB_U8String* PCB_restrict str, size_t howMany, PCB_char8* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+PCBAPI bool PCBCALL PCB_U8StringView_startsWith(PCB_U8StringView sv, PCB_U8StringView other);
+PCBAPI bool PCBCALL PCB_U8StringView_startsWith_cstr(PCB_U8StringView sv, const PCB_char8* PCB_restrict other) PCB_Nonnull_Arg(2);
+PCBAPI bool PCBCALL PCB_U8StringView_endsWith(PCB_U8StringView sv, PCB_U8StringView other);
+PCBAPI bool PCBCALL PCB_U8StringView_endsWith_cstr(PCB_U8StringView sv, const PCB_char8* PCB_restrict other) PCB_Nonnull_Arg(2);
 //See `PCB_String_GetCodepoint`.
 PCBAPI PCB_Codepoint PCBCALL PCB_U8StringView_GetCodepoint(PCB_U8StringView sv, size_t index) PCB_PureFn;
 //See `PCB_String_GetCodepoint_unchecked`.
@@ -6911,6 +6934,10 @@ PCBAPI bool    PCBCALL PCB_U16String_endsWith_sv(const PCB_U16String* str, PCB_U
 PCBAPI PCB_char16 PCBCALL PCB_U16String_pop(PCB_U16String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U16String_pop_many(PCB_U16String* PCB_restrict str, size_t howMany, PCB_char16* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+PCBAPI bool PCBCALL PCB_U16StringView_startsWith(PCB_U16StringView sv, PCB_U16StringView other);
+PCBAPI bool PCBCALL PCB_U16StringView_startsWith_cstr(PCB_U16StringView sv, const PCB_char16* PCB_restrict other) PCB_Nonnull_Arg(2);
+PCBAPI bool PCBCALL PCB_U16StringView_endsWith(PCB_U16StringView sv, PCB_U16StringView other);
+PCBAPI bool PCBCALL PCB_U16StringView_endsWith_cstr(PCB_U16StringView sv, const PCB_char16* PCB_restrict other) PCB_Nonnull_Arg(2);
 /**
  * @brief Get the Unicode codepoint in `sv` from character at index `index`.
  * @return `PCB_Codepoint` structure with:
@@ -6981,6 +7008,10 @@ PCBAPI bool    PCBCALL PCB_U32String_endsWith_sv(const PCB_U32String* str, PCB_U
 PCBAPI PCB_char32 PCBCALL PCB_U32String_pop(PCB_U32String* PCB_restrict str) PCB_Nonnull_Arg(1);
 PCBAPI size_t  PCBCALL PCB_U32String_pop_many(PCB_U32String* PCB_restrict str, size_t howMany, PCB_char32* PCB_restrict out) PCB_Nonnull_Arg(1);
 
+PCBAPI bool PCBCALL PCB_U32StringView_startsWith(PCB_U32StringView sv, PCB_U32StringView other);
+PCBAPI bool PCBCALL PCB_U32StringView_startsWith_cstr(PCB_U32StringView sv, const PCB_char32* PCB_restrict other) PCB_Nonnull_Arg(2);
+PCBAPI bool PCBCALL PCB_U32StringView_endsWith(PCB_U32StringView sv, PCB_U32StringView other);
+PCBAPI bool PCBCALL PCB_U32StringView_endsWith_cstr(PCB_U32StringView sv, const PCB_char32* PCB_restrict other) PCB_Nonnull_Arg(2);
 //Provided for API consistency.
 PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint(PCB_U32StringView sv, size_t index) PCB_PureFn;
 PCBAPI PCB_Codepoint PCBCALL PCB_U32StringView_GetCodepoint_unchecked(PCB_U32StringView sv, size_t index) PCB_PureFn;
@@ -12939,7 +12970,7 @@ PCB__Str_eq(PCB_U32String) //PCB_U32String_eq()
 bool Type##_startsWith(const Type* str, const Type* other) { \
     PCB_CHECK_NULL(other, false); \
     if(str == other) return true; \
-    return Type##_startsWith_sv(str, PCB_View_Vec_A_T(other, svType)); \
+    return svType##_startsWith(PCB_View_Vec_A_T(str, svType), PCB_View_Vec_A_T(other, svType)); \
 }
 PCB__Str_startsWith(PCB_String,    PCB_StringView)    //PCB_String_startsWith()
 PCB__Str_startsWith(PCB_WString,   PCB_WStringView)   //PCB_WString_startsWith()
@@ -12953,12 +12984,7 @@ bool Type##_startsWith_cstr( \
     const Type* PCB_restrict str, const charType* PCB_restrict other \
 ) { \
     PCB_CHECK_SELF(str, false); \
-    PCB_CHECK_NULL(other, false); \
-\
-    if(PCB_String_isEmpty(str)) return false; \
-    const size_t len = PCB__strlen_##charType(other); \
-    if(len > str->length) return false; \
-    return !PCB_memcmp(str->data, other, len*sizeof(*other)); \
+    return Type##View_startsWith_cstr(PCB_View_Vec_A_T(str, Type##View), other); \
 }
 PCB__Str_startsWith_cstr(PCB_String,    char)       //PCB_String_startsWith_cstr()
 PCB__Str_startsWith_cstr(PCB_WString,   wchar_t)    //PCB_WString_startsWith_cstr()
@@ -12971,7 +12997,7 @@ PCB__Str_startsWith_cstr(PCB_U32String, PCB_char32) //PCB_U32String_startsWith_c
 bool Type##_endsWith(const Type* str, const Type* other) { \
     PCB_CHECK_NULL(other, false); \
     if(str == other) return true; \
-    return Type##_endsWith_sv(str, PCB_View_Vec_A_T(other, svType)); \
+    return svType##_endsWith(PCB_View_Vec_A_T(str, svType), PCB_View_Vec_A_T(other, svType)); \
 }
 PCB__Str_endsWith(PCB_String,    PCB_StringView)    //PCB_String_endsWith()
 PCB__Str_endsWith(PCB_WString,   PCB_WStringView)   //PCB_WString_endsWith()
@@ -12985,12 +13011,7 @@ bool Type##_endsWith_cstr( \
     const Type* PCB_restrict str, const charType* PCB_restrict other \
 ) { \
     PCB_CHECK_SELF(str, false); \
-    PCB_CHECK_NULL(other, false); \
-\
-    if(PCB_String_isEmpty(str)) return false; \
-    const size_t len = PCB__strlen_##charType(other); \
-    if(len > str->length) return false; \
-    return !PCB_memcmp(str->data + str->length - len, other, len*sizeof(*other)); \
+    return Type##View_endsWith_cstr(PCB_View_Vec_A_T(str, Type##View), other); \
 }
 PCB__Str_endsWith_cstr(PCB_String,    char)       //PCB_String_endsWith_cstr()
 PCB__Str_endsWith_cstr(PCB_WString,   wchar_t)    //PCB_WString_endsWith_cstr()
@@ -13004,9 +13025,7 @@ bool Type##_startsWith_sv( \
     const Type* PCB_restrict str, svType other \
 ) { \
     PCB_CHECK_SELF(str, false); \
-    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false; \
-    if(other.length > str->length) return false; \
-    return !PCB_memcmp(str->data, other.data, other.length*sizeof(*other.data)); \
+    return svType##_startsWith(PCB_View_Vec_A_T(str, svType), other); \
 }
 PCB__Str_startsWith_sv(PCB_String,    PCB_StringView)    //PCB_String_startsWith_sv()
 PCB__Str_startsWith_sv(PCB_WString,   PCB_WStringView)   //PCB_WString_startsWith_sv()
@@ -13020,12 +13039,7 @@ bool Type##_endsWith_sv( \
     const Type* PCB_restrict str, svType other \
 ) { \
     PCB_CHECK_SELF(str, false); \
-    if(PCB_String_isEmpty(str) || PCB_String_isEmpty(&other)) return false; \
-    if(other.length > str->length) return false; \
-    return !PCB_memcmp( \
-        str->data + str->length - other.length, \
-        other.data, other.length*sizeof(*other.data) \
-    ); \
+    return svType##_endsWith(PCB_View_Vec_A_T(str, svType), other); \
 }
 PCB__Str_endsWith_sv(PCB_String,    PCB_StringView)    //PCB_String_endsWith_sv()
 PCB__Str_endsWith_sv(PCB_WString,   PCB_WStringView)   //PCB_WString_endsWith_sv()
@@ -13174,6 +13188,67 @@ PCB_String PCB_String_from_CStrings(
     *cursor = '\0';
     return str;
 }
+
+#define PCB__SV_startsWith(svType) \
+bool svType##_startsWith(svType sv, svType other) { \
+    if(PCB_String_isEmpty(&sv) || PCB_String_isEmpty(&other)) return false; \
+    if(other.length > sv.length) return false; \
+    return !PCB_memcmp(sv.data, other.data, other.length*sizeof(*other.data)); \
+}
+PCB__SV_startsWith(PCB_StringView)    //PCB_StringView_startsWith()
+PCB__SV_startsWith(PCB_WStringView)   //PCB_WStringView_startsWith()
+PCB__SV_startsWith(PCB_U8StringView)  //PCB_U8StringView_startsWith()
+PCB__SV_startsWith(PCB_U16StringView) //PCB_U16StringView_startsWith()
+PCB__SV_startsWith(PCB_U32StringView) //PCB_U32StringView_startsWith()
+
+#define PCB__SV_startsWith_cstr(svType, charType) \
+bool svType##_startsWith_cstr( \
+    const svType sv, const charType* PCB_restrict other \
+) { \
+    PCB_CHECK_NULL(other, false); \
+\
+    if(PCB_String_isEmpty(&sv)) return false; \
+    const size_t len = PCB__strlen_##charType(other); \
+    if(len > sv.length) return false; \
+    return !PCB_memcmp(sv.data, other, len*sizeof(*other)); \
+}
+PCB__SV_startsWith_cstr(PCB_StringView, char)          //PCB_StringView_startsWith_cstr()
+PCB__SV_startsWith_cstr(PCB_WStringView, wchar_t)      //PCB_WStringView_startsWith_cstr()
+PCB__SV_startsWith_cstr(PCB_U8StringView, PCB_char8)   //PCB_U8StringView_startsWith_cstr()
+PCB__SV_startsWith_cstr(PCB_U16StringView, PCB_char16) //PCB_U16StringView_startsWith_cstr()
+PCB__SV_startsWith_cstr(PCB_U32StringView, PCB_char32) //PCB_U32StringView_startsWith_cstr()
+
+#define PCB__SV_endsWith(svType) \
+bool svType##_endsWith(svType sv, svType other) { \
+    if(PCB_String_isEmpty(&sv) || PCB_String_isEmpty(&other)) return false; \
+    if(other.length > sv.length) return false; \
+    return !PCB_memcmp( \
+        sv.data + sv.length - other.length, \
+        other.data, other.length*sizeof(*other.data) \
+    ); \
+}
+PCB__SV_endsWith(PCB_StringView)    //PCB_StringView_endsWith()
+PCB__SV_endsWith(PCB_WStringView)   //PCB_WStringView_endsWith()
+PCB__SV_endsWith(PCB_U8StringView)  //PCB_U8StringView_endsWith()
+PCB__SV_endsWith(PCB_U16StringView) //PCB_U16StringView_endsWith()
+PCB__SV_endsWith(PCB_U32StringView) //PCB_U32StringView_endsWith()
+
+#define PCB__SV_endsWith_cstr(svType, charType) \
+bool svType##_endsWith_cstr( \
+    const svType sv, const charType* PCB_restrict other \
+) { \
+    PCB_CHECK_NULL(other, false); \
+\
+    if(PCB_String_isEmpty(&sv)) return false; \
+    const size_t len = PCB__strlen_##charType(other); \
+    if(len > sv.length) return false; \
+    return !PCB_memcmp(sv.data + sv.length - len, other, len*sizeof(*other)); \
+}
+PCB__SV_endsWith_cstr(PCB_StringView, char)          //PCB_StringView_endsWith_cstr()
+PCB__SV_endsWith_cstr(PCB_WStringView, wchar_t)      //PCB_WStringView_endsWith_cstr()
+PCB__SV_endsWith_cstr(PCB_U8StringView, PCB_char8)   //PCB_U8StringView_endsWith_cstr()
+PCB__SV_endsWith_cstr(PCB_U16StringView, PCB_char16) //PCB_U16StringView_endsWith_cstr()
+PCB__SV_endsWith_cstr(PCB_U32StringView, PCB_char32) //PCB_U32StringView_endsWith_cstr()
 
 PCB_StringView PCB_StringView_trim_left(PCB_StringView sv) {
     if(PCB_String_isEmpty(&sv)) return PCB_ZEROED_T(PCB_StringView);
