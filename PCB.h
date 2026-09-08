@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 5
+#define PCB_VERSION_PATCH 6
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -8785,6 +8785,9 @@ static void PCB__load_ntdll_pfns(void) {
 
     proc = GetProcAddress(ntdll, "NtFlushBuffersFileEx");
     PCB_memcpy(&ops->ntFlushBuffersFileEx, &proc, sizeof(proc));
+
+    proc = GetProcAddress(ntdll, "NtDuplicateObject");
+    PCB_memcpy(&ops->ntDuplicateObject, &proc, sizeof(proc));
 
     loaded = true;
 }
