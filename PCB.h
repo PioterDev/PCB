@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 4
+#define PCB_VERSION_PATCH 5
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -10268,10 +10268,10 @@ PCB_Status64 PCBCALL PCB_File_read(
     PCB_File f, void* buf, size_t bufsize, const uint64_t *offset
 ) {
     PCB_CHECK_NULL(buf, PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
-    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
 #if PCB_PLATFORM_WINDOWS
     if(bufsize > ULONG_MAX) bufsize = ULONG_MAX;
     PCB__load_ntdll_pfns();
+    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
     IO_STATUS_BLOCK iosb = PCB_ZEROED;
     LARGE_INTEGER byte_offset;
     if(offset != NULL) byte_offset.QuadPart = *offset;
@@ -10293,6 +10293,7 @@ PCB_Status64 PCBCALL PCB_File_read(
 #elif PCB_PLATFORM_POSIX
     ssize_t r;
     int e;
+    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
 retry:
     if(offset != NULL) r = pread(f.handle, buf, bufsize, (off_t)*offset);
     else               r =  read(f.handle, buf, bufsize);
@@ -10317,10 +10318,10 @@ PCB_Status64 PCBCALL PCB_File_write(
     PCB_File f, const void* buf, size_t bufsize, const uint64_t *offset
 ) {
     PCB_CHECK_NULL(buf, PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
-    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
 #if PCB_PLATFORM_WINDOWS
     if(bufsize > ULONG_MAX) bufsize = ULONG_MAX;
     PCB__load_ntdll_pfns();
+    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
     IO_STATUS_BLOCK iosb = PCB_ZEROED;
     LARGE_INTEGER byte_offset;
     if(offset != NULL) byte_offset.QuadPart = *offset;
@@ -10338,6 +10339,7 @@ PCB_Status64 PCBCALL PCB_File_write(
 #elif PCB_PLATFORM_POSIX
     ssize_t w;
     int e;
+    if(!PCB_File_isValid(f)) return PCB_STATUS64(PCB_STATUS_DOMAIN_COMMON, PCB_CEBADH);
 retry:
     if(offset != NULL) w = pwrite(f.handle, buf, bufsize, (off_t)*offset);
     else               w =  write(f.handle, buf, bufsize);
