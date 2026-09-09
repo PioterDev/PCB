@@ -1224,7 +1224,8 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
     (PCB_COMPILER_TCC)
 #define PCB_HAS_INCLUDE __has_include
 #else
-#define PCB_HAS_INCLUDE(header) 1 //assume that #include is available
+//assume that #include is available
+#define PCB_HAS_INCLUDE(header) 1
 #endif //whether __has_include is available
 #endif //PCB_HAS_INCLUDE
 
@@ -2896,9 +2897,11 @@ for(                                                                \
 
 #ifndef PCBAPI
 #if PCB_PLATFORM_WINDOWS
-#ifdef PCB_BUILD_DYN //we are building a DLL
+//we are building a DLL
+#ifdef PCB_BUILD_DYN
 #define PCBAPI __declspec(dllexport)
-#elif defined(PCB_DYN) //we are *using* a DLL
+//we are *using* a DLL
+#elif defined(PCB_DYN)
 #define PCBAPI __declspec(dllimport)
 #endif //DLL-related options
 #else
@@ -4894,7 +4897,7 @@ struct PCB_BuildContext {
         unsigned int all;
 //temporary macro for choosing between an unnamed struct if in C11+ or a named one
 #ifndef PCB_TEMP
-#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 201112L)
+#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 201112L) || !defined(__STDC_VERSION__)
 #define PCB_TEMP fields
 #else
 #define PCB_TEMP
@@ -4988,7 +4991,7 @@ struct PCB_BuildContext {
 };
 
 #ifndef PCB_BuildContext_flags
-#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 201112L)
+#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 201112L) || !defined(__STDC_VERSION__)
 #define PCB_BuildContext_flags(ctx) (ctx)->flags.fields
 #else
 #define PCB_BuildContext_flags(ctx) (ctx)->flags
@@ -17416,8 +17419,10 @@ PCB_Status PCB_BuildContext_configure(
         //TODO: this is a compile-time thing.
 #ifdef __cplusplus
         context->standard = __cplusplus;
-#else
+#elif defined(__STDC_VERSION__)
         context->standard = __STDC_VERSION__;
+#else
+        context->standard = 1L;
 #endif //C++
 #if !defined(__STRICT_ANSI__) && defined(__GNUC__)
         PCB_BuildContext_flags(context).gnu = true;
