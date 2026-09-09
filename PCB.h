@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 8
+#define PCB_VERSION_PATCH 9
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4880,14 +4880,22 @@ struct PCB_BuildContext {
     PCB_Arena_Mark* mark;
     //Internal buffer used for accumulating source file paths for compilation.
     PCB_FS_CStrings sourceFiles;
-    /*
-     * Mapping of `sourceFiles` to corresponding build paths.
-     * You can add your own object files here, as long as you do so
-     * before calling `PCB_build_fromContext`.
-     * If you manage the build process manually, you must ensure that the mapping
-     * remains correct during the entire compilation step.
-     */
-    PCB_FS_CStrings objectFiles;
+    struct {
+        /*
+         * Mapping of `sourceFiles` to corresponding build paths.
+         * You can add your own object files here, as long as you do so
+         * before calling `PCB_build_fromContext`.
+         * If you manage the build process manually, you must ensure that the mapping
+         * remains correct during the entire compilation step.
+         * This means that if you add a source path to `sourceFiles`, you MUST either
+         * add a corresponding build path here.
+         */
+        PCB_FS_CStrings list;
+        //Arena allocator for object filepaths. You can provide your own.
+        PCB_Arena* arena;
+        //Initial state of `arena` is saved here. Do not set it yourself.
+        PCB_Arena_Mark* mark;
+    } objectFiles;
     /*
      * The language standard used to compile source files.
      * Defaults to the standard used to build this file.
@@ -17415,15 +17423,35 @@ static bool PCB__BuildContext_addOptimizationOptions(
 
 PCB_Status PCB_BuildContext_init(PCB_BuildContext* context, PCB_BuildOptions options) {
     PCB_CHECK_SELF(context, PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CEFAULT));
-    if(context->arena == NULL) { //user may have provided their own
-        context->arena = PCB_Arena_init(1 << 21);
-        if(context->arena == NULL) return PCB_CERR_NOMEM;
-    } else {
-        PCB_Arena_ref(context->arena);
+    {
+        if(context->arena == NULL) { //user may have provided their own
+            context->arena = PCB_Arena_init(1 << 21);
+            if(context->arena == NULL) goto oom;
+        } else {
+            PCB_Arena_ref(context->arena);
+        }
+        context->mark = PCB_Arena_mark(context->arena);
+        if(context->mark == NULL) goto oom_arena_mark;
     }
-    context->mark = PCB_Arena_mark(context->arena);
-    if(context->mark == NULL) return PCB_CERR_NOMEM;
+    {
+        if(context->objectFiles.arena == NULL) { //user may have provided their own
+            context->objectFiles.arena = PCB_Arena_init(1 << 16);
+            if(context->objectFiles.arena == NULL) goto oom_obj_arena;
+        } else {
+            PCB_Arena_ref(context->objectFiles.arena);
+        }
+        context->objectFiles.mark = PCB_Arena_mark(context->objectFiles.arena);
+        if(context->objectFiles.mark == NULL) goto oom_obj_arena_mark;
+    }
     return PCB_BuildContext_configure(context, options);
+oom_obj_arena_mark:
+    PCB_Arena_unref(context->objectFiles.arena);
+oom_obj_arena:
+    context->mark = NULL;
+oom_arena_mark:
+    PCB_Arena_unref(context->arena);
+oom:
+    return PCB_CERR_NOMEM;
 }
 
 PCB_Status PCB_BuildContext_configure(
@@ -17570,8 +17598,10 @@ void PCB_BuildContext_reset_opt(
     PCB_Vec_reset(&context->processes);
     PCB_Vec_reset(&context->sourceFiles);
 
-    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_OBJECT_FILES))
-        PCB_Vec_reset(&context->objectFiles);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_OBJECT_FILES)) {
+        PCB_Vec_reset(&context->objectFiles.list);
+        PCB_Arena_restore_to(context->objectFiles.arena, context->objectFiles.mark);
+    }
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_STANDARD))
         context->standard = 0;
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_FLAGS))
@@ -17610,13 +17640,23 @@ void PCB_BuildContext_destroy(PCB_BuildContext* context) {
         PCB_Process_destroy(process);
     PCB_Vec_destroy(&context->processes);
     PCB_Vec_destroy(&context->sourceFiles);
-    PCB_Vec_destroy(&context->objectFiles);
+    PCB_Vec_destroy(&context->objectFiles.list);
     context->standard = 0;
     context->flags.all = 0;
 
-    if(context->arena != NULL) PCB_Arena_restore(context->arena, context->mark);
+    if(context->arena != NULL) {
+        PCB_Arena_restore(context->arena, context->mark);
+        context->mark = NULL;
+    }
     PCB_Arena_unref(context->arena);
     context->arena = NULL;
+
+    if(context->objectFiles.arena != NULL) {
+        PCB_Arena_restore(context->objectFiles.arena, context->objectFiles.mark);
+        context->objectFiles.mark = NULL;
+    }
+    PCB_Arena_unref(context->objectFiles.arena);
+    context->objectFiles.arena = NULL;
 }
 
 PCB_Status PCB_needsRebuild(const char *src, const char *out) {
@@ -17807,9 +17847,11 @@ compile:
     }
 afterCompile:
     if(addToObjs) {
-        const PCB_FS_char *obj_ = PCB_Arena_FS_strdup(context->arena, cmd->argv.data[cmd->argv.length - 2]);
+        const PCB_FS_char *obj_ = PCB_Arena_FS_strdup(
+            context->objectFiles.arena, cmd->argv.data[cmd->argv.length - 2]
+        );
         if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
-        PCB_FS_CStrings_append(&context->objectFiles, obj_);
+        PCB_FS_CStrings_append(&context->objectFiles.list, obj_);
     }
 defer:
     if(PCB_Process_isValid(&process)) {
@@ -18065,7 +18107,7 @@ static PCB_Status PCB__BuildContext_gatherSources_dir(
     PCB__BuildContext_Sourcemap_State ss = PCB_ZEROED;
     const PCB_FS_String *src = &ss.it.current_filepath, *obj = &ss.obj.path;
     PCB_FS_CStrings *srcs = &context->sourceFiles,
-                    *objs = &context->objectFiles;
+                    *objs = &context->objectFiles.list;
     PCB_Status result = PCB__BuildContext_Sourcemap_State_init(&ss, srcdir, objdir);
     if(!PCB_ISOK(result)) return result;
 
@@ -18074,7 +18116,7 @@ static PCB_Status PCB__BuildContext_gatherSources_dir(
         result = PCB__BuildContext_Sourcemap_State_advance(&ss, context);
         if(!PCB_ISOK(result)) goto defer;
         if(result.code == PCB_LANG_NONE) break;
-        obj_ = PCB_Arena_FS_strdup(context->arena, obj->data);
+        obj_ = PCB_Arena_FS_strdup(context->objectFiles.arena, obj->data);
         if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
         if(!PCB_BuildContext_flags(context).deferModChecks) {
             result = PCB__BuildContext_needsRebuild_single(
@@ -18312,7 +18354,7 @@ static PCB_Status PCB__BuildContext_parseArchiverFlags(
     }
     PCB_ShellCommand_append_n_args_ne(
         &context->commandBuffer,
-        context->objectFiles.data, context->objectFiles.length
+        context->objectFiles.list.data, context->objectFiles.list.length
     );
     return PCB_OK();
 }
@@ -18354,7 +18396,7 @@ static PCB_Status PCB__BuildContext_parseLinkerFlags(
      //2. Object files, if any
     PCB_ShellCommand_append_n_args_ne(
         cmd,
-        context->objectFiles.data, context->objectFiles.length
+        context->objectFiles.list.data, context->objectFiles.list.length
     );
     //3. Library search paths
     static const char *const FMTS_LIBSEARCHPATHS[5] = {
@@ -18468,7 +18510,7 @@ static PCB_Status PCB__build_fromContext_single_compile(
         return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_COMPILATION_ERROR);
     }
     PCB_ShellCommand_reset(&context->commandBuffer);
-    PCB_FS_CStrings_append(&context->objectFiles, obj);
+    PCB_FS_CStrings_append(&context->objectFiles.list, obj);
     PCB_BuildContext_flags(context).rebuiltAnything = true;
     return PCB_OK();
 }
@@ -18532,10 +18574,18 @@ static PCB_Status PCB__build_fromContext_single(PCB_BuildContext *context) {
 
     result = PCB__BuildContext_parseCompilerFlags(context);
     if(!PCB_ISOK(result)) goto defer;
+
     if(PCB_BuildContext_flags(context).cwl || bt == PCB_BUILDTYPE_STATICLIB) {
         result = PCB__build_fromContext_single_compile(context, fsrc, fobj);
         if(!PCB_ISOK(result)) goto defer;
-        if(PCB_BuildContext_flags(context).cwl) PCB__return_defer(PCB_OK());
+
+        if(PCB_BuildContext_flags(context).cwl) {
+            //`fobj` may be needed after we're done here, dup it.
+            const PCB_FS_char *obj_ = PCB_Arena_FS_strdup(context->objectFiles.arena, fobj);
+            if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
+            PCB_FS_CStrings_append(&context->objectFiles.list, obj_);
+            PCB__return_defer(PCB_OK());
+        }
 
         result = PCB__BuildContext_parseArchiverFlags(context, out);
         if(!PCB_ISOK(result)) goto defer;
@@ -18664,7 +18714,7 @@ static PCB_Status PCB__BuildContext_compile(PCB_BuildContext *context) {
         }
         for(size_t i = 0; i < L; i++) {
             const PCB_FS_char *src = context->sourceFiles.data[i];
-            const PCB_FS_char *obj = context->objectFiles.data[i];
+            const PCB_FS_char *obj = context->objectFiles.list.data[i];
             result = PCB__build_file(context, src, obj, false, NULL, max_srclen);
             if(!PCB_ISOK(result)) goto defer;
         }
@@ -18813,7 +18863,7 @@ PCB_Status PCB_build_fromContext(PCB_BuildContext* context) {
         if(PCB_BuildContext_flags(context).cwl) return PCB_OK();
     }
 
-    if(context->objectFiles.length == 0) {
+    if(context->objectFiles.list.length == 0) {
         result.domain = PCB_STATUS_DOMAIN_PCB_BUILD;
         if(PCB_BuildContext_flags(context).buildType == PCB_BUILDTYPE_STATICLIB) {
             PCB_log(PCB_LOGLEVEL_ERROR, "No object files to archive, aborting build.");
