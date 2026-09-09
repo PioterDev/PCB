@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 7
+#define PCB_VERSION_PATCH 8
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -5046,30 +5046,31 @@ typedef uint64_t PCB_BuildOptions;
 
 typedef uint64_t PCB_BuildContext_ResetFlags;
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_OBJECT_FILES    ((PCB_BuildContext_ResetFlags)1 << 0)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_INCLUDES        ((PCB_BuildContext_ResetFlags)1 << 1)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_LIBS            ((PCB_BuildContext_ResetFlags)1 << 2)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STATIC_LIBS     ((PCB_BuildContext_ResetFlags)1 << 3)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DIAGNOSTICS     ((PCB_BuildContext_ResetFlags)1 << 4)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEBUG_FLAGS     ((PCB_BuildContext_ResetFlags)1 << 5)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_OPTIMIZATION_FLAGS ((PCB_BuildContext_ResetFlags)1 << 6)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCES         ((PCB_BuildContext_ResetFlags)1 << 1)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_INCLUDES        ((PCB_BuildContext_ResetFlags)1 << 2)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_LIBS            ((PCB_BuildContext_ResetFlags)1 << 3)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STATIC_LIBS     ((PCB_BuildContext_ResetFlags)1 << 4)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_LIB_SRCH_PATHS  ((PCB_BuildContext_ResetFlags)1 << 5)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DIAGNOSTICS     ((PCB_BuildContext_ResetFlags)1 << 6)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEBUG_FLAGS     ((PCB_BuildContext_ResetFlags)1 << 7)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_OPTIMIZATION_FLAGS ((PCB_BuildContext_ResetFlags)1 << 8)
 //Dang it!!                                               ^
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEFINES         ((PCB_BuildContext_ResetFlags)1 << 7)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_UNDEFINES       ((PCB_BuildContext_ResetFlags)1 << 8)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER        ((PCB_BuildContext_ResetFlags)1 << 9)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEFINES         ((PCB_BuildContext_ResetFlags)1 << 9)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_UNDEFINES       ((PCB_BuildContext_ResetFlags)1 << 10)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER        ((PCB_BuildContext_ResetFlags)1 << 11)
 //NOTE: Refers to `otherCompilerFlags`.
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER_FLAGS  ((PCB_BuildContext_ResetFlags)1 << 10)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_COMPILER_FLAGS  ((PCB_BuildContext_ResetFlags)1 << 12)
 //NOTE: Refers to `otherLinkerFlags`.
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_LINKER_FLAGS    ((PCB_BuildContext_ResetFlags)1 << 11)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_LINKER_FLAGS    ((PCB_BuildContext_ResetFlags)1 << 13)
 //NOTE: Refers to `target`, not `outputPath`.
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_TARGET          ((PCB_BuildContext_ResetFlags)1 << 12)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_TARGET          ((PCB_BuildContext_ResetFlags)1 << 14)
 //NOTE: Refers to `PCB_BuildContext_flags`.
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_FLAGS           ((PCB_BuildContext_ResetFlags)1 << 13)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STANDARD        ((PCB_BuildContext_ResetFlags)1 << 14)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH      ((PCB_BuildContext_ResetFlags)1 << 15)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCE_PROBE    ((PCB_BuildContext_ResetFlags)1 << 16)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCES         ((PCB_BuildContext_ResetFlags)1 << 17)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_FLAGS           ((PCB_BuildContext_ResetFlags)1 << 15)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STANDARD        ((PCB_BuildContext_ResetFlags)1 << 16)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH      ((PCB_BuildContext_ResetFlags)1 << 17)
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_OUTPUT_PATH     ((PCB_BuildContext_ResetFlags)1 << 18)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_EVERYTHING      ((PCB_BuildContext_ResetFlags)0x7FFFF)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCE_PROBE    ((PCB_BuildContext_ResetFlags)1 << 19)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_EVERYTHING      ((PCB_BuildContext_ResetFlags)0xFFFFFULL)
 
 typedef struct {
     PCB_BuildContext_ResetFlags flags;
@@ -17544,7 +17545,8 @@ void PCB_BuildContext_reset_opt(
         PCB_Vec_reset(&context->libs);
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_STATIC_LIBS))
         PCB_Vec_reset(&context->staticLibs);
-    PCB_Vec_reset(&context->librarySearchPaths);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_LIB_SRCH_PATHS))
+        PCB_Vec_reset(&context->librarySearchPaths);
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_DIAGNOSTICS))
         PCB_Vec_reset(&context->diagnosticFlags);
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_DEBUG_FLAGS))
