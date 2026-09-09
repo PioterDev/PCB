@@ -5068,7 +5068,8 @@ typedef uint64_t PCB_BuildContext_ResetFlags;
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH      ((PCB_BuildContext_ResetFlags)1 << 15)
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCE_PROBE    ((PCB_BuildContext_ResetFlags)1 << 16)
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCES         ((PCB_BuildContext_ResetFlags)1 << 17)
-#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_EVERYTHING      ((PCB_BuildContext_ResetFlags)0x3FFFF)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_OUTPUT_PATH     ((PCB_BuildContext_ResetFlags)1 << 18)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_EVERYTHING      ((PCB_BuildContext_ResetFlags)0x7FFFF)
 
 typedef struct {
     PCB_BuildContext_ResetFlags flags;
@@ -17527,7 +17528,8 @@ void PCB_BuildContext_reset_opt(
     }
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH))
         context->buildPath = NULL;
-    context->outputPath = NULL;
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_OUTPUT_PATH))
+        context->outputPath = NULL;
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_TARGET)) {
         context->target.arch     = PCB_ARCH_RT_UNKNOWN;
         context->target.platform = PCB_PLATFORM_RT_UNKNOWN;
