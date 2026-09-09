@@ -45,9 +45,6 @@
 #define PCB_VERSION (PCB_VERSION_MAJOR * 1000000 + PCB_VERSION_MINOR * 1000 + PCB_VERSION_PATCH)
 #endif //PCB_VERSION
 
-#if !defined(__STDC_VERSION__) && !defined(__cplusplus)
-#error "C89 is not supported"
-#endif //C89/90?
 
 //Section 0: The preamble.
 /* -------------------------------------------------------------------------
@@ -1254,9 +1251,21 @@ PCB_Unused static char PCB_MANGLE(static_assert_at_line)[expr ? 1 : -1]
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 199901L)
 #define PCB_HAS_VA_COPY
 #endif //PCB_HAS_VA_COPY
+//deprecated since C23, keywords in C++
 #if defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 202311L
 #include <stdbool.h>
-#endif //deprecated since C23, keywords in C++
+//C89 fallback for no booleans
+#elif !defined(__cplusplus) && !defined(__STDC_VERSION__) && !defined(bool)
+#ifndef PCB_BOOL_LOCALLY_DEFINED
+#define PCB_BOOL_LOCALLY_DEFINED
+//C99 doesn't define that a specific integral type is used for _Bool, so to
+//preserve ABI compatibility, we can't use either int or unsigned char and
+//have to hope that the compiler gives _Bool in C89 as an extension.
+#define bool _Bool
+#define true 1
+#define false 0
+#endif //PCB_BOOL_LOCALLY_DEFINED
+#endif //bool
 #include <stdint.h>
 #include <stddef.h>
 #include <limits.h>
@@ -8458,6 +8467,17 @@ static PCB_ForceInline int PCB_getEndianness(void) {
 
 
 #ifdef PCB_IMPLEMENTATION_ANY
+/*
+ * Lacks support for a whole lot of features.
+ * Variadic macros, "//" comments, mixing declarations with code,
+ * declaring variables in for loops, `__func__`, comments after `#endif`,
+ * compound literals, `va_copy` and various others.
+ * Variadic macros and `__func__` are a hard requirement.
+ */
+#if !defined(__STDC_VERSION__) && !defined(__cplusplus)
+#error "C89 is not supported"
+#endif //C89/90?
+
 #ifdef PCB_HAS_STDIO_H
 #include <stdio.h>
 #endif //PCB_HAS_STDIO_H
@@ -18950,6 +18970,12 @@ defer:
 #endif //C++
 
 //Remove all locally defined, potentially conflicting macros
+
+#ifdef PCB_BOOL_LOCALLY_DEFINED
+#undef bool
+#undef true
+#undef false
+#endif //PCB_BOOL_LOCALLY_DEFINED
 
 #ifdef PCB_LOCAL_STRIP_INLINE
 #undef PCB_LOCAL_STRIP_INLINE
