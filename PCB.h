@@ -17680,7 +17680,7 @@ free_src:
 }
 
 static void PCB__build_log(const PCB_FS_char *src, const PCB_FS_char *obj, size_t rpad) {
-    PCB_log(PCB_LOGLEVEL_INFO, "Building %-*" PCB_PRIFS " to %" PCB_PRIFS "...", (int)rpad, src, obj);
+    PCB_log(PCB_LOGLEVEL_INFO, "Compiling %-*" PCB_PRIFS " to %" PCB_PRIFS "...", (int)rpad, src, obj);
 }
 
 static PCB_Status PCB__build_file(
