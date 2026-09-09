@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 6
+#define PCB_VERSION_PATCH 7
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -4760,7 +4760,36 @@ typedef struct {
     const char *path;
 } PCB_Compiler;
 
-typedef struct {
+PCB_Enum(PCB_Language, uint32_t) {
+    PCB_LANG_NONE,
+    PCB_LANG_C,
+    PCB_LANG_CPP,
+    PCB_LANG_ASM,
+    PCB_LANG_COUNT,
+    PCB_LANG_CURRENT =
+#if defined(__cplusplus)
+    PCB_LANG_CPP
+#elif defined(__STDC__)
+    PCB_LANG_C
+#else
+    PCB_LANG_NONE
+#endif //languages
+};
+
+typedef struct PCB_BuildContext PCB_BuildContext;
+/**
+ * @brief Function type that, given a build context and a path to a source file,
+ * determines what language is it. See `PCB_Language`.
+ * @return `PCB_OK(<lang>)` on success.
+ * On error, the returned status is implementation-defined.
+ * @notes If an error is encountered, implementations are encouraged to log it.
+ */
+typedef PCB_Status (*PCB_BuildContext_Source_Language_Probe)(
+    const PCB_BuildContext* context,
+    PCB_FS_StringView path2srcfile
+);
+
+struct PCB_BuildContext {
     PCB_Compiler compiler;
     //Path to the build directory for caching object files.
     const char* buildPath;
@@ -4772,6 +4801,23 @@ typedef struct {
      * while individual files are not implemented yet.
      */
     PCB_CStrings sources;
+    /**
+     * This function is called on each discovered source file to determine
+     * its language. If not set, a default classification scheme, which can
+     * never fail, is used.
+     * To skip the given source file, return `PCB_OK(PCB_LANG_NONE)`.
+     *
+     * You may be interested in this if you're building a multi-language
+     * project and want to compile source files in each language with their own
+     * configuration.
+     *
+     * It is extremely unlikely that you'd want to do anything more
+     * complex than looking at the file extension, build configuration & user data,
+     * that could fail, like parsing some config files. If you need to do something
+     * like this, prefer to do so outside of this callback. Nevertheless,
+     * for the miniscule minority of use cases, it is allowed.
+     */
+    PCB_BuildContext_Source_Language_Probe sourceProbe;
     //Vector of paths to include directories.
     PCB_CStrings includes;
     //Vector of names of libraries to link dynamically.
@@ -4937,7 +4983,9 @@ typedef struct {
         } PCB_TEMP;
 #undef PCB_TEMP
     } flags;
-} PCB_BuildContext;
+    //Put whatever custom state you need in callbacks here.
+    void* user;
+};
 
 #ifndef PCB_BuildContext_flags
 #if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__+0 < 201112L)
@@ -5005,6 +5053,7 @@ typedef uint64_t PCB_BuildContext_ResetFlags;
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_FLAGS           ((PCB_BuildContext_ResetFlags)1 << 13)
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STANDARD        ((PCB_BuildContext_ResetFlags)1 << 14)
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH      ((PCB_BuildContext_ResetFlags)1 << 15)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCE_PROBE    ((PCB_BuildContext_ResetFlags)1 << 16)
 
 typedef struct {
     PCB_BuildContext_ResetFlags flags;
@@ -17451,6 +17500,8 @@ void PCB_BuildContext_reset_opt(
         context->target.platform = PCB_PLATFORM_RT_UNKNOWN;
     }
     PCB_Vec_reset(&context->sources);
+    if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCE_PROBE))
+        context->sourceProbe = NULL;
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_INCLUDES))
         PCB_Vec_reset(&context->includes);
     if(!(opt->flags & PCB_BUILDCONTEXT_RESETFLAG_KEEP_LIBS))
@@ -17502,6 +17553,7 @@ void PCB_BuildContext_destroy(PCB_BuildContext* context) {
     context->target.arch = PCB_ARCH_RT_UNKNOWN;
     context->target.platform = PCB_PLATFORM_RT_UNKNOWN;
     PCB_Vec_destroy(&context->sources);
+    context->sourceProbe = NULL;
     PCB_Vec_destroy(&context->includes);
     PCB_Vec_destroy(&context->libs);
     PCB_Vec_destroy(&context->staticLibs);
@@ -17832,12 +17884,18 @@ static PCB_Status PCB__build_dirent_decide(const PCB_FS_Iterator *it, PCB_FS_Str
     }
 }
 
-PCB_Enum(PCB__Language, uint_least32_t) {
-    PCB__LANG_NONE,
-    PCB__LANG_C,
-    PCB__LANG_CPP,
-    PCB__LANG_ASM,
-};
+static PCB_Status PCB__BuildContext_getlang(
+    const PCB_BuildContext *context, PCB_FS_StringView srcv
+) {
+    (void)context;
+    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(".c")))
+        return PCB_OK(PCB_LANG_C);
+    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(".cpp")))
+        return PCB_OK(PCB_LANG_CPP);
+    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(".s")))
+        return PCB_OK(PCB_LANG_ASM);
+    return PCB_OK(PCB_LANG_NONE);
+}
 
 static PCB_Status PCB__BuildContext_Sourcemap_State_advance(
     PCB__BuildContext_Sourcemap_State *ss, const PCB_BuildContext *context
@@ -17850,7 +17908,7 @@ static PCB_Status PCB__BuildContext_Sourcemap_State_advance(
     while(true) {
         PCB_Status result = PCB_FS_Iterator_next(&ss->it, skip);
         PCB_FS_StringView sv;
-        PCB__Language lang;
+        PCB_Language lang;
         if(!PCB_ISOK(result)) {
             if(result.domain == PCB_STATUS_DOMAIN_COMMON && result.code == PCB_CENOMEM)
                 return result;
@@ -17874,17 +17932,20 @@ static PCB_Status PCB__BuildContext_Sourcemap_State_advance(
           case PCB__BUILD_DIRENT_ACTION_DIR: ++ss->obj.depth; continue;
           default: PCB_Unreachable;
         }
-        if(PCB_FS_String_endsWith_cstr(src, PCB_FS_LIT(".c"))) lang = PCB__LANG_C;
-        else if(PCB_FS_String_endsWith_cstr(src, PCB_FS_LIT(".cpp"))) lang = PCB__LANG_CPP;
-        else if(PCB_FS_String_endsWith_cstr(src, PCB_FS_LIT(".s"))) lang = PCB__LANG_ASM;
-        else continue;
+        if(context->sourceProbe != NULL)
+            result = context->sourceProbe(context, PCB_View_Vec_A_T(src, PCB_FS_StringView));
+        else
+            result = PCB__BuildContext_getlang(context, PCB_View_Vec_A_T(src, PCB_FS_StringView));
+        if(!PCB_ISOK(result)) return result;
+        lang = (PCB_Language)result.code;
+        if(lang == PCB_LANG_NONE) continue;
 
         if(!PCB_FS_String_append_sv(obj, sv)) return PCB_CERR_NOMEM;
         PCB_FS_String_truncate_until_char(obj, '.');
         if(!PCB_FS_String_append_sv(obj, obj_ext)) return PCB_CERR_NOMEM;
         return PCB_OK(lang);
     }
-    return PCB_OK(PCB__LANG_NONE);
+    return PCB_OK(PCB_LANG_NONE);
 }
 
 static void PCB__BuildContext_Sourcemap_State_destroy(
@@ -17911,11 +17972,11 @@ static PCB_Status PCB__build_directory(
     while(true) {
         result = PCB__BuildContext_Sourcemap_State_advance(&ss, context);
         if(!PCB_ISOK(result)) goto defer;
-        //TODO: Such system is unsustainable. Make the user provide a compiler
-        //per language. That way we can support languages other than C/C++.
-        switch((PCB__Language)result.code) {
-          case PCB__LANG_NONE: PCB__return_defer(PCB_OK());
-          case PCB__LANG_C: {
+        //Not sure if we even want to do any language-specific logic if users
+        //can arrange it themselves. It's kept in case such thing is needed in the future.
+        switch((PCB_Language)result.code) {
+          case PCB_LANG_NONE: PCB__return_defer(PCB_OK());
+          case PCB_LANG_C: {
 #ifdef __cplusplus
             if(PCB_BuildContext_flags(context).ccInCpp)
                 context->commandBuffer.argv.data[0] = PCB_FS_LIT(PCB_COMPILER_PATH_ALT);
@@ -17927,7 +17988,7 @@ static PCB_Status PCB__build_directory(
                     context->commandBuffer.argv.data[0] = compiler_path;
 #endif //C++?
           } break;
-          case PCB__LANG_CPP: {
+          case PCB_LANG_CPP: {
 #ifndef __cplusplus
             if(PCB_BuildContext_flags(context).ccInCpp) {
                 context->commandBuffer.argv.data[0] = PCB_FS_LIT(PCB_COMPILER_PATH_ALT);
@@ -17945,10 +18006,11 @@ static PCB_Status PCB__build_directory(
                 context->commandBuffer.argv.data[0] = compiler_path;
 #endif //!C++?
           } break;
-          case PCB__LANG_ASM:
+          case PCB_LANG_ASM:
             if(!PCB_ISOK(result = PCB__build_file(context, src->data, obj->data, true, nobjmt, 0)))
                 goto defer;
             break;
+          case PCB_LANG_COUNT:
           default: PCB_Unreachable;
         }
     }
@@ -17973,7 +18035,7 @@ static PCB_Status PCB__BuildContext_gatherSources_dir(
         const PCB_FS_char *src_, *obj_;
         result = PCB__BuildContext_Sourcemap_State_advance(&ss, context);
         if(!PCB_ISOK(result)) goto defer;
-        if(result.code == PCB__LANG_NONE) break;
+        if(result.code == PCB_LANG_NONE) break;
         obj_ = PCB_Arena_FS_strdup(context->arena, obj->data);
         if(obj_ == NULL) PCB__return_defer(PCB_CERR_NOMEM);
         if(!PCB_BuildContext_flags(context).deferModChecks) {
