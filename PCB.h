@@ -16615,6 +16615,7 @@ const char* PCB_GetCppStandardStr(long standard) {
       case 201703L: return "c++17";
       case 202002L: return "c++20";
       case 202302L: return "c++23";
+      case 202603L: return "c++26";
       default:      return NULL;
     }
     PCB_Unreachable;
@@ -16683,6 +16684,7 @@ long PCB_GetCppStandardInt(const char* standard) {
       case 17: return 201703L;
       case 20: return 202002L;
       case 23: return 202302L;
+      case 26: return 202603L;
       default: return 0;
     }
     PCB_Unreachable;
