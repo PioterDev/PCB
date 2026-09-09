@@ -5066,6 +5066,7 @@ typedef uint64_t PCB_BuildContext_ResetFlags;
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_STANDARD        ((PCB_BuildContext_ResetFlags)1 << 14)
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_BUILD_PATH      ((PCB_BuildContext_ResetFlags)1 << 15)
 #define PCB_BUILDCONTEXT_RESETFLAG_KEEP_SOURCE_PROBE    ((PCB_BuildContext_ResetFlags)1 << 16)
+#define PCB_BUILDCONTEXT_RESETFLAG_KEEP_EVERYTHING      ((PCB_BuildContext_ResetFlags)0x1FFFF)
 
 typedef struct {
     PCB_BuildContext_ResetFlags flags;
