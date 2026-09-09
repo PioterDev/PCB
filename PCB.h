@@ -3445,6 +3445,7 @@ PCB_Enum(PCB_Build_Result, uint32_t) {
     PCB_BUILD_RESULT_NO_OBJ_TO_ARCHIVE,
     PCB_BUILD_RESULT_NO_OBJ_TO_LINK,
     PCB_BUILD_RESULT_ILLEGAL_USER_STATE,
+    PCB_BUILD_RESULT_NO_NAME_NON_COMP,
 };
 
 /**
@@ -9400,6 +9401,8 @@ static const char PCB_BUILD_RESULT_NO_SRC_STR[] = "No source specified";
 static const char PCB_BUILD_RESULT_NO_NAME_1SRC_STR[] =
     "Builds with 1 source file require specifying the output name";
 static const char PCB_BUILD_RESULT_NO_BUILD_PATH_STR[] = "No build path specified";
+static const char PCB_BUILD_RESULT_NO_NAME_NON_COMP_STR[] =
+    "Non-compilation builds require specifying the output name";
 
 
 static PCB_StringView PCB__Build_Result_strerror(PCB_Build_Result e) {
@@ -9414,6 +9417,7 @@ static PCB_StringView PCB__Build_Result_strerror(PCB_Build_Result e) {
       case PCB_BUILD_RESULT_NO_OBJ_TO_ARCHIVE: return PCB_SV_LIT("No object files to archive");
       case PCB_BUILD_RESULT_NO_OBJ_TO_LINK: return PCB_SV_LIT("No object files to link");
       case PCB_BUILD_RESULT_ILLEGAL_USER_STATE: return PCB_SV_LIT("Illegal user-provided state");
+      case PCB_BUILD_RESULT_NO_NAME_NON_COMP: return PCB_SV_LIT(PCB_BUILD_RESULT_NO_NAME_NON_COMP_STR);
       default: return PCB_ZEROED_T(PCB_StringView);
     }
 }
@@ -18724,6 +18728,17 @@ PCB_Status PCB_build_fromContext(PCB_BuildContext* context) {
     PCB_Status result = PCB__BuildContext_isSingleFile(context);
     if(!PCB_ISOK(result)) return result;
     else if(result.code) return PCB__build_fromContext_single(context);
+    if(PCB_BuildContext_flags(context).cwl && PCB_BuildContext_flags(context).lwc) {
+        //Usually this doesn't make sense as it'd imply a no-op.
+        //If so, why even call this function?
+        PCB_log(
+            PCB_LOGLEVEL_ERROR,
+            "\"compile without linking\" and \"link without compiling\" "
+            "cannot be specified at the same time"
+        );
+        return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_ILLEGAL_USER_STATE);
+
+    }
     if(context->buildPath == NULL) {
         PCB_log(PCB_LOGLEVEL_ERROR, "%s", PCB_BUILD_RESULT_NO_BUILD_PATH_STR);
         return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_NO_BUILD_PATH);
@@ -18736,12 +18751,18 @@ PCB_Status PCB_build_fromContext(PCB_BuildContext* context) {
     //may be for whatever reason set to `true` prior to here
     PCB_BuildContext_flags(context).rebuiltAnything = false;
     const char *out = context->outputPath;
-    if(!PCB_BuildType_formatName(
-        PCB_BuildContext_flags(context).buildType,
-        context->target.platform,
-        &out,
-        context->arena
-    )) return PCB_CERR_NOMEM;
+    if(!PCB_BuildContext_flags(context).cwl) {
+        if(out == NULL) {
+            PCB_log(PCB_LOGLEVEL_ERROR, "%s", PCB_BUILD_RESULT_NO_NAME_NON_COMP_STR);
+            return PCB_STATUS(PCB_STATUS_DOMAIN_PCB_BUILD, PCB_BUILD_RESULT_NO_NAME_NON_COMP);
+        }
+        if(!PCB_BuildType_formatName(
+            PCB_BuildContext_flags(context).buildType,
+            context->target.platform,
+            &out,
+            context->arena
+        )) return PCB_CERR_NOMEM;
+    }
     //This bizzare looking code is for saving `PCB_BuildContext_flags(context).parallel`
     //and replacing it with the number of cores if it's 1 to be able to refer to
     //it in other functions without an additional variable.
