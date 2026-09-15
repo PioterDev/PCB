@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 9
+#define PCB_VERSION_PATCH 10
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1154,23 +1154,35 @@ static void f(void)
 #ifndef PCB_Typeof
 #if defined(__cplusplus) && defined(__cpp_decltype) && __cpp_decltype+0 >= 200707L
 #define PCB_Typeof(expr) decltype(expr)
-#elif defined(__STDC_VERSION__)
+#else
 #if PCB_COMPILER_GCC
-#if PCB_COMPILER_GCC >= 130000 && __STDC_VERSION__ >= 202311L
+#if PCB_COMPILER_GCC >= 130000
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
 #define PCB_Typeof(expr) typeof(expr)
 #else
 #define PCB_Typeof(expr) __typeof__(expr)
-#endif //GCC 13+ && C23
+#endif //C23
+#else
+#define PCB_Typeof(expr) __typeof__(expr)
+#endif //GCC 13+
 #elif PCB_COMPILER_CLANG
-#if PCB_COMPILER_CLANG >= 160000 && __STDC_VERSION__ >= 202311L
+#if PCB_COMPILER_CLANG >= 160000
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
 #define PCB_Typeof(expr) typeof(expr)
 #else
 #define PCB_Typeof(expr) __typeof__(expr)
-#endif //Clang 16+ && C23
+#endif //C23
+#else
+#define PCB_Typeof(expr) __typeof__(expr)
+#endif //Clang 16+
 #elif PCB_COMPILER_MSVC
-#if PCB_COMPILER_MSVC >= 1939 && __STDC_VERSION__ >= 202311L
+#if PCB_COMPILER_MSVC >= 1939
+#if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
 #define PCB_Typeof(expr) typeof(expr)
-#endif //VS 2022 17.9 && C23
+#else
+#define PCB_Typeof(expr) __typeof__(expr)
+#endif //C23
+#endif //VS 2022 17.9
 #elif PCB_COMPILER_TCC
 #define PCB_Typeof(expr) __typeof__(expr)
 #endif //compilers
@@ -2261,21 +2273,9 @@ for(                                    \
 #endif //PCB_Vec_forEach
 
 #ifndef PCB_Vec_forEach_it
-#ifdef PCB_Typeof
-#define PCB_Vec_forEach_it(vec, itName, ...)        \
-for(                                                \
-    PCB_Typeof((vec)->data) itName = (vec)->data;   \
-    itName != (vec)->data + (vec)->length; itName++ \
-)
-#else
 /**
  * @brief Traditional for-each with an iterator.
  * Adding elements is not allowed as it may invalidate the iterator.
- *
- * Arguments are reversed compared to, for example, C++'s range-based for loop,
- * to allow skipping `underlyingType` if it can be inferred with `PCB_Typeof`.
- * If you prefer the standard order, you can #define a macro that reverses
- * arguments before passing them here.
  *
  * An example usage is as follows:
  * ```c
@@ -2294,29 +2294,15 @@ for(                                                    \
     underlyingType *itName = (vec)->data;               \
     itName != (vec)->data + (vec)->length; itName++     \
 )
-#endif //PCB_Typeof?
 #endif //PCB_Vec_forEach_it
 
 #ifndef PCB_Vec_enumerate
-#ifdef PCB_Typeof
-#define PCB_Vec_enumerate(vec, i, it, enumPair, ...)            \
-typedef struct { size_t i; PCB_Typeof((vec)->data) it; } PCB_MANGLE(dummytypename_v); \
-for(                                                            \
-    PCB_MANGLE(dummytypename_v) enumPair = { 0, (vec)->data };  \
-    enumPair.i < (vec)->length; enumPair.i++, enumPair.it++     \
-)
-#else
 /**
  * @brief Enumerate `vec` with index `i` and pointer-to-element `it`.
  * Due to limitations of C, `i` and `it` have to be wrapped inside a struct
  * named `enumPair`.
  * `i` is of type `size_t`. For now it's not possible to change that.
  * Adding elements is not allowed as it may invalidate the iterator.
- *
- * Arguments are reversed compared to, for example, C++'s std::views::enumerate,
- * to allow skipping `elemType` if it can be inferred with `PCB_Typeof`.
- * If you prefer the standard order, you can #define a macro that reverses
- * arguments before passing them here.
  *
  * An example usage is as follows:
  * ```c
@@ -2338,7 +2324,6 @@ for(                                                                    \
     PCB_MANGLE(dummytypename_v) enumPair = { 0, (vec)->data };          \
     enumPair.i < (vec)->length; enumPair.i++, enumPair.it++             \
 )
-#endif //PCB_Typeof?
 #endif //PCB_Vec_enumerate
 
 //Section 1.7.3: Macros for C++ compatibility
@@ -2797,38 +2782,21 @@ for(                                                    \
 
 //for-each for arrays. See `PCB_Vec_forEach_it` for details.
 #ifndef PCB_Arr_forEach_it
-#ifdef PCB_Typeof
-#define PCB_Arr_forEach_it(arr, itName, ...)        \
-for(                                                \
-    PCB_Typeof(&(arr)[0]) itName = &(arr)[0];       \
-    itName != &(arr)[PCB_ARRAY_LEN(arr)]; itName++  \
-)
-#else
 #define PCB_Arr_forEach_it(arr, itName, underlyingType) \
 for(                                                    \
     underlyingType *itName = &(arr)[0];                 \
     itName != &(arr)[PCB_ARRAY_LEN(arr)]; itName++      \
 )
-#endif //PCB_Typeof?
 #endif //PCB_Arr_forEach_it
 
 //Enumeration for arrays. See `PCB_Vec_enumerate` for details.
 #ifndef PCB_Arr_enumerate
-#ifdef PCB_Typeof
-#define PCB_Arr_enumerate(arr, i, it, enumPair, type)                               \
-typedef struct { size_t i; PCB_Typeof(&(arr)[0]) it; } PCB_MANGLE(dummytypename_a); \
-for(                                                                                \
-    PCB_MANGLE(dummytypename_a) struct enumPair = { 0, &(arr)[0] };                 \
-    enumPair.i < PCB_ARRAY_LEN(arr); enumPair.i++, enumPair.it++                    \
-)
-#else
 #define PCB_Arr_enumerate(arr, i, it, enumPair, type)               \
 typedef struct { size_t i; type *it; } PCB_MANGLE(dummytypename_a); \
 for(                                                                \
     PCB_MANGLE(dummytypename_a) enumPair = { 0, &(arr)[0] };        \
     enumPair.i < PCB_ARRAY_LEN(arr); enumPair.i++, enumPair.it++    \
 )
-#endif //PCB_Typeof?
 #endif //PCB_Arr_enumerate
 
 #if PCB_ARCH_x86_64 || PCB_ARCH_x86
