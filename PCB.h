@@ -1148,19 +1148,22 @@ static void f(void)
 #endif //PCB_thread_local
 
 //Get type of expression.
-//Portable applications MUST check whether `PCB_Typeof` is #defined before use.
+//Portable applications MUST check whether `PCB_Typeof(_unqual)` is #defined before use.
 //In C++11+, `PCB_Typeof` expands to `decltype` if it is available.
 //NOTE: Be *very* careful when using in external-facing declarations. This WILL cause problems!
 #ifndef PCB_Typeof
 #if defined(__cplusplus) && defined(__cpp_decltype) && __cpp_decltype+0 >= 200707L
 #define PCB_Typeof(expr) decltype(expr)
+#define PCB_Typeof_unqual(expr) typename std::remove_cv<decltype(expr)>::type
 #else
 #if PCB_COMPILER_GCC
 #if PCB_COMPILER_GCC >= 130000
 #if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
 #define PCB_Typeof(expr) typeof(expr)
+#define PCB_Typeof_unqual(expr) typeof_unqual(expr)
 #else
 #define PCB_Typeof(expr) __typeof__(expr)
+#define PCB_Typeof_unqual(expr) __typeof_unqual__(expr)
 #endif //C23
 #else
 #define PCB_Typeof(expr) __typeof__(expr)
@@ -1169,8 +1172,12 @@ static void f(void)
 #if PCB_COMPILER_CLANG >= 160000
 #if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
 #define PCB_Typeof(expr) typeof(expr)
+#define PCB_Typeof_unqual(expr) typeof_unqual(expr)
 #else
 #define PCB_Typeof(expr) __typeof__(expr)
+#if PCB_COMPILER_CLANG >= 190000
+#define PCB_Typeof_unqual(expr) __typeof_unqual__(expr)
+#endif //Clang 19+
 #endif //C23
 #else
 #define PCB_Typeof(expr) __typeof__(expr)
@@ -1179,12 +1186,15 @@ static void f(void)
 #if PCB_COMPILER_MSVC >= 1939
 #if defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L
 #define PCB_Typeof(expr) typeof(expr)
+#define PCB_Typeof_unqual(expr) typeof_unqual(expr)
 #else
 #define PCB_Typeof(expr) __typeof__(expr)
+#define PCB_Typeof_unqual(expr) __typeof_unqual__(expr)
 #endif //C23
 #endif //VS 2022 17.9
 #elif PCB_COMPILER_TCC
 #define PCB_Typeof(expr) __typeof__(expr)
+//As of v0.9.28, TCC doesn't support typeof_unqual.
 #endif //compilers
 #endif //C++ && __cpp_decltype || C
 #endif //PCB_Typeof
