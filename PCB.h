@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 10
+#define PCB_VERSION_PATCH 11
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1150,6 +1150,7 @@ static void f(void)
 //Get type of expression.
 //Portable applications MUST check whether `PCB_Typeof(_unqual)` is #defined before use.
 //In C++11+, `PCB_Typeof` expands to `decltype` if it is available.
+//Because of this, `PCB_Typeof` cannot be applied on types. This isn't the case in C.
 //NOTE: Be *very* careful when using in external-facing declarations. This WILL cause problems!
 #ifndef PCB_Typeof
 #if defined(__cplusplus) && defined(__cpp_decltype) && __cpp_decltype+0 >= 200707L
