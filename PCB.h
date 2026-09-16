@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 11
+#define PCB_VERSION_PATCH 12
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1354,6 +1354,10 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
 #if PCB_HAS_INCLUDE(<time.h>)
 #define PCB_HAS_TIME_H
 #endif //has time.h
+
+#if defined(__cplusplus) && __cplusplus+0 >= 201103L
+#include <type_traits>
+#endif //C++
 
 #if PCB_PLATFORM_POSIX
 #if PCB_HAS_INCLUDE(<strings.h>)
