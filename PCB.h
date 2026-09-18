@@ -670,6 +670,11 @@
 #define PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME 0
 #endif //PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME
 
+#ifndef PCB_CACHELINE_BYTES
+//TODO: 64 is not universal across architectures
+#define PCB_CACHELINE_BYTES 64
+#endif //PCB_CACHELINE_BYTES
+
 #ifndef PCB_Target_ISA
 #if PCB_COMPILER_GCC >= 40407 || PCB_COMPILER_CLANG >= 40000
 #define PCB_Target_ISA(isa) __attribute__((__target__(isa)))
@@ -1120,8 +1125,7 @@ static void f(void)
 
 #ifndef PCB_alignas_cacheline
 #ifdef PCB_alignas
-//TODO: 64 is not universal across architectures
-#define PCB_alignas_cacheline PCB_alignas(64)
+#define PCB_alignas_cacheline PCB_alignas(PCB_CACHELINE_BYTES)
 #else
 #define PCB_alignas_cacheline
 #endif //PCB_alignas?
