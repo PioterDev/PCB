@@ -671,8 +671,13 @@
 #endif //PCB_ENDIANNESS_KNOWN_AT_COMPILE_TIME
 
 #ifndef PCB_CACHELINE_BYTES
+#if defined(__cplusplus) && defined(__cpp_lib_hardware_interference_size)
+#include <new>
+#define PCB_CACHELINE_BYTES std::hardware_constructive_interference_size
+#else
 //TODO: 64 is not universal across architectures
 #define PCB_CACHELINE_BYTES 64
+#endif //C++
 #endif //PCB_CACHELINE_BYTES
 
 #ifndef PCB_Target_ISA
