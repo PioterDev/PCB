@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 12
+#define PCB_VERSION_PATCH 13
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -15251,7 +15251,7 @@ static int PCB__ShellCommand_run_POSIX(PCB_ShellCommand *cmd, PCB_RWEBuffer buf)
         size_t path_bytes, comp_len;
         PCB_StringView comp_end = PCB_StringView_findCharFrom(path, colon);
         PCB_assert(comp_end.data != NULL);
-        if(!*comp_end.data) break;
+
         comp_len = (size_t)(comp_end.data - path.data);
         path_bytes = comp_len + 1/*'/'*/ + file.length+1/*'\0'*/;
         if(path_bytes > filepath.length) {
@@ -15277,6 +15277,7 @@ static int PCB__ShellCommand_run_POSIX(PCB_ShellCommand *cmd, PCB_RWEBuffer buf)
           default:
             return result;
         }
+        if(!*comp_end.data) break;
     }
     return eacces ? EACCES : result;
 }
