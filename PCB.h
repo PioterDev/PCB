@@ -8656,7 +8656,7 @@ PCB_InitFn(PCB__SYSTEM_INFO_GET) {
 #endif
 }
 
-static int PCB__SYSTEM_INFO_vercmp(
+PCB_Unused static int PCB__SYSTEM_INFO_vercmp(
     uint32_t major, uint32_t minor, uint32_t patch
 ) {
     if(PCB__SYSTEM_INFO.version.major > major) return 1;
