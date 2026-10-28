@@ -1104,6 +1104,36 @@ static void f(void)
 #endif //PCB_unlikely
 
 /**
+ * @brief Inform the compiler that `expr` holds true at runtime.
+ * `expr` is guaranteed to not be evaluated at runtime.
+ * If `expr` turns out to be false, the behavior is undefined. Use with care.
+ */
+#ifndef PCB_assume
+//https://stackoverflow.com/questions/63493968/reproducing-clangs-builtin-assume-for-gcc
+//GCC for inexplicable reasons defines `__has_cpp_attribute` in C.
+#if defined(__cplusplus) && defined(__has_cpp_attribute)
+#if __has_cpp_attribute(assume) >= 202207L
+#if !defined(__STRICT_ANSI__) || (defined(__STRICT_ANSI__) && __cplusplus >= 202302L)
+#define PCB_assume(expr) [[assume(expr)]]
+#endif //Clang provides this attribute in older standards
+       //and then warns that it's an extension, smh
+#endif //__has_cpp_attribute(assume)
+#endif //C++
+
+#ifndef PCB_assume
+#if PCB_COMPILER_GCC >= 130100
+#define PCB_assume(expr) __attribute__((__assume__(expr)))
+#elif PCB_COMPILER_CLANG >= 40000
+#define PCB_assume(expr) __builtin_assume(expr)
+#elif PCB_COMPILER_MSVC
+#define PCB_assume(expr) __assume(expr)
+#else
+#define PCB_assume(expr)
+#endif //non-standard sources of assume
+#endif //PCB_assume (nonstandard sources)
+#endif //PCB_assume
+
+/**
  * @brief Enforce alignment in bytes of a type/variable.
  * Needs to be placed at the start of a declaration, for example
  * `PCB_alignas(8) static Type foo;`.
