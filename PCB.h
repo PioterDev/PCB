@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 13
+#define PCB_VERSION_PATCH 14
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -17991,11 +17991,11 @@ static PCB_Status PCB__BuildContext_getlang(
     const PCB_BuildContext *context, PCB_FS_StringView srcv
 ) {
     (void)context;
-    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(".c")))
+    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(PCB_FS_LIT(".c"))))
         return PCB_OK(PCB_LANG_C);
-    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(".cpp")))
+    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(PCB_FS_LIT(".cpp"))))
         return PCB_OK(PCB_LANG_CPP);
-    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(".s")))
+    if(PCB_FS_StringView_endsWith(srcv, PCB_FS_SV_LIT(PCB_FS_LIT(".s"))))
         return PCB_OK(PCB_LANG_ASM);
     return PCB_OK(PCB_LANG_NONE);
 }
