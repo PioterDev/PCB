@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 15
+#define PCB_VERSION_PATCH 16
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -1842,7 +1842,7 @@ PCB_DeprecatedReason("errno is unavailable, this is a stub.") extern int errno_s
  */
 #ifndef PCB_Enum_Fixed
 //Natively supported since C++11 and C23.
-#if (defined(__cpluslus) && __cplusplus+0 >= 201103L) || \
+#if (defined(__cplusplus) && __cplusplus+0 >= 201103L) || \
     (defined(__STDC_VERSION__) && __STDC_VERSION__+0 >= 202311L)
 #define PCB_Enum_Fixed(name, type) \
     enum name : type; typedef enum name name; enum name : type
