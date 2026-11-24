@@ -38,7 +38,7 @@
 #endif //PCB_VERSION_MINOR
 
 #ifndef PCB_VERSION_PATCH
-#define PCB_VERSION_PATCH 14
+#define PCB_VERSION_PATCH 15
 #endif //PCB_VERSION_PATCH
 
 #ifndef PCB_VERSION
@@ -11145,6 +11145,7 @@ PCB_Status PCB_FS_Exists_PATH(const char *target, PCB_StringView *PATH) {
             if(path.data == NULL) PCB__return_defer(PCB_CERR_NOMEM);
             path.capacity = len;
         }
+        PCB_assume(path.data != NULL);
         PCB_memcpy(path.data, comp.data, sizeof(*comp.data) * comp.length);
         if(
             comp.data[comp.length - 1] == PCB_FS_PATH_DELIM
@@ -12190,7 +12191,7 @@ PCB_File PCB_IO_get_stderr(void) {
     return f;
 }
 
-PCB_Status PCB_IO_pipe_new(PCB_Pipe *pipe, bool noninheritable) {
+PCB_Status PCB_IO_pipe_new(PCB_Pipe *p, bool noninheritable) {
 #if PCB_PLATFORM_WINDOWS
     //NOTE: We may in the future reimplement this to use NtCreateNamedPipeFile.
     //This may be confusing at first because we're creating an anonymous pipe here.
@@ -12205,7 +12206,7 @@ PCB_Status PCB_IO_pipe_new(PCB_Pipe *pipe, bool noninheritable) {
     sa.nLength = sizeof(sa);
     sa.lpSecurityDescriptor = NULL;
     sa.bInheritHandle = !noninheritable;
-    return CreatePipe(&pipe->read_end.handle, &pipe->write_end.handle, &sa, 0)
+    return CreatePipe(&p->read_end.handle, &p->write_end.handle, &sa, 0)
         ? PCB_OK() : PCB_STATUS_NATIVE_SYSTEM_API();
 #elif PCB_PLATFORM_POSIX
     int fds[2];
@@ -12226,11 +12227,11 @@ PCB_Status PCB_IO_pipe_new(PCB_Pipe *pipe, bool noninheritable) {
         }
     }
 #endif //_GNU_SOURCE
-    pipe->read_end.handle  = fds[0];
-    pipe->write_end.handle = fds[1];
+    p->read_end.handle  = fds[0];
+    p->write_end.handle = fds[1];
     return PCB_OK();
 #else
-    (void)pipe;
+    (void)p;
     return PCB_STATUS(PCB_STATUS_DOMAIN_COMMON, PCB_CESTUB);
 #endif //platforms
 }
